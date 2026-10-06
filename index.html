@@ -984,6 +984,10 @@ const STR = {
   m_nolink_add:["Paste link","Link plakken"],
   m_link_ph:["Paste a Teams, Zoom or Meet link","Plak een Teams-, Zoom- of Meet-link"],
   m_copy_link:["Copy link","Link kopiëren"],
+  m_join_app:["Open in de Teams-app","Open in de Teams-app"],
+  m_join_web:["In de browser","In de browser"],
+  m_join_app_note:["De eerste knop opent de Teams-app rechtstreeks. Gebeurt er niets, dan is Teams niet geïnstalleerd — gebruik dan de tweede.",
+                   "De eerste knop opent de Teams-app rechtstreeks. Gebeurt er niets, dan is Teams niet geïnstalleerd — gebruik dan de tweede."],
   m_link_copied:["Link copied","Link gekopieerd"],
   m_link_note:["Opens in the Teams app if you have it, otherwise in your browser.",
                "Opent in de Teams-app als je die hebt, anders in je browser."],
@@ -2732,10 +2736,14 @@ function viewDashboard() {
                       data-end="${esc(m.endsAt || "")}">${esc(rel.text)}</span>` : ""}
                     ${m.location ? `<span>${esc(m.location)}</span>` : ""}</span>
                 </span></button>
-              ${m.onlineUrl ? `<a class="btn icon sm outline" href="${esc(m.onlineUrl)}"
-                target="_blank" rel="noopener noreferrer"
-                title="${esc(tr("m_join_in", onlineKindOf(m.onlineUrl) || tr("m_online")))}"
-                aria-label="${esc(tr("m_join"))}">${ico("video", "", 14)}</a>` : ""}
+              ${m.onlineUrl ? (() => {
+                // Eén klik: naar de app als dat kan, anders naar de browser.
+                const app = appJoinUrl(m.onlineUrl);
+                return `<a class="btn icon sm outline" href="${esc(app || m.onlineUrl)}"
+                  ${app ? "" : 'target="_blank" rel="noopener noreferrer"'}
+                  title="${esc(app ? tr("m_join_app") : tr("m_join_in", onlineKindOf(m.onlineUrl) || tr("m_online")))}"
+                  aria-label="${esc(tr("m_join"))}">${ico("video", "", 14)}</a>`;
+              })() : ""}
             </li>`;
           }).join("")}</ul>`
         : empty(tr("no_meetings_today"))));
@@ -3473,13 +3481,20 @@ function viewMeetingDetail(id) {
             <p class="xs mut" style="margin-top:3px">${esc(tr("m_link_note"))}</p>
           </div>
           <div class="row wrap" style="gap:8px">
-            <a class="btn" href="${esc(m.onlineUrl)}" target="_blank" rel="noopener noreferrer">
-              ${ico("video", "", 13)} ${esc(tr("m_join_in", onlineKindOf(m.onlineUrl) || tr("m_online")))}</a>
+            ${(() => {
+              const app = appJoinUrl(m.onlineUrl);
+              const web = `<a class="btn${app ? " outline" : ""}" href="${esc(m.onlineUrl)}"
+                target="_blank" rel="noopener noreferrer">${app ? "" : ico("video", "", 13) + " "}${esc(app ? tr("m_join_web") : tr("m_join_in", onlineKindOf(m.onlineUrl) || tr("m_online")))}</a>`;
+              // De app-knop staat voorop; de webkoppeling blijft ernaast voor
+              // als Teams niet geïnstalleerd is.
+              return (app ? `<a class="btn" href="${esc(app)}">${ico("video", "", 13)}
+                ${esc(tr("m_join_app"))}</a>` : "") + web;
+            })()}
             <button class="btn outline" data-act="copy-link" data-id="${m.id}">
               ${ico("copy", "", 13)} ${esc(tr("m_copy_link"))}</button>
           </div>
         </div>
-        <p class="xs mut" style="margin-top:9px">${esc(tr("m_link_blocked"))}</p>
+        <p class="xs mut" style="margin-top:9px">${esc(appJoinUrl(m.onlineUrl) ? tr("m_join_app_note") : tr("m_link_blocked"))}</p>
       </div></section>`
    /* An appointment that says "Teams" but carries no link is the confusing
       case: it looks joinable and is not. Say why, and where to fix it. */
@@ -3659,6 +3674,15 @@ function findMeetingUrl(e) {
 function looksOnline(m) {
   return /teams|zoom|webex|google meet|online|virtueel|virtual/i
     .test(`${m.location || ""} ${m.title || ""}`);
+}
+
+/* De Teams-desktopapp luistert naar zijn eigen protocol, dus een
+   vergaderlink kan de browser helemaal overslaan. Alleen voor echte
+   deelnemen-links: staat Teams niet geïnstalleerd, dan gebeurt er niets, en
+   daarom blijft de gewone webkoppeling er altijd naast staan. */
+function appJoinUrl(url) {
+  const m = /^https?:\/\/teams\.microsoft\.(?:com|us)\/((?:l\/meetup-join|meet)\/.+)$/i.exec(String(url || ""));
+  return m ? `msteams:/${m[1]}` : null;
 }
 
 function onlineKindOf(url) {
