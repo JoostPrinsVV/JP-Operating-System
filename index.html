@@ -990,6 +990,9 @@ const STR = {
   m_att_nomail:["geen adres bekend","geen adres bekend"],
   m_att_extern:["{0} van buiten","{0} van buiten"],
   m_att_mailall:["Mail iedereen","Mail iedereen"],
+  m_att_mailone:["Concept opstellen aan {0}","Concept opstellen aan {0}"],
+  m_att_hi:["Hoi","Hoi"],
+  m_att_ref:["(Naar aanleiding van {0}, {1}.)","(Naar aanleiding van {0}, {1}.)"],
   m_att_copied:["Adressen gekopieerd","Adressen gekopieerd"],
   dl_att_ph:["Naam <adres>, gescheiden door komma's","Naam <adres>, gescheiden door komma's"],
   m_brief:["Briefing","Briefing"],
@@ -1034,8 +1037,11 @@ const STR = {
   ag_needsclick:["De browser moet opnieuw toestemming vragen — druk op Nu inlezen.",
                  "De browser moet opnieuw toestemming vragen — druk op Nu inlezen."],
   ag_synced:["{0} afspraken toegevoegd uit je agendamap","{0} afspraken toegevoegd uit je agendamap"],
-  ag_synced_filled:["{0} afspraken toegevoegd, {1} vergaderlinks aangevuld",
-                    "{0} afspraken toegevoegd, {1} vergaderlinks aangevuld"],
+  ag_synced_filled:["{0} afspraken toegevoegd, {1}","{0} afspraken toegevoegd, {1}"],
+  ag_n_links:["{0} vergaderlinks aangevuld","{0} vergaderlinks aangevuld"],
+  ag_n_att:["{0} deelnemerslijsten aangevuld","{0} deelnemerslijsten aangevuld"],
+  ag_noatt:["Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen.",
+            "Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen."],
   ag_uptodate:["Niets nieuws — je agenda was al bij","Niets nieuws — je agenda was al bij"],
   ag_nofile:["Geen .ics-bestand in die map gevonden","Geen .ics-bestand in die map gevonden"],
   ag_denied:["Zonder toestemming kan ik de map niet lezen","Zonder toestemming kan ik de map niet lezen"],
@@ -3839,6 +3845,24 @@ function relatedMeetings(m, max = 4) {
     .slice(0, max);
 }
 
+/* Een klik op een adres opent een concept: de vergadering als onderwerp, een
+   aanhef met de voornaam, en de cursor op een lege regel. Alleen de aanhef,
+   want de rest is jouw bericht en niet het mijne. */
+function draftTo(email, naam, m) {
+  const voornaam = String(naam || "").trim().split(/\s+/)[0] || "";
+  const wanneer = m && m.startsAt ? fmtDate(m.startsAt.slice(0, 10)) : "";
+  const onderwerp = m && m.title ? m.title : "";
+  const body = [
+    voornaam ? `${tr("m_att_hi")} ${voornaam},` : `${tr("m_att_hi")},`,
+    "",
+    "",
+    onderwerp && wanneer ? tr("m_att_ref", onderwerp, wanneer) : "",
+  ].join("\n").replace(/\n+$/, "\n");
+  return `mailto:${encodeURIComponent(email)}`
+    + `?subject=${encodeURIComponent(onderwerp)}`
+    + `&body=${encodeURIComponent(body)}`;
+}
+
 /* Wie er bij zit, met adres erbij. Een adres is bruikbaar: je kunt erop
    klikken om te mailen, en je ziet of iemand van buiten het kantoor komt. */
 function attendeeCard(m) {
@@ -3861,7 +3885,9 @@ function attendeeCard(m) {
         <span class="att-dot" style="background:${mail && !mine(a) ? "var(--warning)" : "var(--c1)"}"></span>
         <span style="min-width:0;flex:1">
           <span class="sm2 trunc" style="display:block">${esc(naam)}</span>
-          ${mail ? `<a class="xs mut" href="mailto:${esc(mail)}" style="word-break:break-all">${esc(mail)}</a>`
+          ${mail ? `<a class="xs mut" href="${esc(draftTo(mail, naam, m))}"
+                       title="${esc(tr("m_att_mailone", naam))}"
+                       style="word-break:break-all">${esc(mail)}</a>`
                  : `<span class="xs mut">${esc(tr("m_att_nomail"))}</span>`}
         </span>
       </li>`;
@@ -6957,17 +6983,25 @@ function importEvents(events, from, to) {
   DB.meetings.forEach((m) => {
     if (m.outlookUid) byUid.set(meetingKey(m.outlookUid, m.startsAt), m);
   });
-  let added = 0, skipped = 0, filled = 0;
+  let added = 0, skipped = 0, filled = 0, attFilled = 0, withAtt = 0;
 
   events.forEach((e) => {
     if (e.start.day < from || e.start.day > to) return;
 
+    if ((e.attendees || []).length) withAtt++;
+
     const existing = e.uid ? byUid.get(meetingKey(e.uid, e.start.iso)) : null;
     if (existing) {
-      // Already here, but an earlier build may have missed the join link.
+      /* Al bekend, maar een eerdere versie - of een eerdere versie van de
+         flow - kan de link of de deelnemers hebben gemist. Alleen lege
+         velden worden gevuld, zodat eigen aanpassingen blijven staan. */
+      let touched = false;
       const url = findMeetingUrl(e);
-      if (url && !existing.onlineUrl) { existing.onlineUrl = url; filled++; }
-      else skipped++;
+      if (url && !existing.onlineUrl) { existing.onlineUrl = url; filled++; touched = true; }
+      if ((e.attendees || []).length && !(existing.attendees || []).length) {
+        existing.attendees = e.attendees.slice(0, 50); attFilled++; touched = true;
+      }
+      if (!touched) skipped++;
       return;
     }
 
@@ -6977,8 +7011,10 @@ function importEvents(events, from, to) {
     added++;
   });
 
-  if (added || filled) save();
-  return { added, filled, skipped };
+  if (added || filled || attFilled) save();
+  // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
+  // zoeken in de app als het eigenlijk aan de flow ligt.
+  return { added, filled, attFilled, skipped, withAtt };
 }
 
 function icsImport() {
@@ -7114,11 +7150,17 @@ async function agendaRead(loud) {
     s.folder = AGENDA_DIR.name;
     save();
 
-    if (r.added || r.filled) {
+    if (r.added || r.filled || r.attFilled) {
       render();
-      toast(r.filled ? tr("ag_synced_filled", r.added, r.filled) : tr("ag_synced", r.added));
+      const aangevuld = [
+        r.filled ? tr("ag_n_links", r.filled) : "",
+        r.attFilled ? tr("ag_n_att", r.attFilled) : "",
+      ].filter(Boolean).join(", ");
+      toast(aangevuld ? tr("ag_synced_filled", r.added, aangevuld) : tr("ag_synced", r.added));
     } else if (loud) {
-      render(); toast(tr("ag_uptodate"));
+      render();
+      // Geen deelnemers in het hele bestand is bijna altijd de flow, niet de app.
+      toast(!r.withAtt && parsed.events.length ? tr("ag_noatt") : tr("ag_uptodate"));
     }
     return r;
   } catch (e) {
