@@ -6773,15 +6773,22 @@ function paintIcs(message, from, to) {
 /* The one place appointments enter the workspace, used by the import dialog
    and by the folder sync alike. Returns what it did instead of saying it, so
    the caller decides whether that is worth a message. */
+/* Een terugkerende afspraak levert per keer dezelfde UID aan. Op UID alleen
+   zou de hele reeks tot één afspraak samenvallen en zouden alle volgende
+   keren stilzwijgend verdwijnen, dus het begintijdstip hoort bij de sleutel. */
+const meetingKey = (uid, startsAt) => `${uid}|${String(startsAt).slice(0, 16)}`;
+
 function importEvents(events, from, to) {
   const byUid = new Map();
-  DB.meetings.forEach((m) => { if (m.outlookUid) byUid.set(m.outlookUid, m); });
+  DB.meetings.forEach((m) => {
+    if (m.outlookUid) byUid.set(meetingKey(m.outlookUid, m.startsAt), m);
+  });
   let added = 0, skipped = 0, filled = 0;
 
   events.forEach((e) => {
     if (e.start.day < from || e.start.day > to) return;
 
-    const existing = e.uid ? byUid.get(e.uid) : null;
+    const existing = e.uid ? byUid.get(meetingKey(e.uid, e.start.iso)) : null;
     if (existing) {
       // Already here, but an earlier build may have missed the join link.
       const url = findMeetingUrl(e);
