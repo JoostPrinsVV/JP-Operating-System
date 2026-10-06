@@ -77,12 +77,33 @@ om iets over te zetten.
 
 ## Bijwerken
 
-Vervang `index.html` in de repository. De service worker haalt de pagina
-netwerk-eerst op, dus bij de eerstvolgende keer openen mét verbinding heb je
-de nieuwe versie — zonder cache legen.
+`index.html` is het hele programma — er is geen bronbestand en geen build.
+Wijzigen doe je in dat bestand, en dat is meteen wat er live staat.
 
+De service worker haalt de pagina netwerk-eerst op, dus bij de eerstvolgende
+keer openen mét verbinding heb je de nieuwe versie, zonder cache te legen.
 Verander je `sw.js` zelf, verhoog dan `VERSION` bovenin dat bestand, anders
 blijft de oude cache staan.
+
+### Werkwijze
+
+1. Wijzigen in `index.html`
+2. `powershell -ExecutionPolicy Bypass -File tools\check.ps1` — statische controles
+3. `powershell -ExecutionPolicy Bypass -File tools\serve.ps1` — lokaal uitproberen
+   op <http://localhost:8099/>, inclusief service worker
+4. Commit, en in GitHub Desktop de wijziging nakijken en pushen
+5. Pages publiceert binnen een minuut of twee
+
+### Controles
+
+`tools\check.ps1` vangt wat een compiler zou vangen als die er was: een knop
+zonder afhandeling, een vertaalsleutel die niet bestaat, een icoon dat niet is
+getekend, een element dat wordt opgezocht maar nergens staat, een woordenlijst
+die zichzelf aanroept, verminkte tekencodering, en Liquid-tekens waar Jekyll
+over struikelt.
+
+Wat het níét vangt is of de app werkelijk doet wat je bedoelt. Daarvoor is
+`serve.ps1` er: open de pagina en klik erdoorheen.
 
 ---
 
