@@ -380,6 +380,9 @@ dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
 .flow-w{display:flex;align-items:flex-end;gap:2px;flex:1;height:100%}
 .flow-b{display:block;flex:1;min-height:2px;border-radius:2px 2px 0 0}
 
+/* Stipje voor een deelnemer: blauw voor eigen huis, amber voor extern. */
+.att-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;margin-top:5px}
+
 /* A news source: the tick box on the left keeps its own column so the
    description can wrap under the name without stepping under the box. */
 .src{display:flex;align-items:flex-start;gap:10px;padding:9px 6px;border-radius:8px;
@@ -658,7 +661,7 @@ const STR = {
   workspace:["AI Lead workspace","AI Lead-werkplek"], today_g:["Today","Vandaag"],
   steer:["Steer","Sturen"], grow:["Grow","Groeien"],
   nav_dashboard:["Dashboard","Dashboard"], nav_planning:["My planning","Mijn planning"],
-  nav_tasks:["Tasks","Taken"], nav_meetings:["Meetings","Overleggen"],
+  nav_tasks:["Tasks","Taken"], nav_meetings:["Calendar","Agenda"],
   nav_goals:["Goals & OKRs","Doelen & OKR's"], nav_projects:["Projects","Projecten"],
   nav_kpis:["KPIs","KPI's"], nav_ideas:["Brain dump","Ideeën"],
   nav_dev:["Development","Ontwikkeling"], nav_review:["Weekly review","Weekreview"],
@@ -954,7 +957,7 @@ const STR = {
   m_noact:["No action items","Geen actiepunten"],
   m_noact_d:["Anything agreed that needs doing belongs here.","Alles wat is afgesproken en gedaan moet worden hoort hier."],
   m_totask:["To task","Naar taak"], m_tracked:["Tracked as a task","Wordt als taak gevolgd"],
-  m_addact:["Add action item","Actiepunt toevoegen"], m_back:["All meetings","Alle overleggen"],
+  m_addact:["Add action item","Actiepunt toevoegen"], m_back:["All appointments","Alle afspraken"],
   m_promoted:["Added to your task board","Toegevoegd aan je takenbord"],
   m_outlook:["Not linked to an Outlook event — sync is prepared in the full app's schema but not wired up here.",
              "Niet gekoppeld aan een Outlook-afspraak — synchronisatie is voorbereid in het schema van de volledige app, maar hier niet aangesloten."],
@@ -984,6 +987,11 @@ const STR = {
   m_nolink_add:["Paste link","Link plakken"],
   m_link_ph:["Paste a Teams, Zoom or Meet link","Plak een Teams-, Zoom- of Meet-link"],
   m_copy_link:["Copy link","Link kopiëren"],
+  m_att_nomail:["geen adres bekend","geen adres bekend"],
+  m_att_extern:["{0} van buiten","{0} van buiten"],
+  m_att_mailall:["Mail iedereen","Mail iedereen"],
+  m_att_copied:["Adressen gekopieerd","Adressen gekopieerd"],
+  dl_att_ph:["Naam <adres>, gescheiden door komma's","Naam <adres>, gescheiden door komma's"],
   m_brief:["Briefing","Briefing"],
   m_brief_d:["Uit je eigen werkruimte — geen mail, geen chat, niets van buiten.",
              "Uit je eigen werkruimte — geen mail, geen chat, niets van buiten."],
@@ -3516,12 +3524,12 @@ function viewMeetingDetail(id) {
           style="margin-top:9px">${ico("pencil", "", 13)} ${esc(tr("m_nolink_add"))}</button>
       </div></section>` : "")) +
 
-  (m.location || m.attendees.length ? `<p class="row wrap xs mut" style="gap:14px;margin-bottom:14px">
-    ${m.location ? `<span class="row" style="gap:5px">${ico("pin", "", 13)}${esc(m.location)}</span>` : ""}
-    ${m.attendees.length ? `<span class="row" style="gap:5px">${ico("users", "", 13)}${esc(m.attendees.join(", "))}</span>` : ""}</p>` : "") +
+  (m.location ? `<p class="row wrap xs mut" style="gap:14px;margin-bottom:14px">
+    <span class="row" style="gap:5px">${ico("pin", "", 13)}${esc(m.location)}</span></p>` : "") +
   `<div class="grid split">
     <div class="grid">
       ${briefingCard(m)}
+      ${attendeeCard(m)}
       ${m.agenda ? card(tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
       ${card(tr("m_notes"), m.notes ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.notes)}</p>`
         : `<p class="xs mut">${esc(tr("m_nonotes"))}</p>`)}
@@ -3589,6 +3597,42 @@ const cnOf = (params, value) => {
   return cn || String(value).replace(/^mailto:/i, "").trim();
 };
 
+/* Een deelnemer is naam én adres. Komt er geen naam mee - Outlook levert via
+   Power Automate alleen adressen - dan wordt er een leesbare naam uit het
+   adres afgeleid: voornaam.achternaam@ wordt Voornaam Achternaam. */
+function attendeeOf(params, value) {
+  const email = String(value).replace(/^mailto:/i, "").trim();
+  const cn = params.CN ? icsUnescape(params.CN).replace(/^"|"$/g, "").trim() : "";
+  return { name: cn || nameFromEmail(email), email };
+}
+function nameFromEmail(email) {
+  const local = String(email).split("@")[0] || "";
+  if (!local) return String(email);
+  return local.split(/[._-]+/).filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ") || local;
+}
+
+/* Deelnemers zijn ooit als losse namen opgeslagen en later als objecten. Deze
+   drie lezen allebei, zodat oude werkruimtes niets merken. */
+const attName  = (a) => (typeof a === "string" ? a : (a && (a.name || a.email)) || "");
+const attEmail = (a) => (a && typeof a === "object" && a.email) || "";
+const attText  = (a) => {
+  const n = attName(a), e = attEmail(a);
+  return e && e.toLowerCase() !== n.toLowerCase() ? `${n} <${e}>` : (n || e);
+};
+/* "Naam <adres>" en een kaal adres leiden allebei tot hetzelfde object. */
+function attParse(s) {
+  const t = String(s).trim();
+  const m = /^(.*?)[<(]\s*([^>)\s]+@[^>)\s]+)\s*[>)]$/.exec(t);
+  if (m) {
+    const name = m[1].replace(/["']/g, "").trim();
+    return { name: name || nameFromEmail(m[2]), email: m[2] };
+  }
+  if (/^[^\s@]+@[^\s@]+$/.test(t)) return { name: nameFromEmail(t), email: t };
+  return { name: t, email: "" };
+}
+
 function parseIcs(text) {
   const lines = unfoldIcs(text).split("\n");
   const out = [];
@@ -3627,8 +3671,11 @@ function parseIcs(text) {
         break;
       case "ORGANIZER": cur.organizer = cnOf(params, value); break;
       case "ATTENDEE": {
-        const who = cnOf(params, value);
-        if (who && !cur.attendees.includes(who)) cur.attendees.push(who);
+        const who = attendeeOf(params, value);
+        const key = (who.email || who.name).toLowerCase();
+        if (key && !cur.attendees.some((a) => (attEmail(a) || attName(a)).toLowerCase() === key)) {
+          cur.attendees.push(who);
+        }
         break;
       }
       default: break;
@@ -3774,13 +3821,13 @@ function relatedMeetings(m, max = 4) {
   const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
   const strip = (s) => norm(s).replace(/^(fw|re|fwd|antw)[:\s]+/i, "")
     .replace(/\s*[-–—]\s*(wekelijks|maandelijks|monthly|weekly).*$/i, "");
-  const mine = new Set((m.attendees || []).map(norm).filter(Boolean));
+  const mine = new Set((m.attendees || []).map((a) => norm(attName(a))).filter(Boolean));
   const title = strip(m.title);
 
   return DB.meetings
     .filter((x) => x.id !== m.id && x.startsAt < m.startsAt)
     .map((x) => {
-      const theirs = (x.attendees || []).map(norm).filter(Boolean);
+      const theirs = (x.attendees || []).map((a) => norm(attName(a))).filter(Boolean);
       const shared = theirs.filter((a) => mine.has(a)).length;
       const sameTitle = title && strip(x.title) === title;
       // Titelgelijkenis weegt zwaarder dan een toevallige overlap in mensen.
@@ -3790,6 +3837,40 @@ function relatedMeetings(m, max = 4) {
     .filter((r) => r.score > 0 && (r.sameTitle || r.shared >= 2))
     .sort((a, b) => b.score - a.score || b.x.startsAt.localeCompare(a.x.startsAt))
     .slice(0, max);
+}
+
+/* Wie er bij zit, met adres erbij. Een adres is bruikbaar: je kunt erop
+   klikken om te mailen, en je ziet of iemand van buiten het kantoor komt. */
+function attendeeCard(m) {
+  const list = (m.attendees || []).filter((a) => attName(a) || attEmail(a));
+  if (!list.length) return "";
+
+  const own = String(DB.profile.org || "").toLowerCase();
+  const domain = (a) => (attEmail(a).split("@")[1] || "").toLowerCase();
+  // Eén domein hoort bij jou; de rest is extern, en dat is goed om te zien.
+  const mine = (a) => {
+    const d = domain(a);
+    return d && (d.includes("visser") || (own && d.includes(own.split(/\s+/)[0])));
+  };
+  const extern = list.filter((a) => attEmail(a) && !mine(a)).length;
+
+  return card(tr("dl_attendees"), `<ul class="grid" style="gap:1px">
+    ${list.map((a) => {
+      const naam = attName(a), mail = attEmail(a);
+      return `<li class="row" style="gap:9px;padding:5px 0;align-items:baseline">
+        <span class="att-dot" style="background:${mail && !mine(a) ? "var(--warning)" : "var(--c1)"}"></span>
+        <span style="min-width:0;flex:1">
+          <span class="sm2 trunc" style="display:block">${esc(naam)}</span>
+          ${mail ? `<a class="xs mut" href="mailto:${esc(mail)}" style="word-break:break-all">${esc(mail)}</a>`
+                 : `<span class="xs mut">${esc(tr("m_att_nomail"))}</span>`}
+        </span>
+      </li>`;
+    }).join("")}
+  </ul>`,
+    `${list.length} ${tr("m_attendees")}${extern ? ` · ${tr("m_att_extern", extern)}` : ""}`,
+    list.some(attEmail)
+      ? `<button class="btn sm ghost" data-act="mail-attendees" data-id="${m.id}">
+           ${ico("send", "", 13)} ${esc(tr("m_att_mailall"))}</button>` : "");
 }
 
 function briefingCard(m) {
@@ -4285,7 +4366,7 @@ const meetingBooked = (id) => DB.timeEntries.some((e) => e.meetingId === id);
 /* Longest client name that occurs in the title, location or attendees wins,
    so "Van Dijk Holding" is not beaten by a client called "Dijk". */
 function guessClient(m) {
-  const hay = `${m.title || ""} ${m.location || ""} ${(m.attendees || []).join(" ")}`.toLowerCase();
+  const hay = `${m.title || ""} ${m.location || ""} ${(m.attendees || []).map(attName).join(" ")}`.toLowerCase();
   let best = null;
   DB.clients.forEach((c) => {
     const n = String(c.name || "").trim().toLowerCase();
@@ -6229,7 +6310,7 @@ function meetingDialog(meeting) {
         ${field(tr("dl_location"), `<input class="inp" name="location" value="${esc(m.location)}" placeholder="Teams, room, city">`)}
         ${field(tr("th_project"), `<select class="inp" name="projectId">${projOptions(m.projectId)}</select>`)}
       </div>` +
-      field(tr("dl_attendees"), `<input class="inp" name="attendees" value="${esc(m.attendees.join(", "))}" placeholder="${esc(tr("dl_comma"))}">`) +
+      field(tr("dl_attendees"), `<input class="inp" name="attendees" value="${esc((m.attendees || []).map(attText).join(", "))}" placeholder="${esc(tr("dl_att_ph"))}">`) +
       field(tr("m_link"), `<input class="inp" name="onlineUrl" type="url" value="${esc(m.onlineUrl || "")}"
         placeholder="${esc(tr("m_link_ph"))}">`) +
       field(tr("m_agenda"), `<textarea class="inp" name="agenda" rows="2">${esc(m.agenda)}</textarea>`) +
@@ -6240,7 +6321,7 @@ function meetingDialog(meeting) {
       const patch = { title: f.title.trim(), kind: f.kind, startsAt: f.startsAt, location: f.location,
         projectId: f.projectId || null, agenda: f.agenda, notes: f.notes, decisions: f.decisions,
         onlineUrl: (f.onlineUrl || "").trim(),
-        attendees: f.attendees.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean) };
+        attendees: f.attendees.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean).map(attParse) };
       if (meeting) Object.assign(meeting, patch);
       else { const id = uid(); DB.meetings.unshift({ id, endsAt: "", ...patch }); UI.detail = { type: "meeting", id }; }
       save(); toast(meeting ? tr("dl_meet_updated") : tr("dl_meet_created")); render();
@@ -7604,6 +7685,22 @@ document.addEventListener("click", (e) => {
           p.then(() => toast(tr("m_link_copied"))).catch(() => toast(mt.onlineUrl));
         } else toast(mt.onlineUrl);
       } catch (err) { toast(mt.onlineUrl); }
+      break;
+    }
+    case "mail-attendees": {
+      const mt = DB.meetings.find((x) => x.id === id);
+      if (!mt) break;
+      const adressen = (mt.attendees || []).map(attEmail).filter(Boolean);
+      if (!adressen.length) break;
+      /* Een mailto met het onderwerp erbij opent je mailprogramma met
+         iedereen er al in. Lukt dat niet, dan staan de adressen in elk geval
+         op het klembord. */
+      const href = `mailto:${encodeURIComponent(adressen.join(";"))}?subject=${encodeURIComponent(mt.title || "")}`;
+      try { window.location.href = href; } catch (e) { /* valt terug op kopiëren */ }
+      try {
+        const p = navigator.clipboard && navigator.clipboard.writeText(adressen.join("; "));
+        if (p && typeof p.then === "function") p.then(() => toast(tr("m_att_copied"))).catch(() => {});
+      } catch (e) { /* niets aan te doen */ }
       break;
     }
     case "agenda-pick": void agendaPick(); break;
