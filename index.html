@@ -1009,6 +1009,7 @@ const STR = {
   ag_auto_off:["Leest alleen nog als je erop klikt","Leest alleen nog als je erop klikt"],
   ag_last:["Laatst gelezen: {0}, {1}","Laatst gelezen: {0}, {1}"],
   ag_never:["Nog niet gelezen","Nog niet gelezen"],
+  ag_today_at:["vandaag om {0}","vandaag om {0}"],
   ag_needsclick:["De browser moet opnieuw toestemming vragen — druk op Nu inlezen.",
                  "De browser moet opnieuw toestemming vragen — druk op Nu inlezen."],
   ag_synced:["{0} afspraken toegevoegd uit je agendamap","{0} afspraken toegevoegd uit je agendamap"],
@@ -6923,7 +6924,11 @@ function agendaCard() {
        </p>
        <p class="xs mut" style="margin-top:4px">
          ${s.lastAt
-           ? esc(tr("ag_last", s.lastFile || "—", ago === 0 ? tr("b_today") : ago === 1 ? tr("b_yesterday") : tr("b_days", ago)))
+           /* Met de klok erbij kun je zien of hij bij het openen werkelijk
+              heeft gelezen, in plaats van alleen dat het ooit vandaag was. */
+           ? esc(tr("ag_last", s.lastFile || "—",
+               ago === 0 ? tr("ag_today_at", clock(s.lastAt))
+                         : ago === 1 ? tr("b_yesterday") : tr("b_days", ago)))
            : esc(tr("ag_never"))}
        </p>
        ${needsClick ? `<p class="xs" style="color:var(--warning);margin-top:6px">${esc(tr("ag_needsclick"))}</p>` : ""}
