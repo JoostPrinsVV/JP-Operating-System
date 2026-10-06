@@ -992,6 +992,38 @@ const STR = {
 
   /* ics import */
   m_import:["Import calendar","Agenda importeren"],
+  /* agenda folder */
+  ag_title:["Agendamap","Agendamap"],
+  ag_sub:["Wijs één keer een map aan; daarna leest de app hem zelf uit bij het openen.",
+          "Wijs één keer een map aan; daarna leest de app hem zelf uit bij het openen."],
+  ag_none_d:["Zet met een Power Automate-flow elke avond een .ics-bestand in een map op je OneDrive, wijs die map hier aan, en je afspraken komen vanzelf binnen. Het bestand verlaat je laptop niet.",
+             "Zet met een Power Automate-flow elke avond een .ics-bestand in een map op je OneDrive, wijs die map hier aan, en je afspraken komen vanzelf binnen. Het bestand verlaat je laptop niet."],
+  ag_link:["Map koppelen","Map koppelen"],
+  ag_change:["Andere map","Andere map"],
+  ag_forget:["Ontkoppelen","Ontkoppelen"],
+  ag_forgotten:["Map ontkoppeld","Map ontkoppeld"],
+  ag_readnow:["Nu inlezen","Nu inlezen"],
+  ag_auto:["Bij het openen van de app automatisch inlezen",
+           "Bij het openen van de app automatisch inlezen"],
+  ag_auto_on:["Leest voortaan automatisch in","Leest voortaan automatisch in"],
+  ag_auto_off:["Leest alleen nog als je erop klikt","Leest alleen nog als je erop klikt"],
+  ag_last:["Laatst gelezen: {0}, {1}","Laatst gelezen: {0}, {1}"],
+  ag_never:["Nog niet gelezen","Nog niet gelezen"],
+  ag_needsclick:["De browser moet opnieuw toestemming vragen — druk op Nu inlezen.",
+                 "De browser moet opnieuw toestemming vragen — druk op Nu inlezen."],
+  ag_synced:["{0} afspraken toegevoegd uit je agendamap","{0} afspraken toegevoegd uit je agendamap"],
+  ag_synced_filled:["{0} afspraken toegevoegd, {1} vergaderlinks aangevuld",
+                    "{0} afspraken toegevoegd, {1} vergaderlinks aangevuld"],
+  ag_uptodate:["Niets nieuws — je agenda was al bij","Niets nieuws — je agenda was al bij"],
+  ag_nofile:["Geen .ics-bestand in die map gevonden","Geen .ics-bestand in die map gevonden"],
+  ag_denied:["Zonder toestemming kan ik de map niet lezen","Zonder toestemming kan ik de map niet lezen"],
+  ag_failed:["Inlezen mislukt — staat de map er nog?","Inlezen mislukt — staat de map er nog?"],
+  ag_nostore:["De koppeling is niet bewaard; na herladen moet je de map opnieuw aanwijzen.",
+              "De koppeling is niet bewaard; na herladen moet je de map opnieuw aanwijzen."],
+  ag_unsupported:["Deze browser kan geen map onthouden","Deze browser kan geen map onthouden"],
+  ag_unsupported_d:["Je browser ondersteunt het onthouden van een map niet. Dit werkt in Edge en Chrome op de desktop; in Firefox en Safari kun je het .ics-bestand wel gewoon importeren via de knop hierboven.",
+                    "Je browser ondersteunt het onthouden van een map niet. Dit werkt in Edge en Chrome op de desktop; in Firefox en Safari kun je het .ics-bestand wel gewoon importeren via de knop hierboven."],
+
   m_import_title:["Import from your calendar","Importeren uit je agenda"],
   m_import_d:["Export a date range from Outlook as iCalendar (.ics) and pick the file here. Nothing leaves your browser.",
               "Exporteer in Outlook een periode als iCalendar (.ics) en kies het bestand hier. Er gaat niets je browser uit."],
@@ -1887,6 +1919,7 @@ function seed() {
     clients: [], timeEntries: [], expenses: [],
     folders: [], articles: [], newsRound: {},
     tips: [], tipPlan: { everyWeeks: 1, weekday: 4 },
+    agendaSync: { folder: "", lastAt: "", lastFile: "", auto: true },
     sources: seedSources(),
     planning: seedPlanning(),
     reviews: {},
@@ -2214,6 +2247,9 @@ function migrate() {
   if (!Array.isArray(DB.folders)) { DB.folders = []; changed = true; }
   if (!Array.isArray(DB.articles)) { DB.articles = []; changed = true; }
   if (!Array.isArray(DB.tips)) { DB.tips = []; changed = true; }
+  if (!DB.agendaSync || typeof DB.agendaSync !== "object") {
+    DB.agendaSync = { folder: "", lastAt: "", lastFile: "", auto: true }; changed = true;
+  }
   if (!DB.tipPlan || typeof DB.tipPlan !== "object") { DB.tipPlan = { everyWeeks: 1, weekday: 4 }; changed = true; }
   if (!DB.newsRound || typeof DB.newsRound !== "object") { DB.newsRound = {}; changed = true; }
   else {
@@ -3383,6 +3419,8 @@ function viewMeetings() {
     `${canRescan ? `<button class="btn sm ghost" data-act="rescan-links">${ico("video")} ${esc(tr("m_rescan"))}</button>` : ""}
      <button class="btn sm outline" data-act="ics-open">${ico("meetings")} ${esc(tr("m_import"))}</button>
      <button class="btn sm" data-act="new-meeting">${ico("plus")} ${esc(tr("m_new"))}</button>`) +
+  // The folder sits above the lists: it is where the appointments come from.
+  `<div style="margin-bottom:14px">${agendaCard()}</div>` +
   `<div class="grid split">
     <div class="grid">
       ${card(tr("m_upcoming"),
@@ -6683,14 +6721,15 @@ function paintIcs(message, from, to) {
   if (b) b.onchange = refresh;
 }
 
-function icsImport() {
-  const from = $("#ics-from")?.value, to = $("#ics-to")?.value;
-  if (!from || !to) return;
+/* The one place appointments enter the workspace, used by the import dialog
+   and by the folder sync alike. Returns what it did instead of saying it, so
+   the caller decides whether that is worth a message. */
+function importEvents(events, from, to) {
   const byUid = new Map();
   DB.meetings.forEach((m) => { if (m.outlookUid) byUid.set(m.outlookUid, m); });
   let added = 0, skipped = 0, filled = 0;
 
-  ICS.events.forEach((e) => {
+  events.forEach((e) => {
     if (e.start.day < from || e.start.day > to) return;
 
     const existing = e.uid ? byUid.get(e.uid) : null;
@@ -6708,10 +6747,201 @@ function icsImport() {
     added++;
   });
 
+  if (added || filled) save();
+  return { added, filled, skipped };
+}
+
+function icsImport() {
+  const from = $("#ics-from")?.value, to = $("#ics-to")?.value;
+  if (!from || !to) return;
+  const r = importEvents(ICS.events, from, to);
   save();
   dlg.close();
-  toast(filled ? tr("m_import_filled", added, filled, skipped) : tr("m_import_done", added, skipped));
+  toast(r.filled ? tr("m_import_filled", r.added, r.filled, r.skipped)
+                 : tr("m_import_done", r.added, r.skipped));
   render();
+}
+
+/* ---- agenda folder ------------------------------------------------------
+   A folder you point at once, which the app then re-reads by itself. Put an
+   .ics there from Power Automate and your appointments arrive without you
+   opening a file picker every week.
+
+   The permission is the browser's, not ours: it is granted per folder and the
+   handle is kept in IndexedDB because localStorage can only hold text. As an
+   installed app you can tick "allow on every visit"; in an ordinary tab the
+   browser asks again each session, so there is a button for that too.
+------------------------------------------------------------------------- */
+const FS_OK = typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+const IDB_DB = "joost-os-fs", IDB_STORE = "handles", IDB_KEY = "agendaDir";
+
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(IDB_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbSet(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const t = db.transaction(IDB_STORE, "readwrite");
+    t.objectStore(IDB_STORE).put(val, key);
+    t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const t = db.transaction(IDB_STORE, "readonly");
+    const q = t.objectStore(IDB_STORE).get(key);
+    q.onsuccess = () => res(q.result || null); q.onerror = () => rej(q.error);
+  });
+}
+async function idbDel(key) {
+  const db = await idbOpen();
+  return new Promise((res) => {
+    const t = db.transaction(IDB_STORE, "readwrite");
+    t.objectStore(IDB_STORE).delete(key);
+    t.oncomplete = () => res(); t.onerror = () => res();
+  });
+}
+
+/* Held in memory so the rest of the app can ask about it without awaiting. */
+let AGENDA_DIR = null, AGENDA_PERM = "unknown";
+
+const agendaSync = () => (DB.agendaSync = DB.agendaSync || { folder: "", lastAt: "", lastFile: "", auto: true });
+
+async function agendaLoadHandle() {
+  if (!FS_OK) return null;
+  try { AGENDA_DIR = await idbGet(IDB_KEY); } catch (e) { AGENDA_DIR = null; }
+  if (AGENDA_DIR) {
+    try { AGENDA_PERM = await AGENDA_DIR.queryPermission({ mode: "read" }); }
+    catch (e) { AGENDA_PERM = "prompt"; }
+  }
+  return AGENDA_DIR;
+}
+
+async function agendaPick() {
+  if (!FS_OK) { toast(tr("ag_unsupported")); return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker({ id: "joost-os-agenda", mode: "read" }); }
+  catch (e) { return; }                       // cancelled, which is an answer
+  AGENDA_DIR = dir; AGENDA_PERM = "granted";
+  try { await idbSet(IDB_KEY, dir); } catch (e) { toast(tr("ag_nostore")); }
+  agendaSync().folder = dir.name;
+  save();
+  await agendaRead(true);
+}
+
+async function agendaForget() {
+  AGENDA_DIR = null; AGENDA_PERM = "unknown";
+  try { await idbDel(IDB_KEY); } catch (e) { /* ignore */ }
+  DB.agendaSync = { folder: "", lastAt: "", lastFile: "", auto: true };
+  save(); render(); toast(tr("ag_forgotten"));
+}
+
+/* The newest .ics in the folder wins, so a flow that keeps writing the same
+   name and one that writes agenda-2026-10-06.ics both work. */
+async function agendaNewestFile(dir) {
+  let best = null;
+  for await (const [name, entry] of dir.entries()) {
+    if (entry.kind !== "file" || !/\.ics$/i.test(name)) continue;
+    const file = await entry.getFile();
+    if (!best || file.lastModified > best.lastModified) best = file;
+  }
+  return best;
+}
+
+/* `loud` is for a button press: then even "nothing new" deserves an answer.
+   The automatic run on startup stays quiet unless something actually came in. */
+async function agendaRead(loud) {
+  if (!AGENDA_DIR) return null;
+  try {
+    if (AGENDA_PERM !== "granted") {
+      AGENDA_PERM = await AGENDA_DIR.queryPermission({ mode: "read" });
+      if (AGENDA_PERM !== "granted") {
+        if (!loud) return null;              // asking needs a click, so wait for one
+        AGENDA_PERM = await AGENDA_DIR.requestPermission({ mode: "read" });
+        if (AGENDA_PERM !== "granted") { toast(tr("ag_denied")); return null; }
+      }
+    }
+
+    const file = await agendaNewestFile(AGENDA_DIR);
+    if (!file) { if (loud) toast(tr("ag_nofile")); return null; }
+
+    const text = await file.text();
+    if (!/BEGIN:VCALENDAR/i.test(text)) { if (loud) toast(tr("m_import_bad")); return null; }
+
+    const parsed = parseIcs(text);
+    // A window wide enough for last week's notes and next quarter's planning.
+    const r = importEvents(parsed.events, addDays(-14), addDays(120));
+
+    const s = agendaSync();
+    s.lastAt = new Date().toISOString();
+    s.lastFile = file.name;
+    s.folder = AGENDA_DIR.name;
+    save();
+
+    if (r.added || r.filled) {
+      render();
+      toast(r.filled ? tr("ag_synced_filled", r.added, r.filled) : tr("ag_synced", r.added));
+    } else if (loud) {
+      render(); toast(tr("ag_uptodate"));
+    }
+    return r;
+  } catch (e) {
+    if (loud) toast(tr("ag_failed"));
+    return null;
+  }
+}
+
+/* Runs once at startup. Silent by design: if the browser needs to ask, it
+   waits for you to press the button rather than throwing up a dialog you did
+   not expect. */
+async function agendaAutoSync() {
+  if (!FS_OK) return;
+  await agendaLoadHandle();
+  if (AGENDA_DIR && agendaSync().auto && AGENDA_PERM === "granted") await agendaRead(false);
+  else if (AGENDA_DIR) render();
+}
+
+function agendaCard() {
+  const s = agendaSync();
+  if (!FS_OK) {
+    return card(tr("ag_title"),
+      `<p class="sm2 mut">${esc(tr("ag_unsupported_d"))}</p>`, tr("ag_sub"));
+  }
+  const linked = Boolean(AGENDA_DIR);
+  const needsClick = linked && AGENDA_PERM !== "granted";
+  const ago = s.lastAt ? daysSince(s.lastAt) : null;
+
+  return card(tr("ag_title"), linked
+    ? `<p class="sm2 row" style="gap:7px">
+         ${ico("folder", "", 15)}<span style="font-weight:500">${esc(s.folder || "—")}</span>
+       </p>
+       <p class="xs mut" style="margin-top:4px">
+         ${s.lastAt
+           ? esc(tr("ag_last", s.lastFile || "—", ago === 0 ? tr("b_today") : ago === 1 ? tr("b_yesterday") : tr("b_days", ago)))
+           : esc(tr("ag_never"))}
+       </p>
+       ${needsClick ? `<p class="xs" style="color:var(--warning);margin-top:6px">${esc(tr("ag_needsclick"))}</p>` : ""}
+       <div class="row wrap" style="gap:8px;margin-top:10px">
+         <button class="btn sm${needsClick ? "" : " outline"}" data-act="agenda-read">
+           ${ico("download", "", 13)} ${esc(tr("ag_readnow"))}</button>
+         <button class="btn sm ghost" data-act="agenda-pick">${esc(tr("ag_change"))}</button>
+         <button class="btn sm ghost" data-act="agenda-forget">${esc(tr("ag_forget"))}</button>
+       </div>
+       <label class="row" style="gap:8px;margin-top:10px">
+         <input type="checkbox" data-act="agenda-auto" ${s.auto ? "checked" : ""}
+           style="width:16px;height:16px">
+         <span class="xs mut">${esc(tr("ag_auto"))}</span>
+       </label>`
+    : `<p class="sm2 mut" style="line-height:1.6">${esc(tr("ag_none_d"))}</p>
+       <button class="btn sm" data-act="agenda-pick" style="margin-top:10px">
+         ${ico("folder", "", 13)} ${esc(tr("ag_link"))}</button>`,
+    tr("ag_sub"));
 }
 
 /* ---- backup -------------------------------------------------------------
@@ -7223,6 +7453,14 @@ document.addEventListener("click", (e) => {
       } catch (err) { toast(mt.onlineUrl); }
       break;
     }
+    case "agenda-pick": void agendaPick(); break;
+    case "agenda-read": void agendaRead(true); break;
+    case "agenda-forget": void agendaForget(); break;
+    case "agenda-auto":
+      agendaSync().auto = !agendaSync().auto;
+      save(); render();
+      toast(tr(agendaSync().auto ? "ag_auto_on" : "ag_auto_off"));
+      break;
     case "ics-open": icsDialog(); break;
     case "ics-read": {
       const ta = $("#ics-paste");
@@ -7592,6 +7830,9 @@ $("#scrim").hidden = !UI.railWide;
 load();
 render();
 startTick();
+
+/* Leest de gekoppelde agendamap zodra de app open is. */
+void agendaAutoSync();
 
 /* Installable, and openable without a network. Registered after boot so a
    browser that refuses it (file://, private mode) costs the app nothing. */
