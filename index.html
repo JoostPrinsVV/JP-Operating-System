@@ -984,6 +984,15 @@ const STR = {
   m_nolink_add:["Paste link","Link plakken"],
   m_link_ph:["Paste a Teams, Zoom or Meet link","Plak een Teams-, Zoom- of Meet-link"],
   m_copy_link:["Copy link","Link kopiëren"],
+  m_brief:["Briefing","Briefing"],
+  m_brief_d:["Uit je eigen werkruimte — geen mail, geen chat, niets van buiten.",
+             "Uit je eigen werkruimte — geen mail, geen chat, niets van buiten."],
+  m_brief_prev:["Vorige keer, {0}","Vorige keer, {0}"],
+  m_brief_nodec:["Geen besluiten vastgelegd bij die afspraak.","Geen besluiten vastgelegd bij die afspraak."],
+  m_brief_open:["Nog open uit deze reeks ({0})","Nog open uit deze reeks ({0})"],
+  m_brief_tasks:["Loopt op {0}","Loopt op {0}"],
+  m_brief_more:["Nog {0} eerdere afspraken met dezelfde mensen of titel.",
+                "Nog {0} eerdere afspraken met dezelfde mensen of titel."],
   m_join_app:["Open in de Teams-app","Open in de Teams-app"],
   m_join_web:["In de browser","In de browser"],
   m_join_app_note:["De eerste knop opent de Teams-app rechtstreeks. Gebeurt er niets, dan is Teams niet geïnstalleerd — gebruik dan de tweede.",
@@ -3512,6 +3521,7 @@ function viewMeetingDetail(id) {
     ${m.attendees.length ? `<span class="row" style="gap:5px">${ico("users", "", 13)}${esc(m.attendees.join(", "))}</span>` : ""}</p>` : "") +
   `<div class="grid split">
     <div class="grid">
+      ${briefingCard(m)}
       ${m.agenda ? card(tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
       ${card(tr("m_notes"), m.notes ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.notes)}</p>`
         : `<p class="xs mut">${esc(tr("m_nonotes"))}</p>`)}
@@ -3748,6 +3758,86 @@ function htmlToText(s) {
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/* ---- briefing -----------------------------------------------------------
+   Wat je wilt weten vlak voordat je een vergadering inloopt, staat meestal al
+   in je eigen werkruimte: wat er vorige keer is besloten, wat daarvan nog
+   openstaat, en wat er loopt op het project of de klant. Dit blok zoekt dat
+   bij elkaar - zonder netwerk, zonder taalmodel, zonder rechten.
+------------------------------------------------------------------------- */
+
+/* Twee afspraken horen bij elkaar als ze dezelfde titel dragen of als de
+   deelnemers grotendeels dezelfde zijn. Dat tweede vangt de vergadering die
+   onder een andere naam is ingepland. */
+function relatedMeetings(m, max = 4) {
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const strip = (s) => norm(s).replace(/^(fw|re|fwd|antw)[:\s]+/i, "")
+    .replace(/\s*[-–—]\s*(wekelijks|maandelijks|monthly|weekly).*$/i, "");
+  const mine = new Set((m.attendees || []).map(norm).filter(Boolean));
+  const title = strip(m.title);
+
+  return DB.meetings
+    .filter((x) => x.id !== m.id && x.startsAt < m.startsAt)
+    .map((x) => {
+      const theirs = (x.attendees || []).map(norm).filter(Boolean);
+      const shared = theirs.filter((a) => mine.has(a)).length;
+      const sameTitle = title && strip(x.title) === title;
+      // Titelgelijkenis weegt zwaarder dan een toevallige overlap in mensen.
+      const score = (sameTitle ? 100 : 0) + shared * 10;
+      return { x, score, shared, sameTitle };
+    })
+    .filter((r) => r.score > 0 && (r.sameTitle || r.shared >= 2))
+    .sort((a, b) => b.score - a.score || b.x.startsAt.localeCompare(a.x.startsAt))
+    .slice(0, max);
+}
+
+function briefingCard(m) {
+  const related = relatedMeetings(m);
+  const prev = related[0] ? related[0].x : null;
+
+  // Openstaande actiepunten uit de eerdere afspraken in deze reeks.
+  const ids = new Set([m.id, ...related.map((r) => r.x.id)]);
+  const open = DB.actions.filter((a) => ids.has(a.meetingId) && a.status !== "done")
+    .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+
+  const proj = m.projectId && DB.projects.find((p) => p.id === m.projectId);
+  const tasks = proj
+    ? DB.tasks.filter((t) => t.projectId === proj.id && t.status !== "done")
+        .sort((a, b) => scoreTask(b) - scoreTask(a)).slice(0, 5)
+    : [];
+
+  // Niets te melden is ook een antwoord, maar dan hoeft er geen kaart te staan.
+  if (!prev && !open.length && !tasks.length) return "";
+
+  const line = (label, body) => `<div style="margin-bottom:11px">
+    <p class="lbl" style="margin-bottom:3px">${esc(label)}</p>${body}</div>`;
+
+  return card(tr("m_brief"), `
+    ${prev ? line(tr("m_brief_prev", fmtDate(prev.startsAt.slice(0, 10))),
+      `<button class="tsk-t sm2" data-act="open-meeting" data-id="${prev.id}"
+         style="display:block;font-weight:500">${esc(prev.title)}</button>
+       ${prev.decisions
+         ? `<p class="xs" style="white-space:pre-wrap;line-height:1.55;margin-top:4px">${esc(truncate(prev.decisions, 420))}</p>`
+         : `<p class="xs mut" style="margin-top:3px">${esc(tr("m_brief_nodec"))}</p>`}`) : ""}
+
+    ${open.length ? line(tr("m_brief_open", open.length),
+      `<ul class="grid" style="gap:3px">${open.slice(0, 6).map((a) => {
+        const od = a.due && overdue(a.due);
+        return `<li class="row" style="gap:8px;align-items:baseline">
+          <span class="xs tab" style="width:68px;flex:0 0 auto;${od ? "color:var(--primary);font-weight:500" : "color:var(--ink-2)"}">${a.due ? esc(fmtDate(a.due)) : "—"}</span>
+          <span class="xs" style="flex:1;min-width:0">${esc(a.text)}${a.owner ? ` <span class="mut">· ${esc(a.owner)}</span>` : ""}</span>
+        </li>`;
+      }).join("")}</ul>`) : ""}
+
+    ${tasks.length ? line(tr("m_brief_tasks", proj.name),
+      `<ul class="grid" style="gap:3px">${tasks.map((t) => `<li>
+        <button class="tsk-t xs trunc" data-act="edit-task" data-id="${t.id}" style="display:block">
+          ${esc(t.title)}${t.dueDate ? ` <span class="mut">· ${esc(fmtDate(t.dueDate))}</span>` : ""}</button>
+      </li>`).join("")}</ul>`) : ""}
+
+    ${related.length > 1 ? `<p class="xs mut">${esc(tr("m_brief_more", related.length - 1))}</p>` : ""}`,
+    tr("m_brief_d"));
 }
 
 function icsToMeeting(e) {
@@ -6715,9 +6805,12 @@ function paintIcs(message, from, to) {
   if (!host) return;
   if (message) { host.innerHTML = `<p class="sm2" style="color:var(--warning)">${esc(message)}</p>`; return; }
 
-  const known = new Set(DB.meetings.map((m) => m.outlookUid).filter(Boolean));
+  // Dezelfde sleutel als bij het importeren, anders belooft het voorbeeld
+  // iets anders dan er gebeurt.
+  const known = new Set(DB.meetings.filter((m) => m.outlookUid)
+    .map((m) => meetingKey(m.outlookUid, m.startsAt)));
   const inRange = ICS.events.filter((e) => e.start.day >= from && e.start.day <= to);
-  const fresh = inRange.filter((e) => !e.uid || !known.has(e.uid));
+  const fresh = inRange.filter((e) => !e.uid || !known.has(meetingKey(e.uid, e.start.iso)));
   const dupes = inRange.length - fresh.length;
 
   /* Whether a join link is in the file at all is the one thing that cannot be
