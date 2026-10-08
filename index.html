@@ -1057,7 +1057,11 @@ const STR = {
   rel_ago_min:["{0} min ago","{0} min geleden"], rel_ago_h:["{0}h ago","{0} uur geleden"],
   m_next:["Next up","Eerstvolgende"],
   m_none_upcoming:["Nothing scheduled ahead","Niets gepland"],
+  m_r_today:["Today","Vandaag"],
   m_r_7:["7 days","7 dagen"], m_r_30:["30 days","30 dagen"], m_r_all:["Everything","Alles"],
+  m_none_today:["Nothing left today","Niets meer vandaag"],
+  m_none_today_d:["What was earlier today is in the list below.",
+                  "Wat eerder vandaag was staat in de lijst hieronder."],
   m_week:["Week","Week"],
   m_n_meetings:["{0} appointments","{0} afspraken"], m_n_meeting:["1 appointment","1 afspraak"],
   m_v_list:["List","Lijst"], m_v_week:["Week","Week"],
@@ -3756,7 +3760,9 @@ function meetingGroups(ms, ahead) {
         <span class="xs mut">${g.items.length}</span>
       </div>
       <ul class="grid" style="gap:2px">${g.items.map((m) => {
-        const isNext = Boolean(ahead) && !marked;
+        /* "Eerstvolgende" is voor wat nog moet beginnen. Een afspraak die al
+           loopt draagt zijn eigen "Bezig" en is niet de volgende. */
+        const isNext = Boolean(ahead) && !marked && new Date(m.startsAt).getTime() >= Date.now();
         if (isNext) marked = true;
         return meetingRow(m, isNext);
       }).join("")}</ul>`;
@@ -3954,11 +3960,17 @@ function categoryCard() {
 function viewMeetings() {
   const now = Date.now();
   const sorted = [...DB.meetings].sort((a, b) => b.startsAt.localeCompare(a.startsAt));
-  const upcoming = sorted.filter((m) => new Date(m.startsAt).getTime() >= now).reverse();
-  const past = sorted.filter((m) => new Date(m.startsAt).getTime() < now);
+  /* Een afspraak waar je nu middenin zit hoort bij wat komt, niet bij wat is
+     geweest - hij is nog niet afgelopen. Zonder eindtijd telt de begintijd,
+     net als voorheen. */
+  const looptTot = (m) => new Date(m.endsAt || m.startsAt).getTime();
+  const upcoming = sorted.filter((m) => looptTot(m) >= now).reverse();
+  const past = sorted.filter((m) => looptTot(m) < now);
 
   const mf = UI.meetFilter;
-  const horizon = mf.days ? addDays(mf.days) : null;
+  /* "today" is geen aantal dagen maar de dag zelf: de horizon ligt dan op
+     vanavond, niet op morgen om deze tijd. */
+  const horizon = mf.days === "today" ? TODAY() : (mf.days ? addDays(mf.days) : null);
   const shownUpcoming = horizon
     ? upcoming.filter((m) => String(m.startsAt).slice(0, 10) <= horizon) : upcoming;
   const shownPast = past.slice(0, 30);   // older than that is history, not a list
@@ -4008,9 +4020,11 @@ function viewMeetings() {
   `<div class="grid split">
     <div class="grid">
       ${card(tr("m_upcoming"),
-        shownUpcoming.length ? list(shownUpcoming, true) : empty(tr("m_none_upcoming")),
+        shownUpcoming.length ? list(shownUpcoming, true)
+          : empty(mf.days === "today" ? tr("m_none_today") : tr("m_none_upcoming"),
+                  mf.days === "today" ? tr("m_none_today_d") : ""),
         tr("m_in_range", shownUpcoming.length === 1 ? tr("m_n_meeting") : tr("m_n_meetings", shownUpcoming.length)),
-        `<div class="seg">${[["7", tr("m_r_7")], ["30", tr("m_r_30")], ["0", tr("m_r_all")]]
+        `<div class="seg">${[["today", tr("m_r_today")], ["7", tr("m_r_7")], ["30", tr("m_r_30")], ["0", tr("m_r_all")]]
           .map(([v, l]) => `<button data-act="meet-range" data-v="${v}"
             aria-pressed="${String(mf.days) === v}">${esc(l)}</button>`).join("")}</div>`)}
 
@@ -8494,7 +8508,11 @@ document.addEventListener("click", (e) => {
     case "edit-project": projectDialog(DB.projects.find((x) => x.id === id)); break;
 
     case "new-meeting": meetingDialog(null); break;
-    case "meet-range": UI.meetFilter.days = Number(el.dataset.v); render(); break;
+    case "meet-range": {
+      const v = el.dataset.v;
+      UI.meetFilter.days = v === "today" ? "today" : Number(v);
+      render(); break;
+    }
     case "meet-view": UI.meetView = el.dataset.v; UI.meetWeek = 0; saveUI(); render(); break;
     /* Vanuit de instellingen én vanuit de agenda zelf; in het tweede geval
        springt de weergave meteen naar het weekrooster, anders zie je niets
