@@ -499,6 +499,17 @@ details > summary::-webkit-details-marker{display:none}
   line-clamp:2;overflow:hidden;font-size:13.5px;font-weight:500;line-height:1.35}
 .mtg-right{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end;
   max-width:45%}
+/* Wat vandaag al is geweest blijft staan, maar treedt terug: je wilt de hele
+   dag kunnen zien zonder dat het voorbije om aandacht vraagt. */
+.mtg.past{opacity:.5}
+.mtg.past:hover{opacity:1}
+/* De streep waar je nu bent, tussen de rijen van vandaag. */
+.now-row{display:flex;align-items:center;gap:8px;padding:5px 11px;list-style:none}
+.now-row::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--primary);flex:none}
+.now-row::after{content:"";flex:1;height:0;border-top:2px solid var(--primary);
+  opacity:.55;border-radius:2px}
+.now-t{font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--primary);font-variant-numeric:tabular-nums;white-space:nowrap}
 /* Day heading inside a week block. */
 .dayhead{display:flex;align-items:baseline;gap:8px;padding:10px 11px 4px}
 .dayhead-t{font-size:12px;font-weight:600;letter-spacing:-.005em}
@@ -556,8 +567,10 @@ a.btn{text-decoration:none}
 .cw-ev:hover,.cw-ad:hover{filter:brightness(.95)}
 .cw-ev{position:absolute;min-height:16px}
 .cw-ev.done{opacity:.62}
-.cw-ad{font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis}
+.cw-ad{flex-direction:row;align-items:center;gap:5px;font-size:11px;font-weight:500;
+  line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* De tijd van een afspraak die buiten de getoonde uren valt. */
+.cw-adt{font-size:9.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;flex:none}
 .cw-et{display:block;font-size:9.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;
   line-height:1.3}
 .cw-en{display:block;font-size:11.5px;font-weight:500;line-height:1.3;
@@ -1059,9 +1072,12 @@ const STR = {
   m_none_upcoming:["Nothing scheduled ahead","Niets gepland"],
   m_r_today:["Today","Vandaag"],
   m_r_7:["7 days","7 dagen"], m_r_30:["30 days","30 dagen"], m_r_all:["Everything","Alles"],
-  m_none_today:["Nothing left today","Niets meer vandaag"],
-  m_none_today_d:["What was earlier today is in the list below.",
-                  "Wat eerder vandaag was staat in de lijst hieronder."],
+  m_none_today:["Nothing in your calendar today","Niets in je agenda vandaag"],
+  m_none_today_d:["A clear day — or the import has not run yet.",
+                  "Een vrije dag — of de agenda is nog niet ingelezen."],
+  m_now:["Now","Nu"],
+  m_today_left:["{0} still to come","nog {0} te gaan"],
+  m_past_hide:["Collapse","Dichtklappen"], m_past_show:["Expand","Uitklappen"],
   m_week:["Week","Week"],
   m_n_meetings:["{0} appointments","{0} afspraken"], m_n_meeting:["1 appointment","1 afspraak"],
   m_v_list:["List","Lijst"], m_v_week:["Week","Week"],
@@ -1071,6 +1087,9 @@ const STR = {
   m_wk_empty_d:["Import a period, or add an appointment yourself.",
                 "Lees een periode in, of voeg zelf een afspraak toe."],
   m_wk_allday:["All day","Hele dag"],
+  m_wk_outside:["Outside","Buiten"],
+  m_wk_outside_t:["All day, and what falls outside the hours shown",
+                  "Hele dag, en wat buiten de getoonde uren valt"],
   m_wk_weekend:["Weekend","Weekend"],
   m_wk_of:["{0} appointments this week","{0} afspraken deze week"],
   m_cats:["Categories","Categorieën"],
@@ -1891,6 +1910,8 @@ const ICONS = {
   sparkle: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 3v4M21 5h-4",
   expand: "M13 17l5-5-5-5M6 17l5-5-5-5",
   collapse: "M11 7l-5 5 5 5M18 7l-5 5 5 5",
+  chevdown: "M6 9l6 6 6-6",
+  chevup: "M18 15l-6-6-6 6",
   close: "M18 6 6 18M6 6l12 12",
   play: "M6 4l13 8-13 8z",
   pause: "M8 5h3v14H8zM13 5h3v14h-3z",
@@ -2723,6 +2744,7 @@ const UI = {
   meetFilter: { days: 30 },
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
+  pastOpen: true,        // staat de lijst met wat is geweest open
   hoursFilter: { client: "all", week: null },
   railWide: false,
   calMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -2735,9 +2757,13 @@ try {
   if (s.view) UI.view = s.view;
   if (s.taskView) UI.taskView = s.taskView;
   if (s.meetView) UI.meetView = s.meetView;
+  if (s.pastOpen === false) UI.pastOpen = false;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
-  try { localStorage.setItem(KEY + ":ui", JSON.stringify({ view: UI.view, taskView: UI.taskView, meetView: UI.meetView })); }
+  try {
+    localStorage.setItem(KEY + ":ui", JSON.stringify({
+      view: UI.view, taskView: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen }));
+  }
   catch (e) { /* ignore */ }
 };
 
@@ -3697,9 +3723,9 @@ function dayHeading(day) {
 
 /* One row per meeting; the date lives in the day heading now, so the row
    only carries the time. */
-function meetingRow(m, isNext) {
+function meetingRow(m, isNext, past) {
   const rel = relWhen(m.startsAt, m.endsAt);
-  return `<li><button class="mtg ${rel && rel.urgent ? "soon" : ""} ${isNext ? "next" : ""}"
+  return `<li><button class="mtg ${rel && rel.urgent ? "soon" : ""} ${isNext ? "next" : ""} ${past ? "past" : ""}"
     data-act="open-meeting" data-id="${m.id}" style="grid-template-columns:50px 1fr auto">
     <span class="mtg-when">
       <span class="mtg-time tab">${esc(fmtTime(m.startsAt))}</span>
@@ -3873,15 +3899,22 @@ function weekGrid(monday) {
   const cols = `grid-template-columns:46px repeat(${shown.length},minmax(0,1fr))`;
   const today = TODAY();
 
-  // Het raam van de gekozen weergave, en verder open als er iets buiten valt.
-  let lo = vanaf, hi = tot;
-  shown.forEach((d) => byDay[d].timed.forEach((m) => {
-    lo = Math.min(lo, Math.floor(minsOfIso(m.startsAt) / 60) * 60);
-    hi = Math.max(hi, Math.ceil(evEnd(m) / 60) * 60);
-  }));
-  lo = Math.max(0, lo);
-  hi = Math.min(24 * 60, hi);
-  if (hi <= lo) hi = Math.min(24 * 60, lo + 60);
+  /* Het raam staat vast op wat je hebt gekozen. Een afspraak die er helemaal
+     buiten valt rekt het rooster niet op, maar gaat naar de strook bovenaan
+     die dag - dan blijft een werkweek een werkweek, zonder dat die ene
+     avondsessie je hele raster uitrekt. Een afspraak die er half in valt
+     blijft gewoon in het rooster staan, afgeknipt op de rand; zijn eigen
+     tijden staan in het blok. */
+  const lo = Math.max(0, vanaf), hi = Math.min(24 * 60, tot);
+  let buiten = 0;
+  shown.forEach((d) => {
+    const blijft = [];
+    byDay[d].timed.forEach((m) => {
+      if (evEnd(m) <= lo || minsOfIso(m.startsAt) >= hi) { byDay[d].all.push(m); buiten++; }
+      else blijft.push(m);
+    });
+    byDay[d].timed = blijft;
+  });
   const H = ((hi - lo) / 60) * CW_H;
   const y = (min) => ((min - lo) / 60) * CW_H;
 
@@ -3903,12 +3936,20 @@ function weekGrid(monday) {
     </div>`;
   }).join("")}</div>`;
 
+  /* De strook bovenaan draagt twee dingen: hele-dag-afspraken en wat buiten de
+     gekozen uren valt. Staat er iets van het tweede soort bij, dan zegt het
+     label dat ook - "Hele dag" zou dan niet kloppen. */
   const anyAllDay = shown.some((d) => byDay[d].all.length);
+  const stripLabel = buiten ? tr("m_wk_outside") : tr("m_wk_allday");
   const allDayRow = anyAllDay ? `<div class="cw-allday" style="${cols}">
-    <span class="cw-adl">${esc(tr("m_wk_allday"))}</span>
-    ${shown.map((d) => `<div class="cw-adc">${byDay[d].all.map((m) =>
-      `<button class="cw-ad" data-act="open-meeting" data-id="${m.id}"
-        style="--cw-c:${meetColor(m)}" title="${esc(m.title)}">${esc(m.title)}</button>`).join("")}</div>`).join("")}
+    <span class="cw-adl" title="${esc(buiten ? tr("m_wk_outside_t") : tr("m_wk_allday"))}">${esc(stripLabel)}</span>
+    ${shown.map((d) => `<div class="cw-adc">${byDay[d].all.map((m) => {
+      const heel = isAllDay(m);
+      const tekst = heel ? m.title : `${fmtTime(m.startsAt)} ${m.title}`;
+      return `<button class="cw-ad" data-act="open-meeting" data-id="${m.id}"
+        style="--cw-c:${meetColor(m)}" title="${esc(tekst)}">${heel ? "" :
+          `<span class="cw-adt">${esc(fmtTime(m.startsAt))}</span>`}${esc(m.title)}</button>`;
+    }).join("")}</div>`).join("")}
   </div>` : "";
 
   const body = `<div class="cw-grid" style="${cols}">
@@ -3957,6 +3998,28 @@ function categoryCard() {
       ${ico("plus", "", 13)} ${esc(tr("cat_new"))}</button>`, tr("m_cats_d"));
 }
 
+/* De hele dag van begin tot eind, met een streep op het punt waar je staat.
+   Wat is geweest blijft staan maar treedt terug - je wilt je dagplanning in
+   één blik zien, niet alleen de rest ervan. */
+function dayTimeline(ms) {
+  const nu = Date.now();
+  const marker = `<li class="now-row"><span class="now-t">${esc(tr("m_now"))} ${esc(fmtTime(new Date()))}</span></li>`;
+  let gezet = false, volgende = true;
+  const rijen = ms.map((m) => {
+    const start = new Date(m.startsAt).getTime();
+    const eind = new Date(m.endsAt || m.startsAt).getTime();
+    let voor = "";
+    if (!gezet && start >= nu) { voor = marker; gezet = true; }
+    /* "Eerstvolgende" op de eerste die nog moet beginnen; een afspraak die nu
+       loopt draagt zijn eigen "Bezig". */
+    const isNext = volgende && start >= nu;
+    if (isNext) volgende = false;
+    return voor + meetingRow(m, isNext, eind < nu);
+  }).join("");
+  // Staat alles achter je, dan hoort de streep onderaan.
+  return `<ul class="grid" style="gap:2px">${rijen}${gezet ? "" : marker}</ul>`;
+}
+
 function viewMeetings() {
   const now = Date.now();
   const sorted = [...DB.meetings].sort((a, b) => b.startsAt.localeCompare(a.startsAt));
@@ -3973,7 +4036,17 @@ function viewMeetings() {
   const horizon = mf.days === "today" ? TODAY() : (mf.days ? addDays(mf.days) : null);
   const shownUpcoming = horizon
     ? upcoming.filter((m) => String(m.startsAt).slice(0, 10) <= horizon) : upcoming;
-  const shownPast = past.slice(0, 30);   // older than that is history, not a list
+  /* Bij "Vandaag" laat de bovenste kaart de hele dag zien, van begin tot eind,
+     met een streep waar je staat. Wat vandaag al is geweest hoort dan daar en
+     niet nog een keer in de lijst eronder. */
+  const vandaag = TODAY();
+  const dagLijst = mf.days === "today"
+    ? [...DB.meetings].filter((m) => String(m.startsAt).slice(0, 10) === vandaag)
+        .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)))
+    : null;
+  const dagRest = dagLijst ? dagLijst.filter((m) => looptTot(m) >= now).length : 0;
+  const eerder = dagLijst ? past.filter((m) => String(m.startsAt).slice(0, 10) < vandaag) : past;
+  const shownPast = eerder.slice(0, 30);   // older than that is history, not a list
   const openActions = DB.actions.filter((a) => a.status === "open" || a.status === "in_progress")
     .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
 
@@ -4019,19 +4092,29 @@ function viewMeetings() {
   return head +
   `<div class="grid split">
     <div class="grid">
-      ${card(tr("m_upcoming"),
-        shownUpcoming.length ? list(shownUpcoming, true)
-          : empty(mf.days === "today" ? tr("m_none_today") : tr("m_none_upcoming"),
-                  mf.days === "today" ? tr("m_none_today_d") : ""),
-        tr("m_in_range", shownUpcoming.length === 1 ? tr("m_n_meeting") : tr("m_n_meetings", shownUpcoming.length)),
+      ${card(dagLijst ? tr("today") : tr("m_upcoming"),
+        dagLijst
+          ? (dagLijst.length ? dayTimeline(dagLijst) : empty(tr("m_none_today"), tr("m_none_today_d")))
+          : (shownUpcoming.length ? list(shownUpcoming, true) : empty(tr("m_none_upcoming"))),
+        dagLijst
+          ? `${dagLijst.length === 1 ? tr("m_n_meeting") : tr("m_n_meetings", dagLijst.length)} · ${tr("m_today_left", dagRest)}`
+          : tr("m_in_range", shownUpcoming.length === 1 ? tr("m_n_meeting") : tr("m_n_meetings", shownUpcoming.length)),
         `<div class="seg">${[["today", tr("m_r_today")], ["7", tr("m_r_7")], ["30", tr("m_r_30")], ["0", tr("m_r_all")]]
           .map(([v, l]) => `<button data-act="meet-range" data-v="${v}"
             aria-pressed="${String(mf.days) === v}">${esc(l)}</button>`).join("")}</div>`)}
 
-      ${card(tr("m_past"), past.length ? list(shownPast, false) +
-        (past.length > shownPast.length ? `<p class="xs mut" style="margin-top:10px">
-          ${esc(tr("m_older", past.length - shownPast.length))}</p>` : "")
-        : empty(tr("m_none"), tr("m_none_d")))}
+      ${(() => {
+        /* Het verleden is dicht te klappen: het staat er voor als je iets zoekt,
+           niet om de pagina mee te vullen. De stand blijft bewaard. */
+        const open = UI.pastOpen !== false;
+        const knop = `<button class="btn sm ghost" data-act="toggle-past" aria-expanded="${open}">
+          ${ico(open ? "chevup" : "chevdown", "", 13)} ${esc(open ? tr("m_past_hide") : tr("m_past_show"))}</button>`;
+        const body = !eerder.length ? empty(tr("m_none"), tr("m_none_d"))
+          : !open ? `<p class="xs mut">${esc(eerder.length === 1 ? tr("m_n_meeting") : tr("m_n_meetings", eerder.length))}</p>`
+          : list(shownPast, false) + (eerder.length > shownPast.length
+              ? `<p class="xs mut" style="margin-top:10px">${esc(tr("m_older", eerder.length - shownPast.length))}</p>` : "");
+        return card(tr("m_past"), body, "", eerder.length ? knop : "");
+      })()}
     </div>
     <div class="grid">${card(`Open follow-ups (${openActions.length})`, openActions.length
       ? `<ul class="divide">${openActions.map((a) => {
@@ -8514,6 +8597,7 @@ document.addEventListener("click", (e) => {
       render(); break;
     }
     case "meet-view": UI.meetView = el.dataset.v; UI.meetWeek = 0; saveUI(); render(); break;
+    case "toggle-past": UI.pastOpen = UI.pastOpen === false; saveUI(); render(); break;
     /* Vanuit de instellingen én vanuit de agenda zelf; in het tweede geval
        springt de weergave meteen naar het weekrooster, anders zie je niets
        van je keuze. */
