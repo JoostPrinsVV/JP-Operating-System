@@ -1670,6 +1670,12 @@ const STR = {
   w_articles_h:["The sixteen sources stay either way.","De zestien bronnen blijven sowieso staan."],
 
   /* switching tabs on and off */
+  s_agenda:["Week view","Weekweergave"],
+  s_agenda_d:["How wide the calendar grid stands open: which days, and from what time to what time.",
+              "Hoe ver het weekrooster van de agenda open staat: welke dagen, en van hoe laat tot hoe laat."],
+  s_agenda_5:["Weekdays","Werkdagen"], s_agenda_7:["All days","Alle dagen"],
+  s_agenda_note:["An appointment outside those hours still gets its own row — the grid stretches rather than hide it. A weekend day with something on it is always shown.",
+                 "Een afspraak buiten die tijden krijgt alsnog zijn plek — het rooster rekt op in plaats van hem te verbergen. Een weekenddag waar iets staat wordt altijd getoond."],
   s_tabs:["Tabs","Tabbladen"],
   s_tabs_d:["Switch off what you do not use. Nothing is deleted — switch a tab back on and everything in it is still there.",
             "Zet uit wat je niet gebruikt. Er wordt niets verwijderd — zet een tabblad weer aan en alles staat er nog."],
@@ -2617,6 +2623,9 @@ function migrate() {
   if (DB.profile.freeDay === undefined) { DB.profile.freeDay = null; changed = true; }
   if (DB.profile.studyDay === undefined) { DB.profile.studyDay = null; changed = true; }
   if (!Array.isArray(DB.profile.hiddenViews)) { DB.profile.hiddenViews = []; changed = true; }
+  if (!AGENDA_VIEWS.some(([k]) => k === DB.profile.agendaView)) {
+    DB.profile.agendaView = "default"; changed = true;
+  }
   if (!DB.profile.viewNames || typeof DB.profile.viewNames !== "object") {
     DB.profile.viewNames = {}; changed = true;
   }
@@ -3761,6 +3770,16 @@ function meetingGroups(ms, ahead) {
    gaten zitten - het is precies wat de weekweergave in Outlook je geeft.
 ------------------------------------------------------------------------- */
 const CW_H = 46;                       // hoogte van één uur, in beeldpunten
+/* Hoe ver het rooster open staat. Sleutel, naam, aantal vaste dagkolommen,
+   begin- en eindtijd in minuten. Valt er een afspraak buiten dat raam, dan
+   rekt het alsnog op - liever een uur extra dan een afspraak die je niet ziet. */
+const AGENDA_VIEWS = [
+  ["default",  ["Standard","Standaard"],   5,  7 * 60,      23 * 60],
+  ["workweek", ["Work week","Werkweek"],   5,  8 * 60 + 30, 17 * 60],
+  ["full",     ["Whole week","Hele week"], 7,  6 * 60,      24 * 60],
+];
+const agendaView = () =>
+  AGENDA_VIEWS.find(([k]) => k === (DB.profile || {}).agendaView) || AGENDA_VIEWS[0];
 const minsOfIso = (s) => {
   const [h, m] = String(s).slice(11, 16).split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -3841,27 +3860,32 @@ function weekGrid(monday) {
     if (used) total++;
   });
 
-  /* Zaterdag en zondag doen alleen mee als er iets staat; anders houden de
-     vijf werkdagen de breedte. */
-  const shown = week.filter((d, i) => i < 5 || byDay[d].all.length || byDay[d].timed.length);
+  /* Bij de werkdag-weergaven doen zaterdag en zondag alleen mee als er iets
+     staat; anders houden de vijf werkdagen de breedte. */
+  const [, , vasteDagen, vanaf, tot] = agendaView();
+  const shown = week.filter((d, i) => i < vasteDagen || byDay[d].all.length || byDay[d].timed.length);
   const cols = `grid-template-columns:46px repeat(${shown.length},minmax(0,1fr))`;
   const today = TODAY();
 
-  // De raamhoogte: standaard 08:00-18:00, en verder open als er iets buiten valt.
-  let lo = 8 * 60, hi = 18 * 60;
+  // Het raam van de gekozen weergave, en verder open als er iets buiten valt.
+  let lo = vanaf, hi = tot;
   shown.forEach((d) => byDay[d].timed.forEach((m) => {
-    lo = Math.min(lo, minsOfIso(m.startsAt));
-    hi = Math.max(hi, evEnd(m));
+    lo = Math.min(lo, Math.floor(minsOfIso(m.startsAt) / 60) * 60);
+    hi = Math.max(hi, Math.ceil(evEnd(m) / 60) * 60);
   }));
-  lo = Math.max(0, Math.floor(lo / 60) * 60);
-  hi = Math.min(24 * 60, Math.ceil(hi / 60) * 60);
+  lo = Math.max(0, lo);
+  hi = Math.min(24 * 60, hi);
   if (hi <= lo) hi = Math.min(24 * 60, lo + 60);
   const H = ((hi - lo) / 60) * CW_H;
   const y = (min) => ((min - lo) / 60) * CW_H;
 
+  /* De uurlijnen horen op hele uren te staan, ook als het raam om half negen
+     begint. Het eerste hele uur bepaalt waar het strepenpatroon begint. */
+  const eersteUur = Math.ceil(lo / 60) * 60;
+  const lijnOffset = y(eersteUur);
   const hourLabels = (() => {
     let s = "";
-    for (let t = lo; t < hi; t += 60) s += `<span class="cw-h" style="top:${y(t)}px">${pad2(t / 60)}</span>`;
+    for (let t = eersteUur; t < hi; t += 60) s += `<span class="cw-h" style="top:${y(t)}px">${pad2(t / 60)}</span>`;
     return s;
   })();
 
@@ -3888,7 +3912,8 @@ function weekGrid(monday) {
       const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
       const nowLine = d === today && nowMin >= lo && nowMin <= hi
         ? `<div class="cw-now" style="top:${y(nowMin)}px"></div>` : "";
-      return `<div class="cw-col${wknd ? " wknd" : ""}" style="height:${H}px">${nowLine}${
+      return `<div class="cw-col${wknd ? " wknd" : ""}"
+        style="height:${H}px;background-position:0 ${lijnOffset}px">${nowLine}${
         layoutDay(byDay[d].timed).map(({ m, s, e, lane, lanes }) => {
           const top = Math.max(0, y(Math.max(s, lo)));
           const h = Math.max(15, y(Math.min(e, hi)) - top);
@@ -3966,7 +3991,9 @@ function viewMeetings() {
       grid.total ? grid.html : empty(tr("m_wk_empty"), tr("m_wk_empty_d")),
       `${from.getDate()} ${MONTHS[from.getMonth()].toLowerCase()} – ${end.getDate()} ${MONTHS[end.getMonth()].toLowerCase()} · ${
         grid.total === 1 ? tr("m_n_meeting") : tr("m_wk_of", grid.total)}`,
-      `<div class="row" style="gap:6px">
+      `<div class="row wrap" style="gap:6px">
+         <div class="seg">${AGENDA_VIEWS.map(([k, naam]) => `<button data-act="agenda-view" data-v="${k}"
+           aria-pressed="${agendaView()[0] === k}">${esc(lbl(naam))}</button>`).join("")}</div>
          <button class="btn icon sm outline" data-act="meet-week" data-v="-1"
            aria-label="${esc(tr("m_wk_prev"))}" title="${esc(tr("m_wk_prev"))}">${ico("back", "", 13)}</button>
          <button class="btn sm outline" data-act="meet-week" data-v="0"
@@ -4852,6 +4879,19 @@ function viewSettings() {
           <button class="btn sm" type="submit">${esc(tr("save"))}</button></div>
       </form>`;
     })(), tr("s_pattern_d"))}
+
+    ${card(tr("s_agenda"), `<div class="seg" role="group" aria-label="${esc(tr("s_agenda"))}">
+      ${AGENDA_VIEWS.map(([k, naam]) => `<button type="button" data-act="agenda-view" data-v="${k}"
+        aria-pressed="${agendaView()[0] === k}" style="padding:7px 15px;font-size:13px">${esc(lbl(naam))}</button>`).join("")}
+    </div>
+    <dl class="grid" style="gap:7px;margin-top:13px">
+      ${AGENDA_VIEWS.map(([k, naam, dagen, van, tot]) => `<div class="row" style="gap:9px;align-items:baseline">
+        <dt class="sm2" style="font-weight:${agendaView()[0] === k ? "600" : "400"};min-width:94px">${esc(lbl(naam))}</dt>
+        <dd class="xs mut" style="margin:0">${esc(tr(dagen === 7 ? "s_agenda_7" : "s_agenda_5"))} ·
+          ${pad2(Math.floor(van / 60))}:${pad2(van % 60)}–${pad2(Math.floor(tot / 60) % 24)}:${pad2(tot % 60)}</dd>
+      </div>`).join("")}
+    </dl>
+    <p class="xs mut" style="margin-top:11px">${esc(tr("s_agenda_note"))}</p>`, tr("s_agenda_d"))}
 
     ${card(tr("s_tabs"), `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:2px 16px">
       ${switchableViews().map(([v, l, i]) => {
@@ -8456,6 +8496,14 @@ document.addEventListener("click", (e) => {
     case "new-meeting": meetingDialog(null); break;
     case "meet-range": UI.meetFilter.days = Number(el.dataset.v); render(); break;
     case "meet-view": UI.meetView = el.dataset.v; UI.meetWeek = 0; saveUI(); render(); break;
+    /* Vanuit de instellingen én vanuit de agenda zelf; in het tweede geval
+       springt de weergave meteen naar het weekrooster, anders zie je niets
+       van je keuze. */
+    case "agenda-view": {
+      DB.profile.agendaView = el.dataset.v;
+      if (UI.view === "meetings") { UI.meetView = "week"; saveUI(); }
+      save(); render(); break;
+    }
     /* 0 is "deze week", de pijlen schuiven er één op. */
     case "meet-week": {
       const step = Number(el.dataset.v);
