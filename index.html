@@ -567,7 +567,9 @@ a.btn{text-decoration:none}
 .cw-now::before{content:"";position:absolute;left:-1px;top:-4px;width:7px;height:7px;
   border-radius:50%;background:var(--primary)}
 /* Het vierkantje dat een categorie aanduidt, ook in de lijst en de popup. */
-.cat-dot{display:inline-block;width:9px;height:9px;border-radius:3px;flex:none}
+/* Het randje houdt een lichte kleur als geel zichtbaar op een witte kaart. */
+.cat-dot{display:inline-block;width:9px;height:9px;border-radius:3px;flex:none;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
 .cat-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 7px;
   border:1px solid var(--border);border-radius:999px;background:var(--surface-2);
   font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit}
@@ -2107,24 +2109,57 @@ const PSTATUS = [["concept",["Draft","Concept"],"neutral"],["bevestigd",["Confir
    niet in het bestand. De app kiest er daarom zelf een, met Outlooks eigen
    kleurnamen zodat je ze kunt gelijktrekken met wat je in Outlook ziet.
 ------------------------------------------------------------------------- */
+/* De kleurwaarden zijn die van Outlook zelf, overgenomen uit het venster
+   Kleurcategorieën, zodat een categorie hier dezelfde tint heeft als daar. */
 const CAT_COLORS = [
-  ["blauw",     "#2B74CF"], ["groen",   "#36A05A"], ["oranje",   "#E07B26"],
-  ["paars",     "#7D5BC0"], ["rood",    "#CF3030"], ["geel",     "#D9A400"],
-  ["turquoise", "#19A6A6"], ["olijf",   "#7E8B2E"], ["steenrood","#9B3A2E"],
-  ["staalblauw","#4A6A8A"], ["grijs",   "#78808F"], ["donkerrood","#7A1F1F"],
+  ["rood",        "#C50F1F", ["Red","Rood"]],
+  ["donkerrood",  "#750B1C", ["Dark red","Donkerrood"]],
+  ["oranje",      "#FFAA44", ["Orange","Oranje"]],
+  ["donkeroranje","#DA3B01", ["Dark orange","Donkeroranje"]],
+  ["geel",        "#FDE300", ["Yellow","Geel"]],
+  ["groen",       "#498205", ["Green","Groen"]],
+  ["donkergroen", "#0B6A0B", ["Dark green","Donkergroen"]],
+  ["turkoois",    "#00B7C3", ["Teal","Turkoois"]],
+  ["blauw",       "#0078D4", ["Blue","Blauw"]],
+  ["paars",       "#744DA9", ["Purple","Paars"]],
+  ["lichtpaars",  "#8378DE", ["Light purple","Lichtpaars"]],
+  ["magenta",     "#9B0062", ["Magenta","Magenta"]],
+  ["bruin",       "#8E562E", ["Brown","Bruin"]],
+  ["grijs",       "#767676", ["Grey","Grijs"]],
 ];
-const catColorOf = (naam) => {
-  const map = (DB.catColors = DB.catColors || {});
-  const gekozen = map[naam];
-  const hit = CAT_COLORS.find(([k]) => k === gekozen);
-  if (hit) return hit[1];
-  /* Nog niet toegekend: een vaste kleur op basis van de naam, zodat dezelfde
-     categorie na herladen dezelfde kleur houdt zonder dat er iets opgeslagen
-     hoeft te worden. */
+/* De categorieën zoals ze in Joosts postbus staan, met de kleur die ze daar
+   hebben. Dit is alleen een beginwaarde: kies je in de app iets anders, dan
+   wint dat. Een categorie die hier niet bij staat krijgt een kleur op basis
+   van zijn naam - niet willekeurig, zodat hij na herladen dezelfde blijft. */
+const CAT_PRESET = {
+  "activiteit internationaal": "donkeroranje",
+  "ai (andere disciplines)":   "magenta",
+  "ai-focus":                  "groen",
+  "ai-meetings":               "turkoois",
+  "ai-research":               "bruin",
+  "controles":                 "oranje",
+  "indirect":                  "rood",
+  "interimcontroles":          "geel",
+  "locatie werk":              "blauw",
+  "mentor":                    "paars",
+  "nyenrode":                  "rood",
+  "privé":                     "lichtpaars",
+  "prive":                     "lichtpaars",
+  "reistijd":                  "bruin",
+  "team data":                 "oranje",
+  "verjaardagen":              "paars",
+  "verlof":                    "donkerrood",
+};
+const catKeyOf = (naam) => {
+  const eigen = (DB.catColors || {})[naam];
+  if (CAT_COLORS.some(([k]) => k === eigen)) return eigen;
+  const vast = CAT_PRESET[String(naam).trim().toLowerCase()];
+  if (vast) return vast;
   let som = 0;
   for (let i = 0; i < naam.length; i++) som = (som * 31 + naam.charCodeAt(i)) >>> 0;
-  return CAT_COLORS[som % CAT_COLORS.length][1];
+  return CAT_COLORS[som % CAT_COLORS.length][0];
 };
+const catColorOf = (naam) => (CAT_COLORS.find(([k]) => k === catKeyOf(naam)) || CAT_COLORS[0])[1];
 /* Elke categorie die in je agenda voorkomt, met hoe vaak. */
 function allCategories() {
   const telling = new Map();
@@ -2136,12 +2171,12 @@ function categoryDialog(naam) {
   openDialog({
     title: tr("cat_edit", naam), submit: tr("save"),
     desc: tr("cat_edit_d"),
-    body: `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:4px">
-      ${CAT_COLORS.map(([k, hex]) => `<label class="row" style="gap:8px;padding:5px;cursor:pointer;border-radius:8px">
-        <input type="radio" name="kleur" value="${k}" ${(DB.catColors || {})[naam] === k ? "checked" : ""}
+    body: `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:3px">
+      ${CAT_COLORS.map(([k, hex, naamPaar]) => `<label class="row" style="gap:8px;padding:5px;cursor:pointer;border-radius:8px">
+        <input type="radio" name="kleur" value="${k}" ${catKeyOf(naam) === k ? "checked" : ""}
           style="width:15px;height:15px">
         <span class="cat-dot" style="background:${hex}"></span>
-        <span class="sm2">${esc(k)}</span>
+        <span class="sm2">${esc(lbl(naamPaar))}</span>
       </label>`).join("")}
     </div>`,
     onSubmit: (f) => {
