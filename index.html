@@ -380,6 +380,10 @@ dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
 .flow-w{display:flex;align-items:flex-end;gap:2px;flex:1;height:100%}
 .flow-b{display:block;flex:1;min-height:2px;border-radius:2px 2px 0 0}
 
+/* Stipje voor een mailbericht: ontvangen of verzonden. */
+.ml-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;margin-top:7px;background:var(--c1)}
+.ml-dot.sent{background:var(--c4)}
+
 /* Stipje voor een deelnemer: blauw voor eigen huis, amber voor extern. */
 .att-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;margin-top:5px}
 
@@ -995,6 +999,24 @@ const STR = {
   m_att_ref:["(Naar aanleiding van {0}, {1}.)","(Naar aanleiding van {0}, {1}.)"],
   m_att_copied:["Adressen gekopieerd","Adressen gekopieerd"],
   dl_att_ph:["Naam <adres>, gescheiden door komma's","Naam <adres>, gescheiden door komma's"],
+  /* relevante mail bij een vergadering */
+  ml_title:["Relevante mail","Relevante mail"],
+  ml_sub:["Gezocht in {0} berichten uit je agendamap.","Gezocht in {0} berichten uit je agendamap."],
+  ml_found:["{0} gesprekken gevonden in {1} berichten","{0} gesprekken gevonden in {1} berichten"],
+  ml_none:["Niets gevonden bij deze {0} deelnemers.","Niets gevonden bij deze {0} deelnemers."],
+  ml_nopeople:["Deze afspraak heeft geen deelnemers met een mailadres, dus er valt niets te koppelen.",
+               "Deze afspraak heeft geen deelnemers met een mailadres, dus er valt niets te koppelen."],
+  ml_nosubject:["(geen onderwerp)","(geen onderwerp)"],
+  ml_thread:["{0} berichten","{0} berichten"],
+  ml_attach:["Met bijlage","Met bijlage"],
+  ml_inbox:["Ontvangen","Ontvangen"], ml_sent:["Verzonden","Verzonden"],
+  ml_after:["van ná de afspraak","van ná de afspraak"],
+  ml_why_from:["afzender is {0}","afzender is {0}"],
+  ml_why_to:["{0} staat in de geadresseerden","{0} staat in de geadresseerden"],
+  ml_why_subject:["onderwerp lijkt op de titel","onderwerp lijkt op de titel"],
+  ml_why_other:["deelnemer gevonden","deelnemer gevonden"],
+  ag_mail:["{0} mailberichten gelezen uit {1}","{0} mailberichten gelezen uit {1}"],
+
   m_brief:["Briefing","Briefing"],
   m_brief_d:["Uit je eigen werkruimte — geen mail, geen chat, niets van buiten.",
              "Uit je eigen werkruimte — geen mail, geen chat, niets van buiten."],
@@ -3535,6 +3557,7 @@ function viewMeetingDetail(id) {
   `<div class="grid split">
     <div class="grid">
       ${briefingCard(m)}
+      ${mailCard(m)}
       ${attendeeCard(m)}
       ${m.agenda ? card(tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
       ${card(tr("m_notes"), m.notes ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.notes)}</p>`
@@ -3897,6 +3920,42 @@ function attendeeCard(m) {
     list.some(attEmail)
       ? `<button class="btn sm ghost" data-act="mail-attendees" data-id="${m.id}">
            ${ico("send", "", 13)} ${esc(tr("m_att_mailall"))}</button>` : "");
+}
+
+/* De mail die bij deze vergadering hoort. Elke regel vertelt waaróm hij er
+   staat - zonder die reden kun je niet beoordelen of het klopt, en dat is in
+   deze fase precies wat je moet kunnen. */
+function mailCard(m) {
+  const r = mailFor(m);
+  if (!r) return "";                               // geen mailbestand gelezen
+  if (!r.hits.length) {
+    return card(tr("ml_title"),
+      `<p class="xs mut">${esc(r.people ? tr("ml_none", r.people) : tr("ml_nopeople"))}</p>`,
+      tr("ml_sub", MAIL.messages.length));
+  }
+
+  return card(tr("ml_title"), `<ul class="grid" style="gap:1px">
+    ${r.hits.map(({ msg, reasons, count, after }) => `<li class="src" style="padding:8px 6px">
+      <span class="ml-dot ${msg.folder === "sent" ? "sent" : ""}"
+        title="${esc(msg.folder === "sent" ? tr("ml_sent") : tr("ml_inbox"))}"></span>
+      <div style="min-width:0;flex:1">
+        <p class="row wrap" style="gap:7px;align-items:baseline">
+          ${msg.webLink
+            ? `<a class="src-n" href="${esc(msg.webLink)}" target="_blank" rel="noopener noreferrer">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</a>`
+            : `<span class="src-n">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</span>`}
+          ${count > 1 ? `<span class="badge neutral">${esc(tr("ml_thread", count))}</span>` : ""}
+          ${msg.hasAttachments ? `<span class="mut" title="${esc(tr("ml_attach"))}">${ico("folder", "", 12)}</span>` : ""}
+        </p>
+        <p class="xs mut" style="margin-top:2px">
+          ${esc(msg.from.name || msg.from.email)} · ${esc(fmtDateTime(msg.date))}
+          ${after ? ` · ${esc(tr("ml_after"))}` : ""}
+        </p>
+        ${msg.preview ? `<p class="xs" style="margin-top:3px;line-height:1.5">${esc(truncate(msg.preview, 190))}</p>` : ""}
+        <p class="xs mut" style="margin-top:3px;font-style:italic">${esc(reasons.join(" · ") || tr("ml_why_other"))}</p>
+      </div>
+    </li>`).join("")}
+  </ul>`,
+    tr("ml_found", r.hits.length, MAIL.messages.length));
 }
 
 function briefingCard(m) {
@@ -7077,6 +7136,138 @@ async function idbDel(key) {
 /* Held in memory so the rest of the app can ask about it without awaiting. */
 let AGENDA_DIR = null, AGENDA_PERM = "unknown";
 
+/* ---- mail uit de agendamap ----------------------------------------------
+   Dertig dagen mail als losse voorvertoningen, puur om per vergadering de
+   bijbehorende berichten te kunnen aanwijzen. Dit blijft bewust in het
+   geheugen: het is een paar honderd kilobyte, de opslag van de browser is
+   krap, en mailinhoud hoort niet in je back-up te belanden.
+------------------------------------------------------------------------- */
+let MAIL = null;
+
+/* De connector levert een afzender soms als tekst en soms als blokje met
+   emailAddress erin. Beide vormen komen hier dezelfde kant uit. */
+function addrOf(v) {
+  if (!v) return { name: "", email: "" };
+  if (typeof v === "string") {
+    const p = attParse(v);
+    return { name: p.name, email: String(p.email || "").toLowerCase() };
+  }
+  const ea = v.emailAddress || v;
+  const email = String(ea.address || ea.email || "").toLowerCase().trim();
+  return { name: String(ea.name || "").trim() || nameFromEmail(email), email };
+}
+function addrList(v) {
+  if (!v) return [];
+  const raw = Array.isArray(v) ? v : String(v).split(/[;,]/);
+  return raw.map(addrOf).filter((a) => a.email || a.name);
+}
+
+function normaliseMail(raw) {
+  const msgs = (raw && (raw.messages || raw.berichten)) || [];
+  const me = String((raw && raw.me) || "").toLowerCase();
+  return {
+    generatedAt: (raw && raw.generatedAt) || "",
+    me,
+    messages: msgs.map((m) => {
+      const from = addrOf(m.from !== undefined ? m.from : m.fromAddress);
+      if (!from.name && m.fromName) from.name = String(m.fromName);
+      return {
+        id: m.id || uid(),
+        folder: m.folder || "",
+        date: m.date || m.receivedDateTime || "",
+        from,
+        people: [from, ...addrList(m.to), ...addrList(m.cc)],
+        subject: String(m.subject || ""),
+        preview: htmlToText(String(m.preview || "")).replace(/\s+/g, " ").trim(),
+        thread: m.thread || m.conversationId || "",
+        unread: Boolean(m.unread),
+        hasAttachments: Boolean(m.hasAttachments),
+        webLink: m.webLink || "",
+      };
+    }).filter((m) => m.date && (m.subject || m.preview)),
+  };
+}
+
+/* Woorden die in elk onderwerp staan en dus niets zeggen over het onderwerp. */
+const MAIL_STOP = new Set(("de het een en of van voor naar met op in te aan bij om dat die dit deze " +
+  "re fw fwd antw aw the a an and or of for to in on with re: betreft").split(/\s+/));
+const mailWords = (s) => [...new Set(String(s || "").toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+  .filter((w) => w.length > 2 && !MAIL_STOP.has(w)))];
+
+/* Hoeveel een bericht met deze vergadering te maken heeft. De punten staan
+   bewust in de code en niet in een instelling: ze moeten uit te leggen zijn,
+   en je stelt ze één keer goed in plaats van er aan te blijven draaien. */
+function mailScore(msg, ctx) {
+  const reasons = [];
+  let score = 0;
+
+  if (ctx.people.has(msg.from.email)) {
+    score += 50;
+    reasons.push(tr("ml_why_from", msg.from.name || msg.from.email));
+  }
+  const others = msg.people.filter((p) => p.email && p.email !== msg.from.email &&
+    p.email !== ctx.me && ctx.people.has(p.email));
+  if (others.length) {
+    score += Math.min(60, others.length * 30);
+    if (!reasons.length) reasons.push(tr("ml_why_to", others[0].name || others[0].email));
+  }
+
+  if (ctx.words.length) {
+    const w = mailWords(msg.subject);
+    const shared = w.filter((x) => ctx.words.includes(x)).length;
+    if (shared) {
+      const ratio = shared / Math.max(ctx.words.length, w.length);
+      score += Math.round(ratio * 40);
+      if (ratio >= 0.3) reasons.push(tr("ml_why_subject"));
+    }
+  }
+
+  /* Een venster in plaats van strafpunten. Mail van lang voor of lang na de
+     vergadering is geen context ervoor, hoe goed de afzender ook past; mail
+     van kort erna is juist de opvolging en hoort er wel bij. */
+  const t = Date.parse(msg.date);
+  if (!isNaN(t) && !isNaN(ctx.start)) {
+    const days = (ctx.start - t) / 864e5;
+    if (days > 30 || days < -14) return { score: 0, reasons, after: false };
+    if (days >= 0 && days <= 14) score += 10;
+  }
+  return { score, reasons, after: !isNaN(t) && t > ctx.start };
+}
+
+/* De berichten die bij één vergadering horen, per gesprek samengevouwen. */
+function mailFor(m, max = 8) {
+  if (!MAIL || !MAIL.messages.length) return null;
+  const me = MAIL.me;
+  const people = new Set((m.attendees || []).map(attEmail)
+    .filter(Boolean).map((s) => s.toLowerCase()).filter((e) => e !== me));
+  const ctx = { people, me, words: mailWords(m.title), start: Date.parse(m.startsAt) };
+  if (!people.size && !ctx.words.length) return { hits: [], people: 0 };
+
+  const scored = [];
+  MAIL.messages.forEach((msg) => {
+    const r = mailScore(msg, ctx);
+    if (r.score >= 50) scored.push({ msg, ...r });
+  });
+
+  /* Eén regel per gesprek: het nieuwste bericht met daarbij hoeveel er nog
+     meer in dat gesprek zitten. Anders vult één mailwisseling de hele kaart. */
+  const threads = new Map();
+  scored.sort((a, b) => (b.msg.date || "").localeCompare(a.msg.date || ""));
+  scored.forEach((s) => {
+    const key = s.msg.thread || s.msg.subject.toLowerCase().replace(/^(re|fw|fwd|antw|aw)\s*:\s*/i, "");
+    const seen = threads.get(key);
+    if (!seen) threads.set(key, { ...s, count: 1 });
+    else { seen.count++; if (s.score > seen.score) { seen.score = s.score; seen.reasons = s.reasons; } }
+  });
+
+  return {
+    hits: [...threads.values()].sort((a, b) => b.score - a.score || (b.msg.date || "").localeCompare(a.msg.date || "")).slice(0, max),
+    people: people.size,
+  };
+}
+
 const agendaSync = () => (DB.agendaSync = DB.agendaSync || { folder: "", lastAt: "", lastFile: "", auto: true });
 
 async function agendaLoadHandle() {
@@ -7110,14 +7301,27 @@ async function agendaForget() {
 
 /* The newest .ics in the folder wins, so a flow that keeps writing the same
    name and one that writes agenda-2026-10-06.ics both work. */
-async function agendaNewestFile(dir) {
+async function agendaNewestFile(dir, pattern = /\.ics$/i) {
   let best = null;
   for await (const [name, entry] of dir.entries()) {
-    if (entry.kind !== "file" || !/\.ics$/i.test(name)) continue;
+    if (entry.kind !== "file" || !pattern.test(name)) continue;
     const file = await entry.getFile();
     if (!best || file.lastModified > best.lastModified) best = file;
   }
   return best;
+}
+
+/* Het mailbestand uit dezelfde map. Mislukt dit, dan is dat geen reden om de
+   agenda ook niet te lezen - de twee staan los van elkaar. */
+async function mailRead(dir) {
+  try {
+    const file = await agendaNewestFile(dir, /^mail-.*\.json$/i);
+    if (!file) { MAIL = null; return null; }
+    const raw = JSON.parse(String(await file.text()).replace(/^﻿/, ""));
+    MAIL = normaliseMail(raw);
+    MAIL.file = file.name;
+    return MAIL;
+  } catch (e) { MAIL = null; return null; }
 }
 
 /* `loud` is for a button press: then even "nothing new" deserves an answer.
@@ -7134,8 +7338,11 @@ async function agendaRead(loud) {
       }
     }
 
+    // Mail eerst: dan staat hij klaar zodra de pagina opnieuw tekent.
+    await mailRead(AGENDA_DIR);
+
     const file = await agendaNewestFile(AGENDA_DIR);
-    if (!file) { if (loud) toast(tr("ag_nofile")); return null; }
+    if (!file) { if (loud) { render(); toast(tr("ag_nofile")); } return null; }
 
     const text = await file.text();
     if (!/BEGIN:VCALENDAR/i.test(text)) { if (loud) toast(tr("m_import_bad")); return null; }
@@ -7202,6 +7409,7 @@ function agendaCard() {
                          : ago === 1 ? tr("b_yesterday") : tr("b_days", ago)))
            : esc(tr("ag_never"))}
        </p>
+       ${MAIL ? `<p class="xs mut" style="margin-top:2px">${esc(tr("ag_mail", MAIL.messages.length, MAIL.file || "-"))}</p>` : ""}
        ${needsClick ? `<p class="xs" style="color:var(--warning);margin-top:6px">${esc(tr("ag_needsclick"))}</p>` : ""}
        <div class="row wrap" style="gap:8px;margin-top:10px">
          <button class="btn sm${needsClick ? "" : " outline"}" data-act="agenda-read">
