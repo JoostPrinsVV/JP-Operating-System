@@ -513,6 +513,70 @@ a.btn{text-decoration:none}
   .mtg-right{grid-column:2/-1;justify-content:flex-start}
 }
 
+/* ---- weekrooster in de agenda -------------------------------------------
+   De dagen staan naast elkaar en een afspraak staat op de hoogte van zijn
+   eigen tijd, zoals in Outlook. De uurhoogte komt als --cw-hp mee, zodat de
+   lijnen en de blokken van dezelfde maat uitgaan.
+------------------------------------------------------------------------- */
+/* Op een smal scherm worden de dagkolommen onleesbaar dun. Dan schuift het
+   rooster liever zijwaarts dan dat het zichzelf platdrukt; de drie roosters
+   erin houden dezelfde kolommen, dus ze schuiven als één geheel mee. */
+.cw-wrap{overflow-x:auto;overflow-y:hidden;margin:0 -2px;padding:0 2px}
+.cw{--cw-hp:46px}
+.cw-head,.cw-allday,.cw-grid{display:grid;gap:1px}
+.cw-dh{padding:5px 4px;text-align:center;border-radius:9px 9px 0 0;background:var(--surface-2)}
+.cw-dh.wknd{background:var(--surface-3)}
+.cw-dh.today{background:color-mix(in srgb,var(--primary) 13%,transparent)}
+.cw-dn{display:block;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.cw-dd{display:block;font-size:17px;font-weight:600;letter-spacing:-.035em;line-height:1.15}
+.cw-dh.today .cw-dd,.cw-dh.today .cw-dn{color:var(--primary)}
+.cw-allday{margin-top:1px;background:var(--border)}
+.cw-adl{display:flex;align-items:center;justify-content:flex-end;padding-right:7px;
+  font-size:9.5px;color:var(--ink-2);background:var(--surface-2)}
+.cw-adc{display:grid;gap:2px;padding:2px;min-height:24px;background:var(--surface)}
+.cw-grid{margin-top:1px;background:var(--border);border-radius:0 0 12px 12px;overflow:hidden}
+.cw-hours{position:relative;background:var(--surface-2)}
+/* Het uur staat net onder zijn eigen lijn; boven de lijn zou het eerste label
+   half buiten het rooster vallen. */
+.cw-h{position:absolute;right:7px;font-size:9.5px;color:var(--ink-2);
+  font-variant-numeric:tabular-nums;line-height:1.1;padding-top:2px}
+.cw-col{position:relative;background-color:var(--surface);
+  background-image:linear-gradient(to bottom,var(--border) 1px,transparent 1px);
+  background-size:100% var(--cw-hp)}
+.cw-col.wknd{background-color:var(--surface-2)}
+/* Een afspraak. De categoriekleur zit in --cw-c; zonder categorie is dat de
+   accentkleur, zodat een blok nooit kleurloos is. */
+/* Een knop centreert zijn inhoud vanzelf; in een blok van anderhalf uur komt
+   de tekst dan in het midden te hangen. Vandaar flex, van boven af. */
+.cw-ev,.cw-ad{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;
+  --cw-c:var(--axis);border:0;border-left:3px solid var(--cw-c);
+  background:color-mix(in srgb,var(--cw-c) 15%,var(--surface));
+  color:inherit;font:inherit;text-align:left;cursor:pointer;overflow:hidden;
+  padding:2px 5px;border-radius:6px;transition:filter .14s}
+.cw-ev:hover,.cw-ad:hover{filter:brightness(.95)}
+.cw-ev{position:absolute;min-height:16px}
+.cw-ev.done{opacity:.62}
+.cw-ad{font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.cw-et{display:block;font-size:9.5px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+  line-height:1.3}
+.cw-en{display:block;font-size:11.5px;font-weight:500;line-height:1.3;
+  overflow:hidden;text-overflow:ellipsis}
+/* De lijn van nu, alleen op de dag van vandaag. */
+.cw-now{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--primary);z-index:3}
+.cw-now::before{content:"";position:absolute;left:-1px;top:-4px;width:7px;height:7px;
+  border-radius:50%;background:var(--primary)}
+/* Het vierkantje dat een categorie aanduidt, ook in de lijst en de popup. */
+.cat-dot{display:inline-block;width:9px;height:9px;border-radius:3px;flex:none}
+.cat-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 7px;
+  border:1px solid var(--border);border-radius:999px;background:var(--surface-2);
+  font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit}
+.cat-chip:hover{border-color:var(--ink-2)}
+@media (max-width:760px){
+  .cw-en{font-size:10.5px}
+  .cw-dd{font-size:14px}
+}
+
 /* ---- my planning ------------------------------------------------------- */
 .wk{display:grid;grid-template-columns:78px 1fr auto;gap:12px;align-items:center;
   padding:10px 12px;border-radius:12px;border:1px solid transparent;background:none;
@@ -977,6 +1041,26 @@ const STR = {
   m_r_7:["7 days","7 dagen"], m_r_30:["30 days","30 dagen"], m_r_all:["Everything","Alles"],
   m_week:["Week","Week"],
   m_n_meetings:["{0} appointments","{0} afspraken"], m_n_meeting:["1 appointment","1 afspraak"],
+  m_v_list:["List","Lijst"], m_v_week:["Week","Week"],
+  m_wk_prev:["Previous week","Vorige week"], m_wk_next:["Next week","Volgende week"],
+  m_wk_now:["This week","Deze week"],
+  m_wk_empty:["Nothing in your calendar this week","Niets in je agenda deze week"],
+  m_wk_empty_d:["Import a period, or add an appointment yourself.",
+                "Lees een periode in, of voeg zelf een afspraak toe."],
+  m_wk_allday:["All day","Hele dag"],
+  m_wk_weekend:["Weekend","Weekend"],
+  m_wk_of:["{0} appointments this week","{0} afspraken deze week"],
+  m_cats:["Categories","Categorieën"],
+  m_cats_d:["The colours come from your appointments. Outlook does not send its own colour along, so pick one here per category.",
+            "De kleuren komen uit je afspraken. Outlook stuurt zijn eigen kleur niet mee, dus kies hier per categorie welke je wilt zien."],
+  m_cats_none:["No categories yet","Nog geen categorieën"],
+  m_cats_none_d:["They appear as soon as your calendar brings them along. Add CATEGORIES to the Power Automate flow for that.",
+                 "Die verschijnen zodra je agenda ze meestuurt. Voeg daarvoor CATEGORIES toe aan de Power Automate-stroom."],
+  m_cat_n:["in {0} appointments","in {0} afspraken"], m_cat_1:["in 1 appointment","in 1 afspraak"],
+  cat_edit:["Colour for “{0}”","Kleur voor “{0}”"],
+  cat_edit_d:["Pick the colour you gave this category in Outlook, so both read the same.",
+              "Kies de kleur die je deze categorie in Outlook hebt gegeven, dan lezen ze hetzelfde."],
+  cat_saved:["“{0}” recoloured","“{0}” heeft een nieuwe kleur"],
   m_older:["+{0} older","+{0} ouder"],
   m_free_day:["Nothing on the agenda","Niets in de agenda"],
   m_in_range:["{0} in this period","{0} in deze periode"],
@@ -2018,6 +2102,56 @@ const ENGAGEMENTS = [
 const PSTATUS = [["concept",["Draft","Concept"],"neutral"],["bevestigd",["Confirmed","Bevestigd"],"info"],
   ["loopt",["Running","Loopt"],"warning"],["afgerond",["Finished","Afgerond"],"success"]];
 
+/* ---- categorieën uit je agenda ------------------------------------------
+   Outlook stuurt alleen de namen mee; de kleur hoort bij je postbus en komt
+   niet in het bestand. De app kiest er daarom zelf een, met Outlooks eigen
+   kleurnamen zodat je ze kunt gelijktrekken met wat je in Outlook ziet.
+------------------------------------------------------------------------- */
+const CAT_COLORS = [
+  ["blauw",     "#2B74CF"], ["groen",   "#36A05A"], ["oranje",   "#E07B26"],
+  ["paars",     "#7D5BC0"], ["rood",    "#CF3030"], ["geel",     "#D9A400"],
+  ["turquoise", "#19A6A6"], ["olijf",   "#7E8B2E"], ["steenrood","#9B3A2E"],
+  ["staalblauw","#4A6A8A"], ["grijs",   "#78808F"], ["donkerrood","#7A1F1F"],
+];
+const catColorOf = (naam) => {
+  const map = (DB.catColors = DB.catColors || {});
+  const gekozen = map[naam];
+  const hit = CAT_COLORS.find(([k]) => k === gekozen);
+  if (hit) return hit[1];
+  /* Nog niet toegekend: een vaste kleur op basis van de naam, zodat dezelfde
+     categorie na herladen dezelfde kleur houdt zonder dat er iets opgeslagen
+     hoeft te worden. */
+  let som = 0;
+  for (let i = 0; i < naam.length; i++) som = (som * 31 + naam.charCodeAt(i)) >>> 0;
+  return CAT_COLORS[som % CAT_COLORS.length][1];
+};
+/* Elke categorie die in je agenda voorkomt, met hoe vaak. */
+function allCategories() {
+  const telling = new Map();
+  DB.meetings.forEach((m) => (m.categories || []).forEach((c) => telling.set(c, (telling.get(c) || 0) + 1)));
+  return [...telling.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+function categoryDialog(naam) {
+  openDialog({
+    title: tr("cat_edit", naam), submit: tr("save"),
+    desc: tr("cat_edit_d"),
+    body: `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:4px">
+      ${CAT_COLORS.map(([k, hex]) => `<label class="row" style="gap:8px;padding:5px;cursor:pointer;border-radius:8px">
+        <input type="radio" name="kleur" value="${k}" ${(DB.catColors || {})[naam] === k ? "checked" : ""}
+          style="width:15px;height:15px">
+        <span class="cat-dot" style="background:${hex}"></span>
+        <span class="sm2">${esc(k)}</span>
+      </label>`).join("")}
+    </div>`,
+    onSubmit: (f) => {
+      DB.catColors = DB.catColors || {};
+      if (f.kleur) DB.catColors[naam] = f.kleur; else delete DB.catColors[naam];
+      save(); render(); toast(tr("cat_saved", naam));
+    },
+  });
+}
+
 /* ---- AI tips ------------------------------------------------------------
    A tip is only worth writing if it goes out, so this is a pipeline and not a
    notebook: draft, planned on a date, sent. The rhythm is the point - what
@@ -2407,6 +2541,8 @@ const UI = {
   planFilter: { client: "all", scope: "all", range: "4w", offset: 0 },
   knowFilter: { view: "round", folder: "all", status: "all" },
   meetFilter: { days: 30 },
+  meetView: "list",      // "list" of "week"
+  meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
   hoursFilter: { client: "all", week: null },
   railWide: false,
   calMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -2418,9 +2554,10 @@ try {
   const s = JSON.parse(localStorage.getItem(KEY + ":ui") || "{}");
   if (s.view) UI.view = s.view;
   if (s.taskView) UI.taskView = s.taskView;
+  if (s.meetView) UI.meetView = s.meetView;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
-  try { localStorage.setItem(KEY + ":ui", JSON.stringify({ view: UI.view, taskView: UI.taskView })); }
+  try { localStorage.setItem(KEY + ":ui", JSON.stringify({ view: UI.view, taskView: UI.taskView, meetView: UI.meetView })); }
   catch (e) { /* ignore */ }
 };
 
@@ -3395,6 +3532,8 @@ function meetingRow(m, isNext) {
         ${isNext ? `<span style="color:var(--primary);font-weight:600">${esc(tr("m_next"))}</span>` : ""}
         ${m.location ? `<span>${esc(m.location)}</span>` : ""}
         ${m.attendees.length ? `<span>${m.attendees.length} ${esc(tr("m_attendees"))}</span>` : ""}
+        ${(m.categories || []).map((c) => `<span class="row" style="gap:5px">
+          <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>`).join("")}
         ${m.outlookUid ? `<span>${esc(tr("m_imported_tag"))}</span>` : ""}
       </span>
     </span>
@@ -3449,6 +3588,176 @@ function meetingGroups(ms, ahead) {
   return html;
 }
 
+/* ---- weekrooster --------------------------------------------------------
+   Dezelfde afspraken, maar naast elkaar in plaats van onder elkaar. Een blok
+   staat op de hoogte van zijn eigen tijd, zodat je in één blik ziet waar je
+   gaten zitten - het is precies wat de weekweergave in Outlook je geeft.
+------------------------------------------------------------------------- */
+const CW_H = 46;                       // hoogte van één uur, in beeldpunten
+const minsOfIso = (s) => {
+  const [h, m] = String(s).slice(11, 16).split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+/* Outlook stuurt een hele-dag-afspraak als 00:00 tot 00:00. Oudere afspraken
+   in deze werkruimte hebben nog geen veld ervoor, dus wordt het afgeleid. */
+function isAllDay(m) {
+  if (m.allDay === true) return true;
+  const s = String(m.startsAt).slice(11, 16);
+  return s === "00:00" && (!m.endsAt || String(m.endsAt).slice(11, 16) === "00:00");
+}
+/* Het einde in minuten, binnen de dag zelf. Zonder eindtijd rekenen we een
+   half uur, en nooit minder dan een kwartier, anders valt het blok weg. */
+function evEnd(m) {
+  const s = minsOfIso(m.startsAt);
+  if (!m.endsAt) return s + 30;
+  const laterDay = String(m.endsAt).slice(0, 10) > String(m.startsAt).slice(0, 10);
+  return Math.max(s + 15, laterDay ? 24 * 60 : minsOfIso(m.endsAt));
+}
+/* Alle dagen die een afspraak raakt. Bij een hele-dag-afspraak is het einde
+   in iCal de dag erná, die telt dus niet mee. */
+function meetingDays(m) {
+  const start = String(m.startsAt).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return [];
+  let endDay = m.endsAt ? String(m.endsAt).slice(0, 10) : start;
+  if (endDay > start && String(m.endsAt).slice(11, 16) === "00:00") endDay = addDays(-1, parseD(endDay));
+  if (endDay < start) endDay = start;
+  const out = [];
+  for (let d = start; d <= endDay && out.length < 14; d = addDays(1, parseD(d))) out.push(d);
+  return out;
+}
+const meetColor = (m) => ((m.categories || [])[0] ? catColorOf(m.categories[0]) : "var(--axis)");
+
+/* Afspraken die elkaar overlappen krijgen elk een eigen baan, zodat ze naast
+   elkaar staan in plaats van over elkaar heen. Per tros wordt opnieuw geteld;
+   twee losse overlappingen in één dag maken de rest dus niet smal. */
+function layoutDay(items) {
+  const evs = items.map((m) => ({ m, s: minsOfIso(m.startsAt), e: evEnd(m) }))
+    .sort((a, b) => a.s - b.s || a.e - b.e);
+  const out = [];
+  let cluster = [], clusterEnd = -1;
+  const flush = () => {
+    const lanes = [];
+    cluster.forEach((ev) => {
+      let i = 0;
+      while (lanes[i] !== undefined && lanes[i] > ev.s) i++;
+      lanes[i] = ev.e; ev.lane = i;
+    });
+    cluster.forEach((ev) => { ev.lanes = lanes.length; });
+    out.push(...cluster); cluster = [];
+  };
+  evs.forEach((ev) => {
+    if (cluster.length && ev.s >= clusterEnd) flush();
+    cluster.push(ev); clusterEnd = Math.max(clusterEnd, ev.e);
+  });
+  if (cluster.length) flush();
+  return out;
+}
+
+function weekGrid(monday) {
+  const week = [];
+  for (let i = 0; i < 7; i++) week.push(addDays(i, parseD(monday)));
+  const byDay = {};
+  week.forEach((d) => { byDay[d] = { all: [], timed: [] }; });
+
+  let total = 0;
+  DB.meetings.forEach((m) => {
+    const days = meetingDays(m);
+    if (!days.length) return;
+    let used = false;
+    const put = (d, where) => { if (byDay[d]) { byDay[d][where].push(m); used = true; } };
+    if (isAllDay(m)) days.forEach((d) => put(d, "all"));
+    else {
+      put(days[0], "timed");
+      // Loopt hij door na middernacht, dan staat hij de dagen erna bovenin.
+      days.slice(1).forEach((d) => put(d, "all"));
+    }
+    if (used) total++;
+  });
+
+  /* Zaterdag en zondag doen alleen mee als er iets staat; anders houden de
+     vijf werkdagen de breedte. */
+  const shown = week.filter((d, i) => i < 5 || byDay[d].all.length || byDay[d].timed.length);
+  const cols = `grid-template-columns:46px repeat(${shown.length},minmax(0,1fr))`;
+  const today = TODAY();
+
+  // De raamhoogte: standaard 08:00-18:00, en verder open als er iets buiten valt.
+  let lo = 8 * 60, hi = 18 * 60;
+  shown.forEach((d) => byDay[d].timed.forEach((m) => {
+    lo = Math.min(lo, minsOfIso(m.startsAt));
+    hi = Math.max(hi, evEnd(m));
+  }));
+  lo = Math.max(0, Math.floor(lo / 60) * 60);
+  hi = Math.min(24 * 60, Math.ceil(hi / 60) * 60);
+  if (hi <= lo) hi = Math.min(24 * 60, lo + 60);
+  const H = ((hi - lo) / 60) * CW_H;
+  const y = (min) => ((min - lo) / 60) * CW_H;
+
+  const hourLabels = (() => {
+    let s = "";
+    for (let t = lo; t < hi; t += 60) s += `<span class="cw-h" style="top:${y(t)}px">${pad2(t / 60)}</span>`;
+    return s;
+  })();
+
+  const head = `<div class="cw-head" style="${cols}"><span></span>${shown.map((d) => {
+    const dt = parseD(d), wknd = dt.getDay() === 0 || dt.getDay() === 6;
+    return `<div class="cw-dh${d === today ? " today" : ""}${wknd ? " wknd" : ""}">
+      <span class="cw-dn">${esc(dayName((dt.getDay() + 6) % 7, false))}</span>
+      <span class="cw-dd">${dt.getDate()}</span>
+    </div>`;
+  }).join("")}</div>`;
+
+  const anyAllDay = shown.some((d) => byDay[d].all.length);
+  const allDayRow = anyAllDay ? `<div class="cw-allday" style="${cols}">
+    <span class="cw-adl">${esc(tr("m_wk_allday"))}</span>
+    ${shown.map((d) => `<div class="cw-adc">${byDay[d].all.map((m) =>
+      `<button class="cw-ad" data-act="open-meeting" data-id="${m.id}"
+        style="--cw-c:${meetColor(m)}" title="${esc(m.title)}">${esc(m.title)}</button>`).join("")}</div>`).join("")}
+  </div>` : "";
+
+  const body = `<div class="cw-grid" style="${cols}">
+    <div class="cw-hours" style="height:${H}px">${hourLabels}</div>
+    ${shown.map((d) => {
+      const dt = parseD(d), wknd = dt.getDay() === 0 || dt.getDay() === 6;
+      const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+      const nowLine = d === today && nowMin >= lo && nowMin <= hi
+        ? `<div class="cw-now" style="top:${y(nowMin)}px"></div>` : "";
+      return `<div class="cw-col${wknd ? " wknd" : ""}" style="height:${H}px">${nowLine}${
+        layoutDay(byDay[d].timed).map(({ m, s, e, lane, lanes }) => {
+          const top = Math.max(0, y(Math.max(s, lo)));
+          const h = Math.max(15, y(Math.min(e, hi)) - top);
+          const w = 100 / lanes;
+          return `<button class="cw-ev" data-act="open-meeting" data-id="${m.id}"
+            style="--cw-c:${meetColor(m)};top:${top}px;height:${h}px;
+              left:calc(${lane * w}% + 2px);width:calc(${w}% - 4px)"
+            title="${esc(`${fmtTime(m.startsAt)}${m.endsAt ? `–${fmtTime(m.endsAt)}` : ""} ${m.title}`)}">
+            ${h >= 34 ? `<span class="cw-et">${esc(fmtTime(m.startsAt))}${m.endsAt ? `–${esc(fmtTime(m.endsAt))}` : ""}</span>` : ""}
+            <span class="cw-en">${esc(m.title)}</span>
+          </button>`;
+        }).join("")}</div>`;
+    }).join("")}
+  </div>`;
+
+  return {
+    html: `<div class="cw-wrap"><div class="cw" style="min-width:${46 + shown.length * 86}px">
+      ${head}${allDayRow}${body}</div></div>`,
+    total,
+  };
+}
+
+/* De categorieën die in je agenda voorkomen, met de kleur die de app ze geeft.
+   Je kunt hem hier gelijktrekken met wat je in Outlook ziet. */
+function categoryCard() {
+  const cats = allCategories();
+  if (!cats.length) return "";
+  return card(tr("m_cats"), `<div class="row wrap" style="gap:6px">
+    ${cats.map(([naam, n]) => `<button class="cat-chip" data-act="cat-color" data-v="${esc(naam)}"
+      title="${esc(n === 1 ? tr("m_cat_1") : tr("m_cat_n", n))}">
+      <span class="cat-dot" style="background:${catColorOf(naam)}"></span>${esc(naam)}
+      <span class="xs mut">${n}</span>
+    </button>`).join("")}
+  </div>`, tr("m_cats_d"));
+}
+
 function viewMeetings() {
   const now = Date.now();
   const sorted = [...DB.meetings].sort((a, b) => b.startsAt.localeCompare(a.startsAt));
@@ -3469,12 +3778,38 @@ function viewMeetings() {
      meeting has its link the button is noise. */
   const canRescan = DB.meetings.some((m) => !m.onlineUrl);
 
-  return pageHead(tr("nav_meetings"), tr("m_sub"),
-    `${canRescan ? `<button class="btn sm ghost" data-act="rescan-links">${ico("video")} ${esc(tr("m_rescan"))}</button>` : ""}
+  const head = pageHead(tr("nav_meetings"), tr("m_sub"),
+    `<div class="seg">${[["list", tr("m_v_list")], ["week", tr("m_v_week")]]
+       .map(([v, l]) => `<button data-act="meet-view" data-v="${v}"
+         aria-pressed="${UI.meetView === v}">${esc(l)}</button>`).join("")}</div>
+     ${canRescan ? `<button class="btn sm ghost" data-act="rescan-links">${ico("video")} ${esc(tr("m_rescan"))}</button>` : ""}
      <button class="btn sm outline" data-act="ics-open">${ico("meetings")} ${esc(tr("m_import"))}</button>
      <button class="btn sm" data-act="new-meeting">${ico("plus")} ${esc(tr("m_new"))}</button>`) +
   // The folder sits above the lists: it is where the appointments come from.
-  `<div style="margin-bottom:14px">${agendaCard()}</div>` +
+  `<div style="margin-bottom:14px">${agendaCard()}</div>`;
+
+  if (UI.meetView === "week") {
+    const monday = addDays(UI.meetWeek * 7, parseD(mondayOf()));
+    const end = parseD(addDays(6, parseD(monday)));
+    const from = parseD(monday);
+    const grid = weekGrid(monday);
+    return head + card(
+      `${tr("m_week")} ${isoWeekNo(monday)}`,
+      grid.total ? grid.html : empty(tr("m_wk_empty"), tr("m_wk_empty_d")),
+      `${from.getDate()} ${MONTHS[from.getMonth()].toLowerCase()} – ${end.getDate()} ${MONTHS[end.getMonth()].toLowerCase()} · ${
+        grid.total === 1 ? tr("m_n_meeting") : tr("m_wk_of", grid.total)}`,
+      `<div class="row" style="gap:6px">
+         <button class="btn icon sm outline" data-act="meet-week" data-v="-1"
+           aria-label="${esc(tr("m_wk_prev"))}" title="${esc(tr("m_wk_prev"))}">${ico("back", "", 13)}</button>
+         <button class="btn sm outline" data-act="meet-week" data-v="0"
+           aria-pressed="${UI.meetWeek === 0}">${esc(tr("m_wk_now"))}</button>
+         <button class="btn icon sm outline" data-act="meet-week" data-v="1"
+           aria-label="${esc(tr("m_wk_next"))}" title="${esc(tr("m_wk_next"))}">${ico("arrow", "", 13)}</button>
+       </div>`) +
+      (categoryCard() ? `<div style="margin-top:14px">${categoryCard()}</div>` : "");
+  }
+
+  return head +
   `<div class="grid split">
     <div class="grid">
       ${card(tr("m_upcoming"),
@@ -3489,7 +3824,7 @@ function viewMeetings() {
           ${esc(tr("m_older", past.length - shownPast.length))}</p>` : "")
         : empty(tr("m_none"), tr("m_none_d")))}
     </div>
-    ${card(`Open follow-ups (${openActions.length})`, openActions.length
+    <div class="grid">${card(`Open follow-ups (${openActions.length})`, openActions.length
       ? `<ul class="divide">${openActions.map((a) => {
         const m = DB.meetings.find((x) => x.id === a.meetingId);
         return `<li><button class="tsk-t" data-act="open-meeting" data-id="${a.meetingId}" style="padding:9px 0">
@@ -3497,7 +3832,7 @@ function viewMeetings() {
           <span class="tsk-m">${badge(ASTAT, a.status)}
           ${a.due ? `<span ${overdue(a.due) ? 'style="color:var(--primary);font-weight:500"' : ""}>${esc(fmtDate(a.due))}</span>` : ""}
           ${m ? `<span class="trunc" style="max-width:130px">${esc(m.title)}</span>` : ""}</span></button></li>`;
-      }).join("")}</ul>` : empty(tr("m_nofollow")), tr("m_across"))}
+      }).join("")}</ul>` : empty(tr("m_nofollow")), tr("m_across"))}${categoryCard()}</div>
   </div>`;
 }
 
@@ -3552,8 +3887,12 @@ function viewMeetingDetail(id) {
           style="margin-top:9px">${ico("pencil", "", 13)} ${esc(tr("m_nolink_add"))}</button>
       </div></section>` : "")) +
 
-  (m.location ? `<p class="row wrap xs mut" style="gap:14px;margin-bottom:14px">
-    <span class="row" style="gap:5px">${ico("pin", "", 13)}${esc(m.location)}</span></p>` : "") +
+  (m.location || (m.categories || []).length
+    ? `<p class="row wrap xs mut" style="gap:10px;margin-bottom:14px;align-items:center">
+      ${m.location ? `<span class="row" style="gap:5px;margin-right:4px">${ico("pin", "", 13)}${esc(m.location)}</span>` : ""}
+      ${(m.categories || []).map((c) => `<button class="cat-chip" data-act="cat-color" data-v="${esc(c)}"
+        title="${esc(tr("cat_edit", c))}"><span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</button>`).join("")}
+    </p>` : "") +
   `<div class="grid split">
     <div class="grid">
       ${briefingCard(m)}
@@ -3670,7 +4009,7 @@ function parseIcs(text) {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    if (/^BEGIN:VEVENT$/i.test(line)) { cur = { attendees: [] }; continue; }
+    if (/^BEGIN:VEVENT$/i.test(line)) { cur = { attendees: [], categories: [] }; continue; }
     if (/^END:VEVENT$/i.test(line)) { if (cur) out.push(cur); cur = null; continue; }
     if (!cur) continue;
 
@@ -3693,6 +4032,13 @@ function parseIcs(text) {
       case "DTSTART": cur.start = icsDate(value); break;
       case "DTEND": cur.end = icsDate(value); break;
       case "RRULE": cur.recurring = true; break;
+      case "CATEGORIES":
+        /* Outlook zet hier de namen van je categorieën neer, gescheiden door
+           komma's. De kleur staat er niet in - die hoort bij je postbus, niet
+           bij de afspraak - dus die kiest de app zelf. */
+        icsUnescape(value).split(",").map((s) => s.trim()).filter(Boolean)
+          .forEach((c) => { if (!cur.categories.includes(c)) cur.categories.push(c); });
+        break;
       case "X-MICROSOFT-SKYPETEAMSMEETINGURL":
       case "X-MICROSOFT-ONLINEMEETINGEXTERNALLINK":
       case "X-GOOGLE-CONFERENCE":
@@ -4014,8 +4360,10 @@ function icsToMeeting(e) {
     id: uid(), projectId: null,
     title: e.title, kind: guessKind(e),
     startsAt: e.start.iso, endsAt: e.end ? e.end.iso : "",
+    allDay: e.start.allDay === true,
     location: cleanLocation(e.location),
     attendees: e.attendees.slice(0, 25),
+    categories: (e.categories || []).slice(0, 8),
     agenda: "", decisions: "",
     notes: [desc, e.recurring ? tr("m_rec_note") : ""].filter(Boolean).join("\n\n"),
     onlineUrl: onlineUrl || "",
@@ -7060,6 +7408,9 @@ function importEvents(events, from, to) {
       if ((e.attendees || []).length && !(existing.attendees || []).length) {
         existing.attendees = e.attendees.slice(0, 50); attFilled++; touched = true;
       }
+      if ((e.categories || []).length && !(existing.categories || []).length) {
+        existing.categories = e.categories.slice(0, 8); touched = true;
+      }
       if (!touched) skipped++;
       return;
     }
@@ -7926,6 +8277,14 @@ document.addEventListener("click", (e) => {
 
     case "new-meeting": meetingDialog(null); break;
     case "meet-range": UI.meetFilter.days = Number(el.dataset.v); render(); break;
+    case "meet-view": UI.meetView = el.dataset.v; UI.meetWeek = 0; saveUI(); render(); break;
+    /* 0 is "deze week", de pijlen schuiven er één op. */
+    case "meet-week": {
+      const step = Number(el.dataset.v);
+      UI.meetWeek = step === 0 ? 0 : UI.meetWeek + step;
+      render(); break;
+    }
+    case "cat-color": categoryDialog(el.dataset.v); break;
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
