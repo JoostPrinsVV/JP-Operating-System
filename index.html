@@ -574,6 +574,23 @@ a.btn{text-decoration:none}
   border:1px solid var(--border);border-radius:999px;background:var(--surface-2);
   font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit}
 .cat-chip:hover{border-color:var(--ink-2)}
+/* Aanvinken in het dialoogvenster van een afspraak. Het vakje zelf blijft
+   zichtbaar, zodat het ook zonder :has() duidelijk is wat aan staat. */
+.cat-pick{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 8px;
+  border:1px solid var(--border);border-radius:999px;background:var(--surface);
+  font-size:11.5px;cursor:pointer;transition:border-color .14s,background .14s}
+.cat-pick:hover{border-color:var(--ink-2)}
+.cat-pick input{width:14px;height:14px;margin:0;flex:none;accent-color:var(--cw-c)}
+.cat-pick:has(input:checked){border-color:var(--cw-c);
+  background:color-mix(in srgb,var(--cw-c) 12%,var(--surface));font-weight:500}
+/* Een kleurvakje: je kiest de kleur, niet de naam ervan. */
+.sw{position:relative;display:inline-block;cursor:pointer;line-height:0}
+.sw input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.sw span{display:block;width:28px;height:28px;border-radius:8px;background:var(--c);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.18)}
+.sw input:checked+span{box-shadow:inset 0 0 0 1px rgba(0,0,0,.18),
+  0 0 0 2px var(--surface),0 0 0 4px var(--ink)}
+.sw input:focus-visible+span{outline:2px solid var(--primary);outline-offset:3px}
 @media (max-width:760px){
   .cw-en{font-size:10.5px}
   .cw-dd{font-size:14px}
@@ -1053,16 +1070,27 @@ const STR = {
   m_wk_weekend:["Weekend","Weekend"],
   m_wk_of:["{0} appointments this week","{0} afspraken deze week"],
   m_cats:["Categories","Categorieën"],
-  m_cats_d:["The colours come from your appointments. Outlook does not send its own colour along, so pick one here per category.",
-            "De kleuren komen uit je afspraken. Outlook stuurt zijn eigen kleur niet mee, dus kies hier per categorie welke je wilt zien."],
-  m_cats_none:["No categories yet","Nog geen categorieën"],
-  m_cats_none_d:["They appear as soon as your calendar brings them along. Add CATEGORIES to the Power Automate flow for that.",
-                 "Die verschijnen zodra je agenda ze meestuurt. Voeg daarvoor CATEGORIES toe aan de Power Automate-stroom."],
+  m_cats_d:["Outlook sends the name but not the colour, so each category keeps its own here. Click one to rename or recolour it.",
+            "Outlook stuurt de naam mee maar niet de kleur, dus die houdt elke categorie hier zelf. Klik er een aan om hem te hernoemen of bij te kleuren."],
+  m_cats_none:["No categories","Geen categorieën"],
+  m_cats_none_d:["Add one yourself, or let the calendar bring them along once CATEGORIES is in the flow.",
+                 "Voeg er zelf een toe, of laat de agenda ze meebrengen zodra CATEGORIES in de flow staat."],
   m_cat_n:["in {0} appointments","in {0} afspraken"], m_cat_1:["in 1 appointment","in 1 afspraak"],
-  cat_edit:["Colour for “{0}”","Kleur voor “{0}”"],
-  cat_edit_d:["Pick the colour you gave this category in Outlook, so both read the same.",
-              "Kies de kleur die je deze categorie in Outlook hebt gegeven, dan lezen ze hetzelfde."],
-  cat_saved:["“{0}” recoloured","“{0}” heeft een nieuwe kleur"],
+  cat_edit:["Category “{0}”","Categorie “{0}”"],
+  cat_edit_d:["The name is what Outlook sends along, so keep it spelled the same. The colour is yours: pick the one it has in Outlook and both read alike.",
+              "De naam is wat Outlook meestuurt, dus schrijf hem hetzelfde. De kleur is van jou: kies die van Outlook en ze lezen hetzelfde."],
+  cat_new:["New category","Nieuwe categorie"], cat_add:["Add","Toevoegen"],
+  cat_name:["Name","Naam"],
+  cat_name_ph:["Exactly as it reads in Outlook","Precies zoals hij in Outlook heet"],
+  cat_color:["Colour","Kleur"],
+  cat_saved:["“{0}” saved","“{0}” opgeslagen"],
+  cat_added:["“{0}” added","“{0}” toegevoegd"],
+  cat_deleted:["“{0}” deleted","“{0}” verwijderd"],
+  cat_dup:["“{0}” already exists","“{0}” bestaat al"],
+  cat_del_t:["Delete category","Categorie verwijderen"],
+  cat_none_yet:["No categories yet — add one below the calendar.",
+                "Nog geen categorieën — voeg er een toe onder de agenda."],
+  u_cat:["category","categorie"],
   m_older:["+{0} older","+{0} ouder"],
   m_free_day:["Nothing on the agenda","Niets in de agenda"],
   m_in_range:["{0} in this period","{0} in deze periode"],
@@ -2127,65 +2155,152 @@ const CAT_COLORS = [
   ["bruin",       "#8E562E", ["Brown","Bruin"]],
   ["grijs",       "#767676", ["Grey","Grijs"]],
 ];
-/* De categorieën zoals ze in Joosts postbus staan, met de kleur die ze daar
-   hebben. Dit is alleen een beginwaarde: kies je in de app iets anders, dan
-   wint dat. Een categorie die hier niet bij staat krijgt een kleur op basis
-   van zijn naam - niet willekeurig, zodat hij na herladen dezelfde blijft. */
-const CAT_PRESET = {
-  "activiteit internationaal": "donkeroranje",
-  "ai (andere disciplines)":   "magenta",
-  "ai-focus":                  "groen",
-  "ai-meetings":               "turkoois",
-  "ai-research":               "bruin",
-  "controles":                 "oranje",
-  "indirect":                  "rood",
-  "interimcontroles":          "geel",
-  "locatie werk":              "blauw",
-  "mentor":                    "paars",
-  "nyenrode":                  "rood",
-  "privé":                     "lichtpaars",
-  "prive":                     "lichtpaars",
-  "reistijd":                  "bruin",
-  "team data":                 "oranje",
-  "verjaardagen":              "paars",
-  "verlof":                    "donkerrood",
-};
-const catKeyOf = (naam) => {
-  const eigen = (DB.catColors || {})[naam];
-  if (CAT_COLORS.some(([k]) => k === eigen)) return eigen;
-  const vast = CAT_PRESET[String(naam).trim().toLowerCase()];
-  if (vast) return vast;
+/* De categorieën zelf, met de kleur die ze in de postbus hebben. Dit is de
+   startlijst van een nieuwe werkruimte; daarna is het gewone gegevens die je
+   kunt hernoemen, bijkleuren en aanvullen. Wat uit de agenda binnenkomt en
+   hier nog niet staat, komt er vanzelf bij. */
+const CAT_SEED = [
+  ["Activiteit internationaal", "donkeroranje"],
+  ["AI (andere disciplines)",   "magenta"],
+  ["AI-focus",                  "groen"],
+  ["AI-meetings",               "turkoois"],
+  ["AI-research",               "bruin"],
+  ["Controles",                 "oranje"],
+  ["Indirect",                  "rood"],
+  ["Interimcontroles",          "geel"],
+  ["Locatie werk",              "blauw"],
+  ["Mentor",                    "paars"],
+  ["Nyenrode",                  "rood"],
+  ["Privé",                     "lichtpaars"],
+  ["Reistijd",                  "bruin"],
+  ["Team dAtA",                 "oranje"],
+  ["Verjaardagen",              "paars"],
+  ["Verlof",                    "donkerrood"],
+];
+const seedCategories = () => CAT_SEED.map(([name, color]) => ({ id: uid(), name, color }));
+
+/* Outlook kijkt niet naar hoofdletters of spaties aan de rand, dus hier ook
+   niet: "controles " en "Controles" zijn dezelfde categorie. */
+const catNorm = (s) => String(s ?? "").trim().toLowerCase();
+const catFind = (naam) => (DB.categories || []).find((c) => catNorm(c.name) === catNorm(naam));
+/* Een categorie die nergens is vastgelegd krijgt een kleur op basis van zijn
+   naam. Niet willekeurig: dan blijft hij na herladen dezelfde. */
+const catFallback = (naam) => {
   let som = 0;
-  for (let i = 0; i < naam.length; i++) som = (som * 31 + naam.charCodeAt(i)) >>> 0;
+  const s = String(naam ?? "");
+  for (let i = 0; i < s.length; i++) som = (som * 31 + s.charCodeAt(i)) >>> 0;
   return CAT_COLORS[som % CAT_COLORS.length][0];
 };
+const catKeyOf = (naam) => {
+  const c = catFind(naam);
+  if (c && CAT_COLORS.some(([k]) => k === c.color)) return c.color;
+  return catFallback(naam);
+};
 const catColorOf = (naam) => (CAT_COLORS.find(([k]) => k === catKeyOf(naam)) || CAT_COLORS[0])[1];
-/* Elke categorie die in je agenda voorkomt, met hoe vaak. */
-function allCategories() {
-  const telling = new Map();
-  DB.meetings.forEach((m) => (m.categories || []).forEach((c) => telling.set(c, (telling.get(c) || 0) + 1)));
-  return [...telling.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+const catHex = (key) => (CAT_COLORS.find(([k]) => k === key) || CAT_COLORS[0])[1];
+
+/* Namen die uit de agenda binnenkomen en nog niet in de lijst staan, worden
+   toegevoegd. Zo is een categorie die Outlook stuurt meteen ook een categorie
+   die je zelf aan een afspraak kunt hangen. Geeft terug of er iets bij kwam. */
+function catEnsure(namen) {
+  DB.categories = DB.categories || [];
+  let nieuw = false;
+  (namen || []).forEach((n) => {
+    const naam = String(n ?? "").trim();
+    if (!naam || catFind(naam)) return;
+    DB.categories.push({ id: uid(), name: naam, color: catFallback(naam) });
+    nieuw = true;
+  });
+  return nieuw;
 }
 
-function categoryDialog(naam) {
+/* De lijst zoals hij op het scherm hoort: op naam, met hoe vaak hij in de
+   agenda voorkomt. */
+function allCategories() {
+  const telling = new Map();
+  DB.meetings.forEach((m) => (m.categories || []).forEach((c) => {
+    const k = catNorm(c); telling.set(k, (telling.get(k) || 0) + 1);
+  }));
+  return (DB.categories || []).map((c) => ({ ...c, count: telling.get(catNorm(c.name)) || 0 }))
+    .sort((a, b) => a.name.localeCompare(b.name, "nl"));
+}
+
+/* De kleurkiezer: alleen de vakjes, geen kleurnamen. Welke kleur het is zie
+   je aan het vakje; hoe hij heet doet er niet toe. */
+const colorSwatches = (gekozen) => `<div class="row wrap" style="gap:7px">
+  ${CAT_COLORS.map(([k, hex, naamPaar]) => `<label class="sw" style="--c:${hex}" title="${esc(lbl(naamPaar))}">
+    <input type="radio" name="color" value="${k}" ${gekozen === k ? "checked" : ""}>
+    <span></span></label>`).join("")}
+</div>`;
+
+function categoryDialog(cat) {
+  const c = cat || { name: "", color: "blauw" };
   openDialog({
-    title: tr("cat_edit", naam), submit: tr("save"),
+    title: cat ? tr("cat_edit", cat.name) : tr("cat_new"),
     desc: tr("cat_edit_d"),
-    body: `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:3px">
-      ${CAT_COLORS.map(([k, hex, naamPaar]) => `<label class="row" style="gap:8px;padding:5px;cursor:pointer;border-radius:8px">
-        <input type="radio" name="kleur" value="${k}" ${catKeyOf(naam) === k ? "checked" : ""}
-          style="width:15px;height:15px">
-        <span class="cat-dot" style="background:${hex}"></span>
-        <span class="sm2">${esc(lbl(naamPaar))}</span>
-      </label>`).join("")}
-    </div>`,
+    submit: cat ? tr("dl_save_changes") : tr("cat_add"),
+    delLabel: cat ? tr("cat_del_t") : "",
+    /* Verwijderen haalt hem ook van de afspraken af - anders blijft er een
+       naam staan die nergens meer bij hoort. Komt hij bij de volgende import
+       weer uit Outlook, dan staat hij er gewoon weer. */
+    del: cat ? () => {
+      checkpoint(tr("u_cat"));
+      DB.categories = DB.categories.filter((x) => x.id !== cat.id);
+      DB.meetings.forEach((m) => {
+        if (!(m.categories || []).length) return;
+        m.categories = m.categories.filter((n) => catNorm(n) !== catNorm(cat.name));
+      });
+      save(); render(); toast(tr("cat_deleted", cat.name), true);
+    } : null,
+    body: field(tr("cat_name"), `<input class="inp" name="name" required value="${esc(c.name)}"
+        placeholder="${esc(tr("cat_name_ph"))}">`) +
+      field(tr("cat_color"), colorSwatches(c.color)),
     onSubmit: (f) => {
-      DB.catColors = DB.catColors || {};
-      if (f.kleur) DB.catColors[naam] = f.kleur; else delete DB.catColors[naam];
+      const naam = String(f.name || "").trim();
+      if (!naam) return false;
+      const botsing = catFind(naam);
+      if (botsing && (!cat || botsing.id !== cat.id)) { toast(tr("cat_dup", naam)); return false; }
+      DB.categories = DB.categories || [];
+      if (!cat) {
+        DB.categories.push({ id: uid(), name: naam, color: f.color || "blauw" });
+        save(); render(); toast(tr("cat_added", naam));
+        return;
+      }
+      /* Hernoemen trekt de afspraken mee, anders valt de koppeling stuk en
+         verliest de afspraak zijn kleur. */
+      const oud = cat.name;
+      cat.name = naam; cat.color = f.color || cat.color;
+      if (catNorm(oud) !== catNorm(naam)) {
+        DB.meetings.forEach((m) => {
+          if (!(m.categories || []).length) return;
+          m.categories = m.categories.map((n) => (catNorm(n) === catNorm(oud) ? naam : n));
+        });
+      }
       save(); render(); toast(tr("cat_saved", naam));
     },
   });
 }
+
+/* De keuzelijst in het dialoogvenster van een afspraak. Elk vakje draagt zijn
+   eigen naam, want een formulier houdt bij gelijke namen alleen de laatste
+   over en dan zou je er maar één kunnen aanvinken. */
+function categoryPicker(gekozen) {
+  const namen = (gekozen || []).map(catNorm);
+  // Een categorie die op de afspraak staat maar niet in de lijst: toch tonen.
+  const extra = (gekozen || []).filter((n) => !catFind(n))
+    .map((n) => ({ id: "x" + n, name: n, color: catFallback(n) }));
+  const lijst = [...allCategories(), ...extra];
+  if (!lijst.length) return `<p class="xs mut">${esc(tr("cat_none_yet"))}</p>`;
+  return `<div class="row wrap" style="gap:5px">
+    ${lijst.map((c, i) => `<label class="cat-pick" style="--cw-c:${catHex(c.color)}">
+      <input type="checkbox" name="cat_${i}" value="${esc(c.name)}"
+        ${namen.includes(catNorm(c.name)) ? "checked" : ""}>
+      <span class="cat-dot" style="background:${catHex(c.color)}"></span>${esc(c.name)}
+    </label>`).join("")}
+  </div>`;
+}
+const pickedCategories = (f) => Object.keys(f).filter((k) => /^cat_\d+$/.test(k))
+  .map((k) => String(f[k]).trim()).filter(Boolean);
 
 /* ---- AI tips ------------------------------------------------------------
    A tip is only worth writing if it goes out, so this is a pipeline and not a
@@ -2477,6 +2592,23 @@ function migrate() {
     const keys = Object.keys(DB.newsRound).sort().reverse();
     keys.slice(12).forEach((k) => { delete DB.newsRound[k]; changed = true; });
   }
+  /* De categorieën worden één keer gezaaid met wat er in Outlook staat.
+     Daarna zijn ze van jou: een lege lijst is een keuze, een ontbrekende
+     lijst is een werkruimte van voor deze module. */
+  if (!Array.isArray(DB.categories)) { DB.categories = seedCategories(); changed = true; }
+  /* Een heel korte tussenstand bewaarde de kleuren los van de namen. Die
+     worden hier opgenomen in de lijst zelf. */
+  if (DB.catColors && typeof DB.catColors === "object") {
+    Object.entries(DB.catColors).forEach(([naam, kleur]) => {
+      if (!CAT_COLORS.some(([k]) => k === kleur)) return;
+      const c = catFind(naam);
+      if (c) c.color = kleur;
+      else DB.categories.push({ id: uid(), name: naam, color: kleur });
+    });
+    delete DB.catColors; changed = true;
+  }
+  // Alles wat de agenda ooit aanleverde hoort ook in de lijst te staan.
+  if (catEnsure(DB.meetings.flatMap((m) => m.categories || []))) changed = true;
   if (!Array.isArray(DB.timeEntries)) { DB.timeEntries = []; changed = true; }
   if (DB.timer === undefined) { DB.timer = null; changed = true; }
   if (!Array.isArray(DB.engagements)) { DB.engagements = []; changed = true; }
@@ -3779,18 +3911,19 @@ function weekGrid(monday) {
   };
 }
 
-/* De categorieën die in je agenda voorkomen, met de kleur die de app ze geeft.
-   Je kunt hem hier gelijktrekken met wat je in Outlook ziet. */
+/* De categorieën met hun kleur. Klik er een aan om hem te hernoemen of bij te
+   kleuren; die kleur is meteen de kleur op de rijen en in het weekrooster. */
 function categoryCard() {
   const cats = allCategories();
-  if (!cats.length) return "";
-  return card(tr("m_cats"), `<div class="row wrap" style="gap:6px">
-    ${cats.map(([naam, n]) => `<button class="cat-chip" data-act="cat-color" data-v="${esc(naam)}"
-      title="${esc(n === 1 ? tr("m_cat_1") : tr("m_cat_n", n))}">
-      <span class="cat-dot" style="background:${catColorOf(naam)}"></span>${esc(naam)}
-      <span class="xs mut">${n}</span>
+  return card(tr("m_cats"), (cats.length ? `<div class="row wrap" style="gap:6px">
+    ${cats.map((c) => `<button class="cat-chip" data-act="cat-edit" data-id="${c.id}"
+      title="${esc(c.count === 1 ? tr("m_cat_1") : tr("m_cat_n", c.count))}">
+      <span class="cat-dot" style="background:${catHex(c.color)}"></span>${esc(c.name)}
+      <span class="xs mut">${c.count}</span>
     </button>`).join("")}
-  </div>`, tr("m_cats_d"));
+  </div>` : empty(tr("m_cats_none"), tr("m_cats_none_d"))) +
+    `<button class="btn sm outline" data-act="cat-new" style="margin-top:11px">
+      ${ico("plus", "", 13)} ${esc(tr("cat_new"))}</button>`, tr("m_cats_d"));
 }
 
 function viewMeetings() {
@@ -3925,8 +4058,12 @@ function viewMeetingDetail(id) {
   (m.location || (m.categories || []).length
     ? `<p class="row wrap xs mut" style="gap:10px;margin-bottom:14px;align-items:center">
       ${m.location ? `<span class="row" style="gap:5px;margin-right:4px">${ico("pin", "", 13)}${esc(m.location)}</span>` : ""}
-      ${(m.categories || []).map((c) => `<button class="cat-chip" data-act="cat-color" data-v="${esc(c)}"
-        title="${esc(tr("cat_edit", c))}"><span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</button>`).join("")}
+      ${(m.categories || []).map((c) => {
+        const bekend = catFind(c);
+        return `<button class="cat-chip" data-act="${bekend ? "cat-edit" : "edit-meeting"}"
+          data-id="${bekend ? bekend.id : m.id}" title="${esc(tr("cat_edit", c))}">
+          <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</button>`;
+      }).join("")}
     </p>` : "") +
   `<div class="grid split">
     <div class="grid">
@@ -6778,6 +6915,7 @@ function meetingDialog(meeting) {
         ${field(tr("dl_location"), `<input class="inp" name="location" value="${esc(m.location)}" placeholder="Teams, room, city">`)}
         ${field(tr("th_project"), `<select class="inp" name="projectId">${projOptions(m.projectId)}</select>`)}
       </div>` +
+      field(tr("m_cats"), categoryPicker(m.categories || [])) +
       field(tr("dl_attendees"), `<input class="inp" name="attendees" value="${esc((m.attendees || []).map(attText).join(", "))}" placeholder="${esc(tr("dl_att_ph"))}">`) +
       field(tr("m_link"), `<input class="inp" name="onlineUrl" type="url" value="${esc(m.onlineUrl || "")}"
         placeholder="${esc(tr("m_link_ph"))}">`) +
@@ -6786,9 +6924,11 @@ function meetingDialog(meeting) {
       field(tr("m_decisions"), `<textarea class="inp" name="decisions" rows="3" placeholder="${esc(tr("dl_dec_ph"))}">${esc(m.decisions)}</textarea>`),
     onSubmit: (f) => {
       if (!f.title.trim()) return false;
+      const cats = pickedCategories(f);
+      catEnsure(cats);
       const patch = { title: f.title.trim(), kind: f.kind, startsAt: f.startsAt, location: f.location,
         projectId: f.projectId || null, agenda: f.agenda, notes: f.notes, decisions: f.decisions,
-        onlineUrl: (f.onlineUrl || "").trim(),
+        onlineUrl: (f.onlineUrl || "").trim(), categories: cats.slice(0, 8),
         attendees: f.attendees.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean).map(attParse) };
       if (meeting) Object.assign(meeting, patch);
       else { const id = uid(); DB.meetings.unshift({ id, endsAt: "", ...patch }); UI.detail = { type: "meeting", id }; }
@@ -7456,7 +7596,10 @@ function importEvents(events, from, to) {
     added++;
   });
 
-  if (added || filled || attFilled) save();
+  /* Een categorie die uit Outlook komt en hier nog niet bestond, wordt er een
+     - dan kun je hem meteen ook zelf aan een afspraak hangen. */
+  const nieuweCats = catEnsure(events.flatMap((e) => e.categories || []));
+  if (added || filled || attFilled || nieuweCats) save();
   // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
   // zoeken in de app als het eigenlijk aan de flow ligt.
   return { added, filled, attFilled, skipped, withAtt };
@@ -8319,7 +8462,8 @@ document.addEventListener("click", (e) => {
       UI.meetWeek = step === 0 ? 0 : UI.meetWeek + step;
       render(); break;
     }
-    case "cat-color": categoryDialog(el.dataset.v); break;
+    case "cat-edit": categoryDialog((DB.categories || []).find((c) => c.id === id)); break;
+    case "cat-new": categoryDialog(null); break;
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
