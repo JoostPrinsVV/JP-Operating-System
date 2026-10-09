@@ -327,6 +327,10 @@ th button{background:none;border:0;cursor:pointer;color:inherit;font:inherit;dis
 
 dialog{border:0;padding:0;border-radius:14px;background:var(--surface);color:var(--ink);
   box-shadow:var(--shadow-lg);width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 64px)}
+dialog.wide{width:min(760px,calc(100vw - 32px))}
+/* In een venster staan de kaarten tegen elkaar aan; daar hoort geen tweede
+   rand omheen, de kaart zelf is al een vlak. */
+dialog.wide .card{box-shadow:none}
 dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
 .dlg-h{padding:16px 52px 10px 16px;border-bottom:1px solid var(--border);position:relative}
 .dlg-t{font-size:15px;font-weight:600;letter-spacing:-.01em}
@@ -575,7 +579,11 @@ a.btn{text-decoration:none}
   color:inherit;font:inherit;text-align:left;cursor:pointer;overflow:hidden;
   padding:2px 5px;border-radius:6px;transition:filter .14s}
 .cw-ev:hover,.cw-ad:hover{filter:brightness(.95)}
-.cw-ev{position:absolute;min-height:16px}
+.cw-ev{position:absolute;min-height:16px;cursor:grab}
+.cw-ev:active{cursor:grabbing}
+/* Tijdens het slepen zweeft het blok boven de rest. */
+.cw-ev.dragging{z-index:5;cursor:grabbing;opacity:.9;box-shadow:var(--shadow-lg);
+  transition:none;filter:none}
 .cw-ev.done{opacity:.62}
 .cw-ad{flex-direction:row;align-items:center;gap:5px;font-size:11px;font-weight:500;
   line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1097,6 +1105,9 @@ const STR = {
   m_wk_empty_d:["Import a period, or add an appointment yourself.",
                 "Lees een periode in, of voeg zelf een afspraak toe."],
   m_wk_allday:["All day","Hele dag"],
+  m_open_full:["Hele pagina openen","Hele pagina openen"],
+  m_act_open:["{0} nog open","{0} nog open"], m_act_open_1:["1 nog open","1 nog open"],
+  m_drag_moved:["“{0}” verplaatst","“{0}” verplaatst"],
   m_wk_outside:["Outside","Buiten"],
   m_wk_outside_t:["All day, and what falls outside the hours shown",
                   "Hele dag, en wat buiten de getoonde uren valt"],
@@ -2652,6 +2663,9 @@ function migrate() {
   }
   // Alles wat de agenda ooit aanleverde hoort ook in de lijst te staan.
   if (catEnsure(DB.meetings.flatMap((m) => m.categories || []))) changed = true;
+  /* Hele-dag-afspraken die als 01:00 of 02:00 zijn binnengekomen worden
+     alsnog rechtgezet; dat scheelt opnieuw inlezen. */
+  DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
   if (!Array.isArray(DB.timeEntries)) { DB.timeEntries = []; changed = true; }
   if (DB.timer === undefined) { DB.timer = null; changed = true; }
   if (!Array.isArray(DB.engagements)) { DB.engagements = []; changed = true; }
@@ -3738,7 +3752,7 @@ function dayHeading(day) {
 function meetingRow(m, isNext, past) {
   const rel = relWhen(m.startsAt, m.endsAt);
   return `<li><button class="mtg ${rel && rel.urgent ? "soon" : ""} ${isNext ? "next" : ""} ${past ? "past" : ""}"
-    data-act="open-meeting" data-id="${m.id}" style="grid-template-columns:50px 1fr auto">
+    data-act="peek-meeting" data-id="${m.id}" style="grid-template-columns:50px 1fr auto">
     <span class="mtg-when">
       <span class="mtg-time tab">${esc(fmtTime(m.startsAt))}</span>
       ${m.endsAt ? `<span class="mtg-date">${esc(fmtTime(m.endsAt))}</span>` : ""}
@@ -3828,6 +3842,29 @@ const minsOfIso = (s) => {
   const [h, m] = String(s).slice(11, 16).split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
 };
+/* De stroom zet achter elke tijd een Z, alsof het UTC is. Bij een gewone
+   afspraak klopt dat; bij een hele-dag-afspraak niet, want die begint om
+   middernacht in jouw eigen tijdzone. Zo'n afspraak komt daardoor binnen als
+   02:00 tot 02:00 in de zomer en 01:00 tot 01:00 in de winter.
+
+   Te herkennen is hij wel: hij begint precies op UTC-middernacht en eindigt
+   daar ook, of heeft helemaal geen eindtijd. Een echte afspraak van nul
+   minuten op dat ene moment bestaat niet in een werkagenda. */
+function normaliseAllDay(m) {
+  if (m.allDay) return false;
+  const opMiddernacht = (iso) => {
+    const d = new Date(iso);
+    return !isNaN(d) && d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0;
+  };
+  if (!opMiddernacht(m.startsAt)) return false;
+  if (m.endsAt && !opMiddernacht(m.endsAt)) return false;
+  const dag = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T00:00`; };
+  m.allDay = true;
+  m.startsAt = dag(m.startsAt);
+  m.endsAt = m.endsAt ? dag(m.endsAt) : "";
+  return true;
+}
+
 /* Outlook stuurt een hele-dag-afspraak als 00:00 tot 00:00. Oudere afspraken
    in deze werkruimte hebben nog geen veld ervoor, dus wordt het afgeleid. */
 function isAllDay(m) {
@@ -3958,26 +3995,27 @@ function weekGrid(monday) {
     ${shown.map((d) => `<div class="cw-adc">${byDay[d].all.map((m) => {
       const heel = isAllDay(m);
       const tekst = heel ? m.title : `${fmtTime(m.startsAt)} ${m.title}`;
-      return `<button class="cw-ad" data-act="open-meeting" data-id="${m.id}"
+      return `<button class="cw-ad" data-act="peek-meeting" data-id="${m.id}"
         style="--cw-c:${meetColor(m)}" title="${esc(tekst)}">${heel ? "" :
           `<span class="cw-adt">${esc(fmtTime(m.startsAt))}</span>`}${esc(m.title)}</button>`;
     }).join("")}</div>`).join("")}
   </div>` : "";
 
-  const body = `<div class="cw-grid" style="${cols}">
+  const body = `<div class="cw-grid" style="${cols}" data-lo="${lo}" data-hi="${hi}">
     <div class="cw-hours" style="height:${H}px">${hourLabels}</div>
     ${shown.map((d) => {
       const dt = parseD(d), wknd = dt.getDay() === 0 || dt.getDay() === 6;
       const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
       const nowLine = d === today && nowMin >= lo && nowMin <= hi
         ? `<div class="cw-now" style="top:${y(nowMin)}px"></div>` : "";
-      return `<div class="cw-col${wknd ? " wknd" : ""}"
+      return `<div class="cw-col${wknd ? " wknd" : ""}" data-day="${d}"
         style="height:${H}px;background-position:0 ${lijnOffset}px">${nowLine}${
         layoutDay(byDay[d].timed).map(({ m, s, e, lane, lanes }) => {
           const top = Math.max(0, y(Math.max(s, lo)));
           const h = Math.max(15, y(Math.min(e, hi)) - top);
           const w = 100 / lanes;
-          return `<button class="cw-ev" data-act="open-meeting" data-id="${m.id}"
+          return `<button class="cw-ev" data-act="peek-meeting" data-id="${m.id}"
+            data-s="${s}" data-dur="${Math.max(15, e - s)}"
             style="--cw-c:${meetColor(m)};top:${top}px;height:${h}px;
               left:calc(${lane * w}% + 2px);width:calc(${w}% - 4px)"
             title="${esc(`${fmtTime(m.startsAt)}${m.endsAt ? `–${fmtTime(m.endsAt)}` : ""} ${m.title}`)}">
@@ -3994,6 +4032,90 @@ function weekGrid(monday) {
     total,
   };
 }
+
+/* ---- een blok verslepen -------------------------------------------------
+   Ingedrukt houden en bewegen verzet een afspraak naar een andere dag of een
+   ander tijdstip. Niet de bovenkant van het blok wordt gevolgd maar de
+   verplaatsing zelf, zodat een blok dat aan de rand van het raster is
+   afgeknipt toch goed landt. Kwartieren, want een agenda die op de minuut
+   springt is onbruikbaar.
+------------------------------------------------------------------------- */
+const CW_SNAP = 15;
+let CW_DRAG = null;
+let CW_MOVED_AT = 0;          // onderdrukt de klik die na het slepen komt
+
+function cwDragStart(e) {
+  // Alleen muis en pen: op een aanraakscherm is vasthouden-en-bewegen scrollen.
+  if (e.pointerType === "touch" || e.button !== 0) return;
+  const el = e.target.closest(".cw-ev");
+  if (!el) return;
+  const grid = el.closest(".cw-grid");
+  const m = DB.meetings.find((x) => x.id === el.dataset.id);
+  if (!grid || !m) return;
+  CW_DRAG = {
+    el, grid, id: m.id,
+    x0: e.clientX, y0: e.clientY,
+    start: Number(el.dataset.s), dur: Number(el.dataset.dur),
+    dag: el.parentElement.dataset.day,
+    bewogen: false,
+  };
+  try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+}
+
+function cwDragMove(e) {
+  const d = CW_DRAG;
+  if (!d) return;
+  const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+  if (!d.bewogen) {
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;   // dit was een klik
+    d.bewogen = true;
+    d.el.classList.add("dragging");
+  }
+  d.el.style.transform = `translate(${dx}px, ${dy}px)`;
+}
+
+function cwDragEnd(e) {
+  const d = CW_DRAG;
+  CW_DRAG = null;
+  if (!d) return;
+  d.el.classList.remove("dragging");
+  d.el.style.transform = "";
+  if (!d.bewogen) return;                                // gewoon een klik
+  CW_MOVED_AT = Date.now();
+
+  const m = DB.meetings.find((x) => x.id === d.id);
+  if (!m) return;
+
+  // Welke dagkolom ligt er onder de muis? Buiten het rooster blijft de dag staan.
+  const kolommen = [...d.grid.querySelectorAll(".cw-col")];
+  const raak = kolommen.find((c) => {
+    const r = c.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right;
+  });
+  const dag = raak ? raak.dataset.day : d.dag;
+
+  const dy = e.clientY - d.y0;
+  const verschoven = Math.round((dy / CW_H * 60) / CW_SNAP) * CW_SNAP;
+  let begin = d.start + verschoven;
+  begin = Math.max(0, Math.min(24 * 60 - d.dur, begin));
+  if (dag === d.dag && begin === d.start) return;        // niets veranderd
+
+  const klok = (min) => `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`;
+  checkpoint(tr("u_meeting"));
+  m.startsAt = `${dag}T${klok(begin)}`;
+  m.endsAt = `${dag}T${klok(begin + d.dur)}`;
+  m.allDay = false;
+  save(); render();
+  toast(tr("m_drag_moved", truncate(m.title, 40)), true);
+}
+
+document.addEventListener("pointerdown", cwDragStart);
+document.addEventListener("pointermove", cwDragMove);
+document.addEventListener("pointerup", cwDragEnd);
+document.addEventListener("pointercancel", () => {
+  if (CW_DRAG) { CW_DRAG.el.classList.remove("dragging"); CW_DRAG.el.style.transform = ""; }
+  CW_DRAG = null;
+});
 
 /* De categorieën met hun kleur. Klik er een aan om hem te hernoemen of bij te
    kleuren; die kleur is meteen de kleur op de rijen en in het weekrooster. */
@@ -6927,11 +7049,13 @@ const dlg = $("#dlg");
 let onSubmitFn = null, onDeleteFn = null;
 
 function openDialog({ title, desc = "", body, submit = "Save", del = null, onSubmit,
-                     danger = false, delLabel = "" }) {
+                     danger = false, delLabel = "", wide = false, cancelLabel = "" }) {
   onSubmitFn = onSubmit; onDeleteFn = del;
   // showModal() throws if the dialog is already open, e.g. opening a task
   // straight from the search panel.
   if (dlg.open) dlg.close();
+  // Een venster dat een hele pagina samenvat heeft meer breedte nodig.
+  dlg.classList.toggle("wide", Boolean(wide));
   dlg.innerHTML = `<form id="dlg-form" method="dialog">
     <div class="dlg-h"><h2 class="dlg-t">${esc(title)}</h2>
       ${desc ? `<p class="card-d">${esc(desc)}</p>` : ""}
@@ -6940,7 +7064,7 @@ function openDialog({ title, desc = "", body, submit = "Save", del = null, onSub
     <div class="dlg-b">${body}</div>
     <div class="dlg-f">
       ${del ? `<button type="button" class="btn danger" id="dlg-del" style="margin-right:auto">${ico("trash", "", 13)} ${esc(tr("delete_"))}</button>` : ""}
-      <button type="button" class="btn outline" id="dlg-cancel">${esc(tr("cancel"))}</button>
+      <button type="button" class="btn outline" id="dlg-cancel">${esc(cancelLabel || tr("cancel"))}</button>
       <button type="submit" class="btn${danger ? " danger" : ""}">${esc(submit)}</button>
     </div></form>`;
   dlg.showModal();
@@ -7112,6 +7236,54 @@ function meetingDialog(meeting) {
       else { const id = uid(); DB.meetings.unshift({ id, endsAt: "", ...patch }); UI.detail = { type: "meeting", id }; }
       save(); toast(meeting ? tr("dl_meet_updated") : tr("dl_meet_created")); render();
     },
+  });
+}
+
+/* Een afspraak aanklikken in de agenda hoort je niet uit de agenda weg te
+   halen. Dit venster toont hetzelfde als de detailpagina - deelnemers,
+   relevante mail, notities, actiepunten - maar je klikt het weg en je staat
+   nog waar je was. Wil je er echt in werken, dan is de hele pagina één klik. */
+function meetingPeek(id) {
+  const m = DB.meetings.find((x) => x.id === id);
+  if (!m) { toast(tr("not_found")); return; }
+  const acts = DB.actions.filter((a) => a.meetingId === id);
+  const open = acts.filter((a) => a.status !== "done" && a.status !== "cancelled").length;
+  const heel = isAllDay(m);
+  const app = m.onlineUrl ? appJoinUrl(m.onlineUrl) : null;
+
+  openDialog({
+    title: m.title,
+    desc: heel ? `${fmtDate(String(m.startsAt).slice(0, 10))} · ${tr("m_wk_allday")}`
+               : `${fmtDate(String(m.startsAt).slice(0, 10))} · ${fmtTime(m.startsAt)}${m.endsAt ? `–${fmtTime(m.endsAt)}` : ""}`,
+    submit: tr("m_open_full"),
+    cancelLabel: tr("close"),
+    wide: true,
+    body:
+      `<div class="row wrap" style="gap:8px">
+        <button class="btn sm outline" data-act="edit-meeting" data-id="${m.id}">${ico("pencil", "", 13)} ${esc(tr("edit"))}</button>
+        ${meetingBooked(m.id)
+          ? `<span class="badge success">${ico("check", "", 11)} ${esc(tr("h_book_done"))}</span>`
+          : `<button class="btn sm outline" data-act="book-meeting" data-id="${m.id}">${ico("timer", "", 13)} ${esc(tr("h_book"))}</button>`}
+        ${m.onlineUrl ? `${app ? `<a class="btn sm" href="${esc(app)}">${ico("video", "", 13)} ${esc(tr("m_join_app"))}</a>` : ""}
+          <a class="btn sm outline" href="${esc(m.onlineUrl)}" target="_blank" rel="noopener noreferrer">
+            ${app ? "" : ico("video", "", 13) + " "}${esc(app ? tr("m_join_web") : tr("m_join"))}</a>` : ""}
+      </div>` +
+      ((m.location || (m.categories || []).length) ? `<p class="row wrap xs mut" style="gap:10px;align-items:center">
+        ${m.location ? `<span class="row" style="gap:5px">${ico("pin", "", 13)}${esc(m.location)}</span>` : ""}
+        ${(m.categories || []).map((c) => `<span class="cat-chip" style="cursor:default">
+          <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>`).join("")}
+      </p>` : "") +
+      attendeeCard(m) + mailCard(m) +
+      (m.agenda ? card(tr("m_agenda"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : "") +
+      (m.notes ? card(tr("m_notes"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(truncate(m.notes, 900))}</p>`) : "") +
+      (m.decisions ? card(tr("m_decisions"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`) : "") +
+      (acts.length
+        ? card(tr("m_actions"), `<ul class="divide">${acts.map((a) => `<li class="row" style="gap:9px;padding:7px 0;align-items:flex-start">
+            <span class="sm2" style="flex:1;${a.status === "done" ? "color:var(--ink-2);text-decoration:line-through" : ""}">${esc(a.text)}</span>
+            ${badge(ASTAT, a.status)}</li>`).join("")}</ul>`,
+          open === 1 ? tr("m_act_open_1") : tr("m_act_open", open))
+        : `<p class="xs mut">${esc(tr("m_noact"))}</p>`),
+    onSubmit: () => { open_("meeting", m.id); },
   });
 }
 
@@ -7769,6 +7941,7 @@ function importEvents(events, from, to) {
     }
 
     const m = icsToMeeting(e);
+    normaliseAllDay(m);
     DB.meetings.push(m);
     if (e.uid) byUid.set(e.uid, m);
     added++;
@@ -8586,6 +8759,9 @@ document.addEventListener("click", (e) => {
 
   const el = e.target.closest("[data-act]");
   if (!el) return;
+  /* Na het verslepen van een blok komt er nog een klik achteraan. Die hoort
+     niet het venster van die afspraak te openen. */
+  if (Date.now() - CW_MOVED_AT < 350 && el.classList.contains("cw-ev")) return;
   const { act, id } = el.dataset;
   const task = () => DB.tasks.find((x) => x.id === id);
 
@@ -8637,6 +8813,7 @@ document.addEventListener("click", (e) => {
     case "open-goal": open_("goal", id); break;
     case "open-project": open_("project", id); break;
     case "open-meeting": open_("meeting", id); break;
+    case "peek-meeting": meetingPeek(id); break;
 
     case "new-project": projectDialog(null); break;
     case "edit-project": projectDialog(DB.projects.find((x) => x.id === id)); break;
