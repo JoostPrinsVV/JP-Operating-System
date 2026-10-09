@@ -4826,7 +4826,13 @@ function briefSplit(tekst) {
       uit[huidig] = (kop[2] || "").trim();
       return;
     }
-    if (huidig && regel.trim()) uit[huidig] = `${uit[huidig]}\n${regel.trim()}`.trim();
+    /* De omzetter van HTML naar tekst breekt lange regels hard af. Een
+       vervolgregel hoort dus bij de vorige alinea en krijgt een spatie; een
+       opsommingsregel blijft wel op zijn eigen regel staan. */
+    if (huidig && regel.trim()) {
+      const lijm = /^\s*[-*•]/.test(regel) ? "\n" : " ";
+      uit[huidig] = `${uit[huidig]}${uit[huidig] ? lijm : ""}${regel.trim()}`.trim();
+    }
   });
   // Staat er helemaal geen kopje in, dan is de hele tekst de voorbereiding.
   if (!Object.keys(uit).length && String(tekst || "").trim()) uit.voorber = String(tekst).trim();
@@ -4841,17 +4847,50 @@ function briefSplit(tekst) {
 
 const briefNorm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
+/* De kopregel van een stuk: datum, tijd en titel, gevolgd door de rest.
+
+   Het parsen gebeurt hier en niet in de flow, omdat de omzetter van HTML naar
+   tekst lange regels afbreekt: een titel staat zomaar over drie regels. Die
+   worden weer aan elkaar geplakt tot de eerste lege regel of het eerste kopje,
+   wat er ook als eerste komt. */
+function briefHeader(tekst) {
+  const regels = String(tekst || "").replace(/\r/g, "").split("\n");
+  const kop = /^\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}):(\d{2})\s*(.*)$/.exec(regels[0] || "");
+  if (!kop) return null;
+  const titel = kop[4].trim() ? [kop[4].trim()] : [];
+  let i = 1;
+  while (i < regels.length) {
+    const r = regels[i].trim();
+    if (!r) { i++; break; }                                   // lege regel sluit de kop
+    if (/^[A-Za-zÀ-ÿ ]{3,20}\s*:/.test(r)) break;             // een kopje begint
+    titel.push(r); i++;
+  }
+  return {
+    day: kop[1],
+    time: `${pad2(Number(kop[2]))}:${kop[3]}`,
+    title: titel.join(" ").replace(/\s+/g, " ").trim(),
+    rest: regels.slice(i).join("\n").trim(),
+  };
+}
+
 function normaliseBrief(raw) {
   const items = (raw && (raw.items || raw.briefings)) || [];
   return {
     generatedAt: (raw && raw.generatedAt) || "",
-    items: items.map((i) => ({
-      day: String(i.day || "").slice(0, 10),
-      time: String(i.time || "").slice(0, 5),
-      title: String(i.title || "").trim(),
-      secties: briefSplit(i.text || i.body || ""),
-      text: String(i.text || i.body || "").trim(),
-    })).filter((i) => /^\d{4}-\d{2}-\d{2}$/.test(i.day) && (i.text || i.title)),
+    items: items.map((i) => {
+      /* De flow mag dag, tijd en titel los meesturen, maar hoeft het niet: uit
+         de tekst zelf vallen ze ook te halen, en dat is betrouwbaarder. */
+      const ruw = String(i.text || i.body || "");
+      const h = briefHeader(ruw);
+      const body = h ? h.rest : ruw;
+      return {
+        day: String(i.day || (h && h.day) || "").slice(0, 10),
+        time: String(i.time || (h && h.time) || "").slice(0, 5),
+        title: String(i.title || (h && h.title) || "").trim(),
+        secties: briefSplit(body),
+        text: body.trim(),
+      };
+    }).filter((i) => /^\d{4}-\d{2}-\d{2}$/.test(i.day) && (i.text || i.title)),
   };
 }
 
