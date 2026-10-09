@@ -7264,7 +7264,8 @@ function confirmDialog({ title, desc = "", submit, onYes, note = "" }) {
 
 function taskDialog(task, defaults = {}) {
   const t = task || {
-    title: "", notes: "", status: defaults.status || "inbox", priority: "medium", energy: "shallow",
+    // Een voorgestelde taak komt met zijn tekst al ingevuld binnen.
+    title: defaults.title || "", notes: "", status: defaults.status || "inbox", priority: "medium", energy: "shallow",
     dueDate: "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "", waitingOn: "",
   };
   openDialog({
