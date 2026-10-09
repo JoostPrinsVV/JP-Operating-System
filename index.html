@@ -816,6 +816,13 @@ const STR = {
   tr_card_open:["Bekijk het verslag","Bekijk het verslag"],
   tr_card_n:["{0} acties","{0} acties"], tr_card_1:["1 actie","1 actie"],
   tr_card_open_n:["{0} nog open","{0} nog open"],
+  tr_who:["Voor wie is deze actie?","Voor wie is deze actie?"],
+  tr_who_d:["Copilot leidt dit af uit de transcriptie en zit er weleens naast. Laat het veld leeg als de actie voor jou is.",
+            "Copilot leidt dit af uit de transcriptie en zit er weleens naast. Laat het veld leeg als de actie voor jou is."],
+  tr_who_name:["Naam","Naam"],
+  tr_who_ph:["Leeg laten = voor mij","Leeg laten = voor mij"],
+  tr_who_set:["Actie staat nu op {0}","Actie staat nu op {0}"],
+  tr_who_me:["Actie staat nu op jou","Actie staat nu op jou"],
   tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
   tr_untitled:["Zonder titel","Zonder titel"],
   tr_none:["Nog geen verslagen","Nog geen verslagen"],
@@ -5253,8 +5260,10 @@ function trCard(t) {
         <p class="row" style="gap:7px;align-items:center;margin-bottom:3px">
           <span class="att-dot" style="background:${vanBuiten(wie) ? "var(--warning)" : "var(--info)"};margin:0"></span>
           <span class="sm2" style="font-weight:500">${esc(wie)}</span></p>
-        <ul class="grid" style="gap:3px;padding-left:14px">${lijst.map((a) => `<li class="row" style="gap:8px;align-items:baseline">
+        <ul class="grid" style="gap:3px;padding-left:14px">${lijst.map((a) => `<li class="row" style="gap:6px;align-items:baseline">
           <span class="xs" style="flex:1;min-width:0;line-height:1.55;${a.taskId ? "color:var(--ink-2)" : ""}">${esc(a.text)}</span>
+          <button class="btn icon sm ghost" data-act="tr-who" data-id="${t.id}" data-v="${a.id}"
+            style="flex:0 0 auto" title="${esc(tr("tr_who"))}" aria-label="${esc(tr("tr_who"))}">${ico("users", "", 12)}</button>
           ${a.taskId
             ? `<span class="badge success" style="flex:0 0 auto">${ico("check", "", 10)} ${esc(tr("tr_on_list"))}</span>`
             : `<button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
@@ -5272,6 +5281,34 @@ function trCard(t) {
         ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : ""}
     </div>
     </div></section>`;
+}
+
+/* Copilot leest uit de transcriptie wie iets oppakt, en dat gaat er geregeld
+   naast: hij hoort een naam die niet van de uitvoerder is, of hij hoort er
+   geen en schrijft het op jouw naam. Daarom per actie te corrigeren. Leeg
+   laten betekent: voor mij. */
+function trWhoDialog(t, a) {
+  const m = trMeeting(t);
+  const namen = [...new Set([
+    ...(m ? (m.attendees || []).map(attName) : []),
+    ...(DB.transcripts || []).flatMap((x) => (x.acties || []).map((y) => y.person)),
+  ].map((s) => String(s || "").trim()).filter(Boolean))].sort((x, y) => x.localeCompare(y, "nl"));
+
+  openDialog({
+    title: tr("tr_who"), desc: tr("tr_who_d"), submit: tr("save"),
+    body: `<p class="sm2" style="line-height:1.6;padding:9px 11px;border-radius:9px;
+        background:var(--surface-2)">${esc(a.text)}</p>` +
+      field(tr("tr_who_name"), `<input class="inp" name="person" maxlength="60"
+          list="tr-namen" value="${esc(a.person || "")}" placeholder="${esc(tr("tr_who_ph"))}">
+        <datalist id="tr-namen">${namen.map((n) => `<option value="${esc(n)}"></option>`).join("")}</datalist>`),
+    onSubmit: (f) => {
+      const wie = String(f.person || "").trim();
+      if (briefNorm(wie) === briefNorm(a.person || "")) return;
+      a.person = wie;
+      save(); render();
+      toast(wie ? tr("tr_who_set", wie) : tr("tr_who_me"));
+    },
+  });
 }
 
 /* Ben ik dit zelf? Copilot gebruikt de naam zoals die in de transcriptie staat,
@@ -9533,6 +9570,12 @@ document.addEventListener("click", (e) => {
     /* Een actie uit een verslag wordt pas een taak als jij hem doorzet. Het
        venster gaat open met de tekst erin; pas na opslaan telt hij als gestuurd,
        zodat annuleren hem niet stilletjes afvinkt. */
+    case "tr-who": {
+      const t = (DB.transcripts || []).find((x) => x.id === id);
+      const a = t && t.acties.find((x) => x.id === el.dataset.v);
+      if (a) trWhoDialog(t, a);
+      break;
+    }
     case "tr-to-task": {
       const t = (DB.transcripts || []).find((x) => x.id === id);
       const a = t && t.acties.find((x) => x.id === el.dataset.v);
