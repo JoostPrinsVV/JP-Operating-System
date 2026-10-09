@@ -4816,7 +4816,9 @@ function briefSplit(tekst) {
   const uit = {};
   let huidig = null;
   regels.forEach((regel) => {
-    const kop = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ ]{3,20}?)\s*(?:\*\*|__)?\s*:\s*(.*)$/.exec(regel);
+    /* "Doel:", "**Doel:**", "- Doel:" - Copilot wisselt per keer van opmaak,
+       dus de vetgedrukt-sterretjes mogen voor én na de dubbele punt staan. */
+    const kop = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ ]{3,20}?)\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(.*)$/.exec(regel);
     const naam = kop ? kop[1].trim().toLowerCase() : "";
     const sleutel = kop && (BRIEF_SECTIES.find(([, , namen]) => namen.includes(naam)) || [])[0];
     if (sleutel) {
@@ -4828,6 +4830,12 @@ function briefSplit(tekst) {
   });
   // Staat er helemaal geen kopje in, dan is de hele tekst de voorbereiding.
   if (!Object.keys(uit).length && String(tekst || "").trim()) uit.voorber = String(tekst).trim();
+  /* Resterende vetgedrukt-sterretjes weghalen: we tonen platte tekst, dus ze
+     zouden alleen maar als sterretjes op het scherm staan. */
+  Object.keys(uit).forEach((k) => {
+    uit[k] = uit[k].replace(/\*\*/g, "").replace(/[ \t]+\n/g, "\n").trim();
+    if (!uit[k]) delete uit[k];
+  });
   return uit;
 }
 
