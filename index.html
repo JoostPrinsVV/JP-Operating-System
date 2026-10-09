@@ -8083,6 +8083,12 @@ function addrList(v) {
   return raw.map(addrOf).filter((a) => a.email || a.name);
 }
 
+/* De Outlook-connector levert geen webLink mee. Die is wel op te bouwen uit
+   het bericht-id: Outlook op het web kent deze vorm, en opent dan precies dat
+   bericht. Het id staat vol tekens die in een adres niet mogen, dus het gaat
+   er gecodeerd in. */
+const owaLink = (id) => (id ? `https://outlook.office.com/mail/deeplink/read/${encodeURIComponent(id)}` : "");
+
 function normaliseMail(raw) {
   const msgs = (raw && (raw.messages || raw.berichten)) || [];
   const me = String((raw && raw.me) || "").toLowerCase();
@@ -8103,7 +8109,8 @@ function normaliseMail(raw) {
         thread: m.thread || m.conversationId || "",
         unread: Boolean(m.unread),
         hasAttachments: Boolean(m.hasAttachments),
-        webLink: m.webLink || "",
+        // Het eigen id, niet het vervangende: daar valt geen link uit te maken.
+        webLink: m.webLink || owaLink(m.id),
       };
     }).filter((m) => m.date && (m.subject || m.preview)),
   };
