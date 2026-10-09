@@ -2605,6 +2605,37 @@ function load() {
 }
 /* Backfills anything a workspace saved by an earlier build is missing, so an
    existing browser picks up new modules without losing its data. */
+/* Dezelfde afspraak twee keer: dezelfde Outlook-sleutel én dezelfde begintijd.
+   Dat kan gebeuren als de app de begintijd anders is gaan lezen dan hij hem
+   had opgeslagen - dan herkent de import zijn eigen afspraak niet meer. De
+   oudste blijft staan, aangevuld met wat de nieuwere wél wist, en notities,
+   actiepunten en geboekte uren verhuizen mee. Een terugkerende afspraak raakt
+   dit niet: elke keer heeft zijn eigen begintijd en dus zijn eigen sleutel. */
+function dedupeMeetings() {
+  const eerste = new Map();
+  const weg = new Map();                 // id van de dubbele -> id van de eerste
+  DB.meetings.forEach((m) => {
+    if (!m.outlookUid) return;           // zelf aangemaakt: nooit samenvoegen
+    const sleutel = meetingKey(m.outlookUid, m.startsAt);
+    const baas = eerste.get(sleutel);
+    if (!baas) { eerste.set(sleutel, m); return; }
+    // Lege velden van de blijver vullen met wat de dubbele wel had.
+    ["endsAt", "location", "onlineUrl", "agenda", "notes", "decisions"].forEach((k) => {
+      if (!baas[k] && m[k]) baas[k] = m[k];
+    });
+    if (!(baas.attendees || []).length && (m.attendees || []).length) baas.attendees = m.attendees;
+    if (!(baas.categories || []).length && (m.categories || []).length) baas.categories = m.categories;
+    if (!baas.projectId && m.projectId) baas.projectId = m.projectId;
+    weg.set(m.id, baas.id);
+  });
+  if (!weg.size) return false;
+
+  DB.meetings = DB.meetings.filter((m) => !weg.has(m.id));
+  DB.actions.forEach((a) => { if (weg.has(a.meetingId)) a.meetingId = weg.get(a.meetingId); });
+  DB.timeEntries.forEach((e) => { if (weg.has(e.meetingId)) e.meetingId = weg.get(e.meetingId); });
+  return true;
+}
+
 function migrate() {
   let changed = false;
   /* These backfills are for a workspace saved before the module existed, so
@@ -2710,6 +2741,8 @@ function migrate() {
     DB.backup = { at: null, since: new Date().toISOString() };
     changed = true;
   }
+  // Helemaal aan het eind, als alle lijsten gegarandeerd bestaan.
+  if (dedupeMeetings()) changed = true;
   if (changed) save();
 }
 /* ---- undo ---------------------------------------------------------------
@@ -7920,6 +7953,15 @@ function importEvents(events, from, to) {
   events.forEach((e) => {
     if (e.start.day < from || e.start.day > to) return;
 
+    /* Eerst de hele-dag-afspraak rechtzetten, dán pas opzoeken of we hem al
+       kennen. Andersom wijkt 02:00 af van de 00:00 die er al staat en komt
+       dezelfde afspraak er een tweede keer bij. */
+    const proef = { startsAt: e.start.iso, endsAt: e.end ? e.end.iso : "", allDay: e.start.allDay === true };
+    if (normaliseAllDay(proef)) {
+      e.start = { ...e.start, allDay: true, iso: proef.startsAt, day: proef.startsAt.slice(0, 10) };
+      if (e.end) e.end = { ...e.end, allDay: true, iso: proef.endsAt, day: proef.endsAt.slice(0, 10) };
+    }
+
     if ((e.attendees || []).length) withAtt++;
 
     const existing = e.uid ? byUid.get(meetingKey(e.uid, e.start.iso)) : null;
@@ -7941,7 +7983,6 @@ function importEvents(events, from, to) {
     }
 
     const m = icsToMeeting(e);
-    normaliseAllDay(m);
     DB.meetings.push(m);
     if (e.uid) byUid.set(e.uid, m);
     added++;
