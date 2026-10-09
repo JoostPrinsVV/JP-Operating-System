@@ -612,6 +612,14 @@ a.btn{text-decoration:none}
   border:1px solid var(--border);border-radius:999px;background:var(--surface-2);
   font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit}
 .cat-chip:hover{border-color:var(--ink-2)}
+/* De kopregel van een verslag: de hele regel klapt het verslag open. */
+.tr-head{display:flex;align-items:center;gap:11px;width:100%;padding:12px 16px;
+  background:none;border:0;cursor:pointer;text-align:left;color:inherit;font:inherit;
+  border-radius:12px;transition:background .14s}
+.tr-head:hover{background:var(--surface-2)}
+.tr-chev{flex:0 0 auto;color:var(--ink-2);display:grid;place-items:center}
+.tr-head[aria-expanded="true"]{border-radius:12px 12px 0 0}
+
 /* De agendamap als smalle balk: één regel zolang alles werkt. */
 .ag-bar{padding:9px 13px}
 @media (max-width:760px){ .ag-bar .trunc{max-width:100%} }
@@ -804,6 +812,10 @@ const STR = {
   tr_open_meeting:["De afspraak","De afspraak"],
   tr_open_transcript:["Transcriptie","Transcriptie"],
   tr_open_chat:["In Teams","In Teams"],
+  tr_card:["Transcriptie","Transcriptie"],
+  tr_card_open:["Bekijk het verslag","Bekijk het verslag"],
+  tr_card_n:["{0} acties","{0} acties"], tr_card_1:["1 actie","1 actie"],
+  tr_card_open_n:["{0} nog open","{0} nog open"],
   tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
   tr_untitled:["Zonder titel","Zonder titel"],
   tr_none:["Nog geen verslagen","Nog geen verslagen"],
@@ -2847,6 +2859,7 @@ const UI = {
   knowFilter: { view: "round", folder: "all", status: "all" },
   meetFilter: { days: 30 },
   trFilter: "all",
+  trOpen: {},            // welke verslagen uitgeklapt staan
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
   pastOpen: true,        // staat de lijst met wat is geweest open
@@ -4406,6 +4419,7 @@ function viewMeetingDetail(id) {
   `<div class="grid split">
     <div class="grid">
       ${briefingCard(m)}
+      ${transcriptCard(m)}
       ${mailCard(m)}
       ${attendeeCard(m)}
       ${m.agenda ? card(tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
@@ -5163,6 +5177,38 @@ function trText(tekst) {
   return `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(tekst)}</p>`;
 }
 
+/* Het verslag dat bij deze afspraak hoort - de omgekeerde weg van trMeeting. */
+function trForMeeting(m) {
+  const dag = String(m.startsAt).slice(0, 10), tijd = String(m.startsAt).slice(11, 16);
+  return (DB.transcripts || []).find((t) => t.day === dag && t.time === tijd)
+    || (DB.transcripts || []).find((t) => t.day === dag && briefNorm(t.title) === briefNorm(m.title))
+    || null;
+}
+
+/* Op de pagina van een afspraak: niet het hele verslag, wel dat het er is en
+   waar je het vindt. Het verslag zelf staat op zijn eigen tabblad. */
+function transcriptCard(m) {
+  const t = trForMeeting(m);
+  if (!t) return "";
+  const open = t.acties.filter((a) => !a.taskId).length;
+  const kort = t.secties.samenvatting || t.secties.besluiten || "";
+  const chat = teamsChatUrl(m.onlineUrl);
+  const url = t.link || chat;
+
+  return card(tr("tr_card"),
+    `${kort ? `<p class="sm2" style="line-height:1.6">${esc(truncate(kort.split("\n")
+       .map((r) => r.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean).join(" · "), 260))}</p>` : ""}
+     <div class="row wrap" style="gap:8px;margin-top:${kort ? "11px" : "0"}">
+       <button class="btn sm outline" data-act="tr-open" data-id="${t.id}">
+         ${ico("mic", "", 13)} ${esc(tr("tr_card_open"))}</button>
+       ${url ? `<a class="btn sm ghost" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+         ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : ""}
+     </div>`,
+    t.acties.length
+      ? `${t.acties.length === 1 ? tr("tr_card_1") : tr("tr_card_n", t.acties.length)}${open ? ` · ${tr("tr_card_open_n", open)}` : ""}`
+      : tr("tr_no_actions"));
+}
+
 function trCard(t) {
   const m = trMeeting(t);
   // Per persoon gegroepeerd: zo zie je in één blik wat van jou is.
@@ -5173,11 +5219,34 @@ function trCard(t) {
     perPersoon.get(wie).push(a);
   });
 
-  return card(t.title || tr("tr_untitled"),
-    `${TR_SECTIES.map(([k, label]) => t.secties[k] ? `<div style="margin-bottom:11px">
-        <p class="lbl" style="margin-bottom:3px">${esc(lbl(label))}</p>
-        ${trText(t.secties[k])}
-      </div>` : "").join("")}
+  const open = UI.trOpen && UI.trOpen[t.id];
+  const nogOpen = t.acties.filter((a) => !a.taskId).length;
+  /* Dicht is de normale stand: een pagina vol uitgeklapte verslagen is niet te
+     overzien. De kopregel vertelt genoeg om te kiezen welke je opent. */
+  const kop = `<button class="tr-head" data-act="tr-toggle" data-id="${t.id}" aria-expanded="${Boolean(open)}">
+    <span class="tr-chev">${ico(open ? "chevup" : "chevdown", "", 14)}</span>
+    <span style="flex:1;min-width:0">
+      <span class="card-t" style="display:block">${esc(t.title || tr("tr_untitled"))}</span>
+      <span class="xs mut">${esc(fmtTime(`${t.day}T${t.time}`))}${m ? "" : ` · ${esc(tr("tr_no_meeting"))}`}
+        ${t.acties.length ? ` · ${esc(t.acties.length === 1 ? tr("tr_card_1") : tr("tr_card_n", t.acties.length))}` : ""}</span>
+    </span>
+    ${nogOpen ? `<span class="badge accent">${esc(tr("tr_card_open_n", nogOpen))}</span>` : ""}
+  </button>`;
+
+  if (!open) {
+    return `<section class="card" id="tr-${t.id}"><div class="card-b" style="padding:0">${kop}</div></section>`;
+  }
+
+  const chat = m ? teamsChatUrl(m.onlineUrl) : null;
+  const url = t.link || chat;
+
+  return `<section class="card" id="tr-${t.id}">
+    <div class="card-b" style="padding:0">${kop}</div>
+    <div class="card-b" style="padding-top:0">
+    ${TR_SECTIES.map(([k, label]) => t.secties[k] ? `<div style="margin-bottom:11px">
+      <p class="lbl" style="margin-bottom:3px">${esc(lbl(label))}</p>
+      ${trText(t.secties[k])}
+    </div>` : "").join("")}
     ${t.acties.length ? `<div>
       <p class="lbl" style="margin-bottom:5px">${esc(tr("tr_actions"))}</p>
       ${[...perPersoon.entries()].map(([wie, lijst]) => `<div style="margin-bottom:9px">
@@ -5192,19 +5261,17 @@ function trCard(t) {
                 style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>`}
         </li>`).join("")}</ul>
       </div>`).join("")}
-    </div>` : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}`,
-    `${esc(fmtTime(`${t.day}T${t.time}`))}${m ? "" : ` · ${tr("tr_no_meeting")}`}`,
-    /* Het origineel staat in Teams: de opname, de samenvatting en de volledige
-       transcriptie zitten bij elkaar in de vergaderchat. Levert Copilot zelf
-       een link mee, dan wint die - die wijst preciezer. */
-    `${(() => {
-      const chat = m ? teamsChatUrl(m.onlineUrl) : null;
-      const url = t.link || chat;
-      return url ? `<a class="btn sm outline" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
-        ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : "";
-    })()}
-    ${m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">
-      ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : ""}`);
+    </div>` : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}
+    <div class="row wrap" style="gap:8px;margin-top:12px">
+      ${/* Het origineel staat in Teams: opname, samenvatting en de volledige
+           transcriptie zitten bij elkaar in de vergaderchat. Levert Copilot
+           zelf een link mee, dan wint die - die wijst preciezer. */
+        url ? `<a class="btn sm outline" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+        ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : ""}
+      ${m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">
+        ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : ""}
+    </div>
+    </div></section>`;
 }
 
 /* Ben ik dit zelf? Copilot gebruikt de naam zoals die in de transcriptie staat,
@@ -7804,7 +7871,7 @@ function meetingPeek(id) {
         ${(m.categories || []).map((c) => `<span class="cat-chip" style="cursor:default">
           <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>`).join("")}
       </p>` : "") +
-      briefingCard(m) + attendeeCard(m) + mailCard(m) +
+      briefingCard(m) + transcriptCard(m) + attendeeCard(m) + mailCard(m) +
       (m.agenda ? card(tr("m_agenda"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : "") +
       (m.notes ? card(tr("m_notes"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(truncate(m.notes, 900))}</p>`) : "") +
       (m.decisions ? card(tr("m_decisions"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`) : "") +
@@ -9447,6 +9514,22 @@ document.addEventListener("click", (e) => {
     case "cat-edit": categoryDialog((DB.categories || []).find((c) => c.id === id)); break;
     case "cat-new": categoryDialog(null); break;
     case "tr-filter": UI.trFilter = el.dataset.v; render(); break;
+    case "tr-toggle": {
+      UI.trOpen = UI.trOpen || {};
+      if (UI.trOpen[id]) delete UI.trOpen[id]; else UI.trOpen[id] = true;
+      render(); break;
+    }
+    /* Vanaf de pagina van een afspraak naar het verslag: open hem alvast en
+       spring ernaartoe, anders zoek je hem in een lijst van dertig. */
+    case "tr-open": {
+      UI.trOpen = { [id]: true }; UI.trFilter = "all";
+      go("transcripts");
+      setTimeout(() => {
+        const el2 = document.getElementById(`tr-${id}`);
+        if (el2) el2.scrollIntoView({ block: "center" });
+      }, 30);
+      break;
+    }
     /* Een actie uit een verslag wordt pas een taak als jij hem doorzet. Het
        venster gaat open met de tekst erin; pas na opslaan telt hij als gestuurd,
        zodat annuleren hem niet stilletjes afvinkt. */
