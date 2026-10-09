@@ -612,6 +612,9 @@ a.btn{text-decoration:none}
   border:1px solid var(--border);border-radius:999px;background:var(--surface-2);
   font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit}
 .cat-chip:hover{border-color:var(--ink-2)}
+/* De agendamap als smalle balk: één regel zolang alles werkt. */
+.ag-bar{padding:9px 13px}
+@media (max-width:760px){ .ag-bar .trunc{max-width:100%} }
 /* Aanvinken in het dialoogvenster van een afspraak. Het vakje zelf blijft
    zichtbaar, zodat het ook zonder :has() duidelijk is wat aan staat. */
 .cat-pick{display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 8px;
@@ -799,6 +802,8 @@ const STR = {
   tr_to_task:["Naar takenlijst","Naar takenlijst"],
   tr_on_list:["Op je lijst","Op je lijst"],
   tr_open_meeting:["De afspraak","De afspraak"],
+  tr_open_transcript:["Transcriptie","Transcriptie"],
+  tr_open_chat:["In Teams","In Teams"],
   tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
   tr_untitled:["Zonder titel","Zonder titel"],
   tr_none:["Nog geen verslagen","Nog geen verslagen"],
@@ -1204,6 +1209,11 @@ const STR = {
   ml_why_subject:["onderwerp lijkt op de titel","onderwerp lijkt op de titel"],
   ml_why_other:["deelnemer gevonden","deelnemer gevonden"],
   ag_mail:["{0} mailberichten gelezen uit {1}","{0} mailberichten gelezen uit {1}"],
+  ag_mail_n:["{0} mailberichten","{0} mailberichten"],
+  ag_mail_1:["1 mailbericht","1 mailbericht"],
+  ag_brief_n:["{0} briefings","{0} briefings"],
+  ag_brief_1:["1 briefing","1 briefing"],
+  ag_auto_short:["automatisch","automatisch"],
 
   m_brief:["Briefing","Briefing"],
   m_brief_d:["Wat de app zelf weet, en wat Copilot er vanochtend over schreef.",
@@ -4981,14 +4991,30 @@ function trAction(regel) {
   return { person: "", text: r };
 }
 
+/* De vergaderchat in Teams, afgeleid uit de deelnamelink die de app al van je
+   bewaart. Daar staan de opname, de samenvatting en de volledige transcriptie
+   bij elkaar - dat is zo dicht bij "het hele transcript" als je komt zonder
+   extra rechten. De nieuwe korte teams.microsoft.com/meet-link bevat geen
+   gesprekskenmerk, dus daarvoor valt er niets af te leiden. */
+function teamsChatUrl(onlineUrl) {
+  const m = /meetup-join\/(19%3a[^/?#]+)/i.exec(String(onlineUrl || ""));
+  return m ? `https://teams.microsoft.com/l/chat/${m[1]}/conversations` : null;
+}
+
 function trParse(tekst) {
   const h = briefHeader(tekst);
   if (!h) return null;
   const secties = {};
-  let huidig = null, acties = [];
+  let huidig = null, acties = [], link = "";
   String(h.rest).split("\n").forEach((regel) => {
     const kop = KOP_RE.exec(regel);
     const naam = kop ? kop[1].trim().toLowerCase() : "";
+    /* Een regel "Transcriptie: https://..." of "Link: https://..." is geen
+       sectie maar een verwijzing naar het origineel. */
+    if (kop && /^(link|url|transcript|transcriptie|opname|recording|recap)/.test(naam)) {
+      const u = /(https?:\/\/\S+)/.exec(kop[2] || "");
+      if (u) { link = u[1].replace(/[.,;)]+$/, ""); huidig = null; return; }
+    }
     const isActies = kop && ["actie", "vervolg", "taken", "action", "task", "to do", "todo", "afsprak"]
       .some((w) => naam.includes(w));
     const sleutel = !isActies && kop && kopSleutel(naam, TR_SECTIES);
@@ -5020,7 +5046,7 @@ function trParse(tekst) {
     if (ruw) secties.samenvatting = ruw;
   }
   return {
-    day: h.day, time: h.time, title: h.title, secties,
+    day: h.day, time: h.time, title: h.title, secties, link,
     acties: acties.map(trAction).filter(Boolean)
       .map((a) => ({ ...a, text: a.text.replace(/\*\*/g, "").trim() })).filter((a) => a.text),
   };
@@ -5047,6 +5073,7 @@ function trImport(raw) {
       Object.keys(p.secties).forEach((k) => {
         if (!bestaand.secties[k]) { bestaand.secties[k] = p.secties[k]; bij++; }
       });
+      if (!bestaand.link && p.link) { bestaand.link = p.link; bij++; }
       p.acties.forEach((a) => {
         if (bestaand.acties.some((b) => briefNorm(b.text) === briefNorm(a.text))) return;
         bestaand.acties.push({ id: uid(), ...a, taskId: null });
@@ -5056,7 +5083,8 @@ function trImport(raw) {
     }
     DB.transcripts.push({
       id: uid(), key: sleutel, day: p.day, time: p.time, title: p.title,
-      secties: p.secties, acties: p.acties.map((a) => ({ id: uid(), ...a, taskId: null })),
+      secties: p.secties, link: p.link,
+      acties: p.acties.map((a) => ({ id: uid(), ...a, taskId: null })),
       readAt: new Date().toISOString(),
     });
     nieuw++;
@@ -5166,8 +5194,17 @@ function trCard(t) {
       </div>`).join("")}
     </div>` : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}`,
     `${esc(fmtTime(`${t.day}T${t.time}`))}${m ? "" : ` · ${tr("tr_no_meeting")}`}`,
-    m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">
-      ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : "");
+    /* Het origineel staat in Teams: de opname, de samenvatting en de volledige
+       transcriptie zitten bij elkaar in de vergaderchat. Levert Copilot zelf
+       een link mee, dan wint die - die wijst preciezer. */
+    `${(() => {
+      const chat = m ? teamsChatUrl(m.onlineUrl) : null;
+      const url = t.link || chat;
+      return url ? `<a class="btn sm outline" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+        ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : "";
+    })()}
+    ${m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">
+      ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : ""}`);
 }
 
 /* Ben ik dit zelf? Copilot gebruikt de naam zoals die in de transcriptie staat,
@@ -8825,36 +8862,49 @@ function agendaCard() {
   const needsClick = linked && AGENDA_PERM !== "granted";
   const ago = s.lastAt ? daysSince(s.lastAt) : null;
 
-  return card(tr("ag_title"), linked
-    ? `<p class="sm2 row" style="gap:7px">
-         ${ico("folder", "", 15)}<span style="font-weight:500">${esc(s.folder || "—")}</span>
-       </p>
-       <p class="xs mut" style="margin-top:4px">
-         ${s.lastAt
-           /* Met de klok erbij kun je zien of hij bij het openen werkelijk
-              heeft gelezen, in plaats van alleen dat het ooit vandaag was. */
-           ? esc(tr("ag_last", s.lastFile || "—",
-               ago === 0 ? tr("ag_today_at", clock(s.lastAt))
-                         : ago === 1 ? tr("b_yesterday") : tr("b_days", ago)))
-           : esc(tr("ag_never"))}
-       </p>
-       ${MAIL ? `<p class="xs mut" style="margin-top:2px">${esc(tr("ag_mail", MAIL.messages.length, MAIL.file || "-"))}</p>` : ""}
-       ${needsClick ? `<p class="xs" style="color:var(--warning);margin-top:6px">${esc(tr("ag_needsclick"))}</p>` : ""}
-       <div class="row wrap" style="gap:8px;margin-top:10px">
-         <button class="btn sm${needsClick ? "" : " outline"}" data-act="agenda-read">
-           ${ico("download", "", 13)} ${esc(tr("ag_readnow"))}</button>
-         <button class="btn sm ghost" data-act="agenda-pick">${esc(tr("ag_change"))}</button>
-         <button class="btn sm ghost" data-act="agenda-forget">${esc(tr("ag_forget"))}</button>
-       </div>
-       <label class="row" style="gap:8px;margin-top:10px">
-         <input type="checkbox" data-act="agenda-auto" ${s.auto ? "checked" : ""}
-           style="width:16px;height:16px">
-         <span class="xs mut">${esc(tr("ag_auto"))}</span>
-       </label>`
-    : `<p class="sm2 mut" style="line-height:1.6">${esc(tr("ag_none_d"))}</p>
+  /* Werkt het, dan hoeft het niet meer dan één regel te zijn: welke map, hoe
+     laat hij voor het laatst heeft gelezen, en de knoppen klein ernaast. Pas
+     als er iets te beslissen valt - nog geen map, of toestemming nodig -
+     neemt hij de ruimte die daarbij hoort. */
+  if (!linked) {
+    return card(tr("ag_title"),
+      `<p class="sm2 mut" style="line-height:1.6">${esc(tr("ag_none_d"))}</p>
        <button class="btn sm" data-act="agenda-pick" style="margin-top:10px">
          ${ico("folder", "", 13)} ${esc(tr("ag_link"))}</button>`,
-    tr("ag_sub"));
+      tr("ag_sub"));
+  }
+
+  const gelezen = s.lastAt
+    ? tr("ag_last", s.lastFile || "—",
+        ago === 0 ? tr("ag_today_at", clock(s.lastAt))
+                  : ago === 1 ? tr("b_yesterday") : tr("b_days", ago))
+    : tr("ag_never");
+
+  return `<section class="card ag-bar">
+    <div class="row wrap spread" style="gap:10px 14px">
+      <div class="row wrap" style="gap:6px 12px;min-width:0;align-items:baseline">
+        <span class="row sm2" style="gap:6px;font-weight:500">
+          ${ico("folder", "", 14)}${esc(s.folder || "—")}</span>
+        <span class="xs mut trunc">${esc(gelezen)}</span>
+        ${MAIL ? `<span class="xs mut">${esc(MAIL.messages.length === 1 ? tr("ag_mail_1") : tr("ag_mail_n", MAIL.messages.length))}</span>` : ""}
+        ${(BRIEF && BRIEF.items.length) ? `<span class="xs mut">${esc(BRIEF.items.length === 1 ? tr("ag_brief_1") : tr("ag_brief_n", BRIEF.items.length))}</span>` : ""}
+      </div>
+      <div class="row wrap" style="gap:4px">
+        <label class="row" style="gap:6px;margin-right:6px;cursor:pointer">
+          <input type="checkbox" data-act="agenda-auto" ${s.auto ? "checked" : ""}
+            style="width:14px;height:14px">
+          <span class="xs mut">${esc(tr("ag_auto_short"))}</span>
+        </label>
+        <button class="btn sm${needsClick ? "" : " ghost"}" data-act="agenda-read">
+          ${ico("download", "", 12)} ${esc(tr("ag_readnow"))}</button>
+        <button class="btn icon sm ghost" data-act="agenda-pick"
+          title="${esc(tr("ag_change"))}" aria-label="${esc(tr("ag_change"))}">${ico("folder", "", 12)}</button>
+        <button class="btn icon sm ghost" data-act="agenda-forget"
+          title="${esc(tr("ag_forget"))}" aria-label="${esc(tr("ag_forget"))}">${ico("close", "", 12)}</button>
+      </div>
+    </div>
+    ${needsClick ? `<p class="xs" style="color:var(--warning);margin-top:7px">${esc(tr("ag_needsclick"))}</p>` : ""}
+  </section>`;
 }
 
 /* ---- backup -------------------------------------------------------------
