@@ -787,6 +787,26 @@ const STR = {
   steer:["Steer","Sturen"], grow:["Grow","Groeien"],
   nav_dashboard:["Dashboard","Dashboard"], nav_planning:["My planning","Mijn planning"],
   nav_tasks:["Tasks","Taken"], nav_meetings:["Calendar","Agenda"],
+  nav_transcripts:["Transcripts","Transcripties"],
+  tr_sub:["Wat er is besproken, en wat eruit volgde. Door Copilot samengevat uit de transcriptie.",
+          "Wat er is besproken, en wat eruit volgde. Door Copilot samengevat uit de transcriptie."],
+  tr_f_all:["Alles","Alles"], tr_f_open:["Nog open","Nog open"],
+  tr_n:["{0} verslagen","{0} verslagen"], tr_n_1:["1 verslag","1 verslag"],
+  tr_n_act:["{0} acties, waarvan {1} nog niet op een lijst","{0} acties, waarvan {1} nog niet op een lijst"],
+  tr_actions:["Acties","Acties"],
+  tr_no_actions:["Geen acties uit dit overleg.","Geen acties uit dit overleg."],
+  tr_me:["Voor mij","Voor mij"],
+  tr_to_task:["Naar takenlijst","Naar takenlijst"],
+  tr_on_list:["Op je lijst","Op je lijst"],
+  tr_open_meeting:["De afspraak","De afspraak"],
+  tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
+  tr_untitled:["Zonder titel","Zonder titel"],
+  tr_none:["Nog geen verslagen","Nog geen verslagen"],
+  tr_none_open:["Alle acties staan op een lijst","Alle acties staan op een lijst"],
+  tr_none_d:["Ze komen binnen zodra de avondstroom een transcriptie heeft kunnen samenvatten. Een overleg zonder transcriptie slaat hij over.",
+             "Ze komen binnen zodra de avondstroom een transcriptie heeft kunnen samenvatten. Een overleg zonder transcriptie slaat hij over."],
+  tr_privacy:["Deze verslagen blijven in je werkruimte bewaard en komen dus ook in je back-up. Mail en briefing doen dat niet — die staan alleen in het geheugen.",
+              "Deze verslagen blijven in je werkruimte bewaard en komen dus ook in je back-up. Mail en briefing doen dat niet — die staan alleen in het geheugen."],
   nav_goals:["Goals & OKRs","Doelen & OKR's"], nav_projects:["Projects","Projecten"],
   nav_kpis:["KPIs","KPI's"], nav_ideas:["Brain dump","Ideeën"],
   nav_dev:["Development","Ontwikkeling"], nav_review:["Weekly review","Weekreview"],
@@ -1947,6 +1967,7 @@ const ICONS = {
   collapse: "M11 7l-5 5 5 5M18 7l-5 5 5 5",
   chevdown: "M6 9l6 6 6-6",
   chevup: "M18 15l-6-6-6 6",
+  mic: "M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3zM19 11a7 7 0 0 1-14 0M12 18v4M8 22h8",
   close: "M18 6 6 18M6 6l12 12",
   play: "M6 4l13 8-13 8z",
   pause: "M8 5h3v14H8zM13 5h3v14h-3z",
@@ -1970,7 +1991,8 @@ const NAV = [
   { g: "today_g", items: [
     ["dashboard", "nav_dashboard", "dashboard"], ["planning", "nav_planning", "planning"],
     ["hours", "nav_hours", "hours"], ["tasks", "nav_tasks", "tasks"],
-    ["meetings", "nav_meetings", "meetings"], ["expenses", "nav_expenses", "receipt"]] },
+    ["meetings", "nav_meetings", "meetings"], ["transcripts", "nav_transcripts", "mic"],
+    ["expenses", "nav_expenses", "receipt"]] },
   { g: "steer", items: [
     ["goals", "nav_goals", "goals"], ["projects", "nav_projects", "projects"], ["kpis", "nav_kpis", "kpis"]] },
   { g: "grow", items: [
@@ -2709,6 +2731,7 @@ function migrate() {
   /* Hele-dag-afspraken die als 01:00 of 02:00 zijn binnengekomen worden
      alsnog rechtgezet; dat scheelt opnieuw inlezen. */
   DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
+  if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
   if (!Array.isArray(DB.timeEntries)) { DB.timeEntries = []; changed = true; }
   if (DB.timer === undefined) { DB.timer = null; changed = true; }
   if (!Array.isArray(DB.engagements)) { DB.engagements = []; changed = true; }
@@ -2813,6 +2836,7 @@ const UI = {
   planFilter: { client: "all", scope: "all", range: "4w", offset: 0 },
   knowFilter: { view: "round", folder: "all", status: "all" },
   meetFilter: { days: 30 },
+  trFilter: "all",
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
   pastOpen: true,        // staat de lijst met wat is geweest open
@@ -4907,6 +4931,211 @@ function briefFor(m) {
     || zelfdeDag.find((i) => i.time === tijd)
     || zelfdeDag.find((i) => briefNorm(i.title) === titel)
     || null;
+}
+
+/* ---- transcripties ------------------------------------------------------
+   Copilot leest 's avonds de transcripties van die dag en mailt per afspraak
+   een samenvatting, de besluiten en een actielijst per persoon. Die mail komt
+   via dezelfde weg binnen als de briefing.
+
+   Anders dan de briefing blijft dit wél bewaard: het is een verslag van wat
+   er is gebeurd, geen context die morgen opnieuw wordt gemaakt. Dat betekent
+   ook dat het in je back-up komt - zie de waarschuwing op de pagina zelf.
+------------------------------------------------------------------------- */
+const TR_SECTIES = [
+  ["samenvatting", ["Summary","Samenvatting"], ["samenvatting", "summary", "verslag"]],
+  ["besluiten",    ["Decisions","Besluiten"],   ["besluiten", "besluit", "decisions"]],
+];
+/* "Henri van der Ee: opzet aanleveren" - naam vóór de dubbele punt, en wat
+   erachter staat is de taak. Staat er geen naam, dan hoort hij bij jou. */
+function trAction(regel) {
+  const r = String(regel).replace(/^\s*[-*•]\s*/, "").trim();
+  if (!r) return null;
+  const m = /^([^:]{2,40}?)\s*:\s*(.+)$/.exec(r);
+  if (m && !/^https?$/i.test(m[1])) return { person: m[1].trim(), text: m[2].trim() };
+  return { person: "", text: r };
+}
+
+function trParse(tekst) {
+  const h = briefHeader(tekst);
+  if (!h) return null;
+  const secties = {};
+  let huidig = null, acties = [];
+  String(h.rest).split("\n").forEach((regel) => {
+    const kop = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ ]{3,20}?)\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(.*)$/.exec(regel);
+    const naam = kop ? kop[1].trim().toLowerCase() : "";
+    const sleutel = kop && (TR_SECTIES.find(([, , namen]) => namen.includes(naam)) || [])[0];
+    const isActies = kop && ["acties", "actiepunten", "taken", "actions", "tasks", "afspraken"].includes(naam);
+    if (sleutel) { huidig = sleutel; secties[huidig] = (kop[2] || "").trim(); return; }
+    if (isActies) { huidig = "acties"; if (kop[2].trim()) acties.push(kop[2].trim()); return; }
+    if (!regel.trim()) return;
+    if (huidig === "acties") {
+      /* Een regel die met een streepje begint is een nieuwe actie; een regel
+         zonder is de voortzetting van de vorige, want de omzetter breekt af. */
+      if (/^\s*[-*•]/.test(regel) || !acties.length) acties.push(regel.trim());
+      else acties[acties.length - 1] += ` ${regel.trim()}`;
+      return;
+    }
+    if (huidig) secties[huidig] = `${secties[huidig]} ${regel.trim()}`.trim();
+  });
+  Object.keys(secties).forEach((k) => {
+    secties[k] = secties[k].replace(/\*\*/g, "").trim();
+    if (!secties[k]) delete secties[k];
+  });
+  return {
+    day: h.day, time: h.time, title: h.title, secties,
+    acties: acties.map(trAction).filter(Boolean)
+      .map((a) => ({ ...a, text: a.text.replace(/\*\*/g, "").trim() })).filter((a) => a.text),
+  };
+}
+
+/* Wat binnenkomt wordt samengevoegd met wat er staat: dezelfde afspraak twee
+   keer ingelezen mag geen tweede verslag opleveren, en taken die je al naar je
+   lijst hebt gestuurd moeten dat blijven. */
+function trImport(raw) {
+  const items = (raw && (raw.items || raw.transcripts)) || [];
+  DB.transcripts = DB.transcripts || [];
+  let nieuw = 0, bij = 0;
+  items.forEach((i) => {
+    const p = trParse(String(i.text || i.body || ""));
+    if (!p) return;
+    const sleutel = `${p.day}|${p.time}|${briefNorm(p.title)}`;
+    const bestaand = DB.transcripts.find((t) => t.key === sleutel);
+    if (bestaand) {
+      /* Alleen aanvullen: een verslag dat je zelf hebt bijgewerkt blijft staan,
+         en een actie die al een taak is houdt zijn koppeling. */
+      if (!Object.keys(bestaand.secties || {}).length) bestaand.secties = p.secties;
+      p.acties.forEach((a) => {
+        if (bestaand.acties.some((b) => briefNorm(b.text) === briefNorm(a.text))) return;
+        bestaand.acties.push({ id: uid(), ...a, taskId: null });
+        bij++;
+      });
+      return;
+    }
+    DB.transcripts.push({
+      id: uid(), key: sleutel, day: p.day, time: p.time, title: p.title,
+      secties: p.secties, acties: p.acties.map((a) => ({ id: uid(), ...a, taskId: null })),
+      readAt: new Date().toISOString(),
+    });
+    nieuw++;
+  });
+  // Een jaar aan verslagen is genoeg; ouder dan dat leest niemand terug.
+  const grens = addDays(-365);
+  DB.transcripts = DB.transcripts.filter((t) => t.day >= grens)
+    .sort((a, b) => `${b.day}${b.time}`.localeCompare(`${a.day}${a.time}`));
+  if (nieuw || bij) save();
+  return { nieuw, bij };
+}
+
+async function trRead(dir) {
+  try {
+    const file = await agendaNewestFile(dir, /^transcript.*\.json$/i);
+    if (!file) return null;
+    // Hetzelfde bestand twee keer lezen hoeft niet, maar schaadt ook niet.
+    return trImport(JSON.parse(await file.text()));
+  } catch (e) { return null; }
+}
+
+/* De afspraak waar dit verslag bij hoort, zodat je erheen kunt klikken. */
+function trMeeting(t) {
+  return DB.meetings.find((m) => String(m.startsAt).slice(0, 10) === t.day &&
+      String(m.startsAt).slice(11, 16) === t.time)
+    || DB.meetings.find((m) => String(m.startsAt).slice(0, 10) === t.day &&
+      briefNorm(m.title) === briefNorm(t.title))
+    || null;
+}
+
+function viewTranscripts() {
+  const all = DB.transcripts || [];
+  const f = UI.trFilter || "all";
+  const openCount = (t) => t.acties.filter((a) => !a.taskId).length;
+  const lijst = f === "open" ? all.filter((t) => openCount(t) > 0) : all;
+
+  const byDay = [];
+  lijst.forEach((t) => {
+    const last = byDay[byDay.length - 1];
+    if (last && last.day === t.day) last.items.push(t);
+    else byDay.push({ day: t.day, items: [t] });
+  });
+
+  const totaalActies = all.reduce((s, t) => s + t.acties.length, 0);
+  const totaalOpen = all.reduce((s, t) => s + openCount(t), 0);
+
+  return pageHead(tr("nav_transcripts"), tr("tr_sub"),
+    `<div class="seg">${[["all", tr("tr_f_all")], ["open", tr("tr_f_open")]]
+      .map(([v, l]) => `<button data-act="tr-filter" data-v="${v}"
+        aria-pressed="${f === v}">${esc(l)}</button>`).join("")}</div>`) +
+  (all.length ? `<p class="row wrap xs mut" style="gap:14px;margin-bottom:14px">
+      <span>${esc(all.length === 1 ? tr("tr_n_1") : tr("tr_n", all.length))}</span>
+      <span>${esc(tr("tr_n_act", totaalActies, totaalOpen))}</span>
+    </p>` : "") +
+  (lijst.length ? byDay.map((g) => `<div class="dayhead" style="padding-left:0">
+      <span class="dayhead-t">${esc(dayHeading(g.day))}</span>
+      <span class="xs mut">${g.items.length}</span>
+    </div>
+    <div class="grid" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`).join("")
+    : empty(f === "open" ? tr("tr_none_open") : tr("tr_none"), tr("tr_none_d"))) +
+  `<p class="xs mut" style="margin-top:6px">${esc(tr("tr_privacy"))}</p>`;
+}
+
+function trCard(t) {
+  const m = trMeeting(t);
+  // Per persoon gegroepeerd: zo zie je in één blik wat van jou is.
+  const perPersoon = new Map();
+  t.acties.forEach((a) => {
+    const wie = a.person || tr("tr_me");
+    if (!perPersoon.has(wie)) perPersoon.set(wie, []);
+    perPersoon.get(wie).push(a);
+  });
+
+  return card(t.title || tr("tr_untitled"),
+    `${TR_SECTIES.map(([k, label]) => t.secties[k] ? `<div style="margin-bottom:11px">
+        <p class="lbl" style="margin-bottom:3px">${esc(lbl(label))}</p>
+        <p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(t.secties[k])}</p>
+      </div>` : "").join("")}
+    ${t.acties.length ? `<div>
+      <p class="lbl" style="margin-bottom:5px">${esc(tr("tr_actions"))}</p>
+      ${[...perPersoon.entries()].map(([wie, lijst]) => `<div style="margin-bottom:9px">
+        <p class="row" style="gap:7px;align-items:center;margin-bottom:3px">
+          <span class="att-dot" style="background:${vanBuiten(wie) ? "var(--warning)" : "var(--info)"};margin:0"></span>
+          <span class="sm2" style="font-weight:500">${esc(wie)}</span></p>
+        <ul class="grid" style="gap:3px;padding-left:14px">${lijst.map((a) => `<li class="row" style="gap:8px;align-items:baseline">
+          <span class="xs" style="flex:1;min-width:0;line-height:1.55;${a.taskId ? "color:var(--ink-2)" : ""}">${esc(a.text)}</span>
+          ${a.taskId
+            ? `<span class="badge success" style="flex:0 0 auto">${ico("check", "", 10)} ${esc(tr("tr_on_list"))}</span>`
+            : `<button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
+                style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>`}
+        </li>`).join("")}</ul>
+      </div>`).join("")}
+    </div>` : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}`,
+    `${esc(fmtTime(`${t.day}T${t.time}`))}${m ? "" : ` · ${tr("tr_no_meeting")}`}`,
+    m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">
+      ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : "");
+}
+
+/* Ben ik dit zelf? Copilot gebruikt de naam zoals die in de transcriptie staat,
+   dus je volledige naam uit Teams. Een actie voor jezelf hoort niet als
+   "wachten op" in je takenlijst te belanden. */
+function isMij(naam) {
+  const n = briefNorm(naam);
+  if (!n || n === briefNorm(tr("tr_me"))) return true;
+  if (DB.profile.name && n === briefNorm(DB.profile.name)) return true;
+  const me = (MAIL && MAIL.me) || "";
+  return Boolean(me) && n === briefNorm(nameFromEmail(me));
+}
+
+/* Iemand van buiten de eigen organisatie, afgemeten aan het domein van je
+   eigen adres en de deelnemers die de app van je afspraken kent. Weet hij je
+   domein niet, dan telt iedereen als eigen huis - liever geen kleur dan een
+   verkeerde. */
+function vanBuiten(naam) {
+  const me = (MAIL && MAIL.me) || "";
+  const domein = me.includes("@") ? me.split("@")[1].toLowerCase() : "";
+  if (!domein) return false;
+  const n = briefNorm(naam);
+  const att = DB.meetings.flatMap((m) => m.attendees || [])
+    .find((a) => briefNorm(attName(a)) === n && attEmail(a));
+  return Boolean(att) && !attEmail(att).toLowerCase().endsWith(`@${domein}`);
 }
 
 function briefingCard(m) {
@@ -7107,13 +7336,15 @@ function expenseDialog(exp) {
 
 const VIEWS = {
   dashboard: viewDashboard, planning: viewPlanning, hours: viewHours, tasks: viewTasks,
-  meetings: viewMeetings, expenses: viewExpenses, goals: viewGoals, projects: viewProjects,
+  meetings: viewMeetings, transcripts: viewTranscripts, expenses: viewExpenses,
+  goals: viewGoals, projects: viewProjects,
   kpis: viewKpis, knowledge: viewKnowledge, tips: viewTips, ideas: viewIdeas, development: viewDevelopment,
   review: viewReview, settings: viewSettings,
 };
 const TITLE_KEY = {
   dashboard: "nav_dashboard", planning: "nav_planning", hours: "nav_hours", tasks: "nav_tasks",
-  meetings: "nav_meetings", expenses: "nav_expenses", goals: "nav_goals", projects: "nav_projects",
+  meetings: "nav_meetings", transcripts: "nav_transcripts", expenses: "nav_expenses",
+  goals: "nav_goals", projects: "nav_projects",
   kpis: "nav_kpis", knowledge: "nav_knowledge", tips: "nav_tips", ideas: "nav_ideas", development: "nav_dev",
   review: "nav_review", settings: "nav_settings",
 };
@@ -7305,7 +7536,8 @@ function taskDialog(task, defaults = {}) {
   const t = task || {
     // Een voorgestelde taak komt met zijn tekst al ingevuld binnen.
     title: defaults.title || "", notes: "", status: defaults.status || "inbox", priority: "medium", energy: "shallow",
-    dueDate: "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "", waitingOn: "",
+    dueDate: "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "",
+    waitingOn: defaults.waitingOn || "",
   };
   openDialog({
     title: task ? tr("dl_task_edit") : tr("dl_task_new"),
@@ -7342,7 +7574,10 @@ function taskDialog(task, defaults = {}) {
         if (task.status === "done" && !task.completedAt) task.completedAt = TODAY();
         if (task.status !== "done") task.completedAt = null;
       } else {
-        DB.tasks.unshift({ id: uid(), createdAt: TODAY(), completedAt: patch.status === "done" ? TODAY() : null, ...patch });
+        const nieuw = { id: uid(), createdAt: TODAY(), completedAt: patch.status === "done" ? TODAY() : null, ...patch };
+        DB.tasks.unshift(nieuw);
+        // De aanroeper mag weten welke taak het werd, om hem te kunnen koppelen.
+        if (typeof defaults.onSaved === "function") defaults.onSaved(nieuw);
       }
       save(); toast(task ? tr("dl_updated") : tr("dl_created")); render();
     },
@@ -8476,6 +8711,7 @@ async function agendaRead(loud) {
     // Mail en briefing eerst: dan staan ze klaar zodra de pagina opnieuw tekent.
     await mailRead(AGENDA_DIR);
     await briefRead(AGENDA_DIR);
+    await trRead(AGENDA_DIR);
 
     const file = await agendaNewestFile(AGENDA_DIR);
     if (!file) { if (loud) { render(); toast(tr("ag_nofile")); } return null; }
@@ -9103,6 +9339,20 @@ document.addEventListener("click", (e) => {
     }
     case "cat-edit": categoryDialog((DB.categories || []).find((c) => c.id === id)); break;
     case "cat-new": categoryDialog(null); break;
+    case "tr-filter": UI.trFilter = el.dataset.v; render(); break;
+    /* Een actie uit een verslag wordt pas een taak als jij hem doorzet. Het
+       venster gaat open met de tekst erin; pas na opslaan telt hij als gestuurd,
+       zodat annuleren hem niet stilletjes afvinkt. */
+    case "tr-to-task": {
+      const t = (DB.transcripts || []).find((x) => x.id === id);
+      const a = t && t.acties.find((x) => x.id === el.dataset.v);
+      if (!a) break;
+      const wie = a.person && !isMij(a.person) ? a.person : "";
+      taskDialog(null, { title: a.text, waitingOn: wie, onSaved: (taak) => {
+        a.taskId = taak.id; save(); render();
+      } });
+      break;
+    }
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
