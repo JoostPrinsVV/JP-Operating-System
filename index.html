@@ -398,6 +398,16 @@ dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
   border-bottom:1.5px solid color-mix(in srgb,var(--primary) 45%,transparent)}
 a.src-n:hover{border-bottom-color:var(--primary)}
 
+/* Een mailregel is in zijn geheel klikbaar: de koppeling op het onderwerp
+   rekt onzichtbaar op tot de hele regel. Eén koppeling dus, geen tweede
+   aanklikbaar ding dat hetzelfde doet - en de tekst blijft te selecteren
+   waar hij boven de laag uitsteekt. */
+.ml-row{position:relative;cursor:pointer}
+.ml-row a.src-n::after{content:"";position:absolute;inset:0;border-radius:8px}
+.ml-row:hover a.src-n{border-bottom-color:var(--primary)}
+.ml-go{flex:0 0 auto;margin-top:2px;color:var(--ink-3);opacity:0;transition:opacity .14s}
+.ml-row:hover .ml-go{opacity:1}
+
 /* The S, M, A, R, T letter in front of each line of the write-up. */
 .smart-k{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
   border-radius:5px;color:#fff;font-size:10px;font-weight:700;flex:0 0 auto}
@@ -1144,6 +1154,7 @@ const STR = {
   ml_nopeople:["Deze afspraak heeft geen deelnemers met een mailadres, dus er valt niets te koppelen.",
                "Deze afspraak heeft geen deelnemers met een mailadres, dus er valt niets te koppelen."],
   ml_nosubject:["(geen onderwerp)","(geen onderwerp)"],
+  ml_open:["Openen in Outlook","Openen in Outlook"],
   ml_thread:["{0} berichten","{0} berichten"],
   ml_attach:["Met bijlage","Met bijlage"],
   ml_inbox:["Ontvangen","Ontvangen"], ml_sent:["Verzonden","Verzonden"],
@@ -4577,13 +4588,14 @@ function mailCard(m) {
   }
 
   return card(tr("ml_title"), `<ul class="grid" style="gap:1px">
-    ${r.hits.map(({ msg, reasons, count, after }) => `<li class="src" style="padding:8px 6px">
+    ${r.hits.map(({ msg, reasons, count, after }) => `<li class="src${msg.webLink ? " ml-row" : ""}" style="padding:8px 6px">
       <span class="ml-dot ${msg.folder === "sent" ? "sent" : ""}"
         title="${esc(msg.folder === "sent" ? tr("ml_sent") : tr("ml_inbox"))}"></span>
       <div style="min-width:0;flex:1">
         <p class="row wrap" style="gap:7px;align-items:baseline">
           ${msg.webLink
-            ? `<a class="src-n" href="${esc(msg.webLink)}" target="_blank" rel="noopener noreferrer">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</a>`
+            ? `<a class="src-n" href="${esc(msg.webLink)}" target="_blank" rel="noopener noreferrer"
+                 title="${esc(tr("ml_open"))}">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</a>`
             : `<span class="src-n">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</span>`}
           ${count > 1 ? `<span class="badge neutral">${esc(tr("ml_thread", count))}</span>` : ""}
           ${msg.hasAttachments ? `<span class="mut" title="${esc(tr("ml_attach"))}">${ico("folder", "", 12)}</span>` : ""}
@@ -4595,6 +4607,7 @@ function mailCard(m) {
         ${msg.preview ? `<p class="xs" style="margin-top:3px;line-height:1.5">${esc(truncate(msg.preview, 190))}</p>` : ""}
         <p class="xs mut" style="margin-top:3px;font-style:italic">${esc(reasons.join(" · ") || tr("ml_why_other"))}</p>
       </div>
+      ${msg.webLink ? `<span class="ml-go" aria-hidden="true">${ico("arrow", "", 13)}</span>` : ""}
     </li>`).join("")}
   </ul>`,
     tr("ml_found", r.hits.length, MAIL.messages.length));
