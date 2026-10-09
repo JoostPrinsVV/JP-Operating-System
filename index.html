@@ -6885,14 +6885,41 @@ function render() {
 const closeRailOnPhone = () => {
   if (UI.railWide && window.matchMedia("(max-width:700px)").matches) setRailWide(false);
 };
+/* ---- terug ---------------------------------------------------------------
+   De app blijft op één adres staan, maar legt bij elke stap wel een punt in
+   de geschiedenis van de browser. Daardoor werken de terugknop van je muis,
+   Alt+pijl-links en het veeggebaar op een touchpad gewoon. De bladwijzer en
+   het herladen veranderen er niet van: er komt geen pad achter de URL, dus
+   GitHub Pages hoeft niets te weten van routes.
+------------------------------------------------------------------------- */
+const navState = () => ({ view: UI.view, detail: UI.detail });
+function navMark(replace) {
+  try {
+    if (replace) history.replaceState(navState(), "");
+    else history.pushState(navState(), "");
+  } catch (e) { /* een browser zonder geschiedenis-API: dan gewoon niet */ }
+}
+window.addEventListener("popstate", (e) => {
+  /* Staat er een popup open, dan sluit terug eerst die - net als op je
+     telefoon. Het punt in de geschiedenis wordt teruggelegd, zodat je nog een
+     keer terug kunt voor de pagina zelf. */
+  if (dlg && dlg.open) { dlg.close(); navMark(); return; }
+  const s = e.state;
+  if (!s || !s.view) return;
+  UI.view = viewOn(s.view) ? s.view : "dashboard";
+  UI.detail = s.detail || null;
+  saveUI(); closeRailOnPhone(); render(); window.scrollTo(0, 0);
+});
+
 function go(view) {
   // A link to a switched-off tab lands on the dashboard rather than on a page
   // the rail says does not exist.
   UI.view = viewOn(view) ? view : "dashboard";
-  UI.detail = null; saveUI(); closeRailOnPhone(); render(); window.scrollTo(0, 0);
+  UI.detail = null; saveUI(); closeRailOnPhone(); navMark();
+  render(); window.scrollTo(0, 0);
 }
 function open_(type, id) {
-  UI.detail = { type, id }; closeRailOnPhone(); render(); window.scrollTo(0, 0);
+  UI.detail = { type, id }; closeRailOnPhone(); navMark(); render(); window.scrollTo(0, 0);
 }
 
 /* ---- dialogs ----------------------------------------------------------- */
@@ -9040,6 +9067,9 @@ applyLang(startLang);
 document.documentElement.classList.toggle("rail-wide", UI.railWide);
 $("#scrim").hidden = !UI.railWide;
 load();
+/* Het eerste punt in de geschiedenis is de pagina waar je opent. Vervangen,
+   niet toevoegen: anders kost je eerste druk op terug niets. */
+navMark(true);
 render();
 startTick();
 
