@@ -597,6 +597,13 @@ a.btn{text-decoration:none}
 .cw-now{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--primary);z-index:3}
 .cw-now::before{content:"";position:absolute;left:-1px;top:-4px;width:7px;height:7px;
   border-radius:50%;background:var(--primary)}
+/* Wat Copilot schreef staat in een eigen vlak, zodat je in één oogopslag ziet
+   wat van een model komt en wat de app zelf weet. */
+.brief-ai{border:1px solid color-mix(in srgb,var(--c5) 30%,transparent);
+  background:color-mix(in srgb,var(--c5) 6%,transparent);
+  border-radius:11px;padding:11px 13px;margin-bottom:13px}
+.brief-ai .lbl{color:var(--ink-2)}
+
 /* Het vierkantje dat een categorie aanduidt, ook in de lijst en de popup. */
 /* Het randje houdt een lichte kleur als geel zichtbaar op een witte kaart. */
 .cat-dot{display:inline-block;width:9px;height:9px;border-radius:3px;flex:none;
@@ -1179,8 +1186,12 @@ const STR = {
   ag_mail:["{0} mailberichten gelezen uit {1}","{0} mailberichten gelezen uit {1}"],
 
   m_brief:["Briefing","Briefing"],
-  m_brief_d:["Uit je eigen werkruimte — geen mail, geen chat, niets van buiten.",
-             "Uit je eigen werkruimte — geen mail, geen chat, niets van buiten."],
+  m_brief_d:["Wat de app zelf weet, en wat Copilot er vanochtend over schreef.",
+             "Wat de app zelf weet, en wat Copilot er vanochtend over schreef."],
+  m_brief_ai:["Door Copilot","Door Copilot"],
+  m_brief_ai_note:["Geschreven door een taalmodel op basis van je mail, chats en agenda. Lees het als een geheugensteun, niet als een vastgelegd besluit.",
+                   "Geschreven door een taalmodel op basis van je mail, chats en agenda. Lees het als een geheugensteun, niet als een vastgelegd besluit."],
+  m_brief_totask:["Hier een taak van maken","Hier een taak van maken"],
   m_brief_prev:["Vorige keer, {0}","Vorige keer, {0}"],
   m_brief_nodec:["Geen besluiten vastgelegd bij die afspraak.","Geen besluiten vastgelegd bij die afspraak."],
   m_brief_open:["Nog open uit deze reeks ({0})","Nog open uit deze reeks ({0})"],
@@ -4225,7 +4236,8 @@ function viewMeetings() {
   const canRescan = DB.meetings.some((m) => !m.onlineUrl);
 
   const head = pageHead(tr("nav_meetings"), tr("m_sub"),
-    `<div class="seg">${[["list", tr("m_v_list")], ["week", tr("m_v_week")]]
+    `<button class="btn sm outline" data-act="meet-today">${ico("meetings", "", 13)} ${esc(tr("today"))}</button>
+     <div class="seg">${[["list", tr("m_v_list")], ["week", tr("m_v_week")]]
        .map(([v, l]) => `<button data-act="meet-view" data-v="${v}"
          aria-pressed="${UI.meetView === v}">${esc(l)}</button>`).join("")}</div>
      ${canRescan ? `<button class="btn sm ghost" data-act="rescan-links">${ico("video")} ${esc(tr("m_rescan"))}</button>` : ""}
@@ -4777,6 +4789,79 @@ function mailCard(m) {
     tr("ml_found", r.hits.length, MAIL.messages.length));
 }
 
+/* ---- briefing uit Copilot -----------------------------------------------
+   Copilot stuurt zichzelf elke ochtend een mail met per afspraak een stukje
+   voorbereiding. De flow knipt die mail in stukken en zet er een json van; de
+   app koppelt elk stuk aan de goede afspraak en hakt de tekst in secties.
+
+   Het bestand blijft in het geheugen, net als de mail: het wordt elke ochtend
+   opnieuw gemaakt en hoort niet in een back-up die je deelt.
+------------------------------------------------------------------------- */
+let BRIEF = null;
+
+/* De kopjes die Copilot gebruikt, elk met de sleutel waar hij onder terechtkomt.
+   Engels staat erbij voor het geval Copilot in die taal antwoordt. */
+const BRIEF_SECTIES = [
+  ["doel",    ["Purpose","Doel"],              ["doel", "purpose", "goal"]],
+  ["ontwik",  ["Developments","Ontwikkelingen"], ["ontwikkelingen", "context", "achtergrond", "developments", "background"]],
+  ["voorber", ["Preparation","Voorbereiding"], ["voorbereiding", "preparation", "prep"]],
+  ["vragen",  ["Open questions","Open vragen"], ["open vragen", "vragen", "open questions", "questions"]],
+  ["taken",   ["Suggested tasks","Voorgestelde taken"], ["taken", "acties", "actiepunten", "tasks", "actions"]],
+];
+
+/* "**Doel:** iets" of "Doel: iets" aan het begin van een regel. De tekst loopt
+   door tot het volgende kopje, zodat een alinea van drie regels heel blijft. */
+function briefSplit(tekst) {
+  const regels = String(tekst || "").replace(/\r/g, "").split("\n");
+  const uit = {};
+  let huidig = null;
+  regels.forEach((regel) => {
+    const kop = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ ]{3,20}?)\s*(?:\*\*|__)?\s*:\s*(.*)$/.exec(regel);
+    const naam = kop ? kop[1].trim().toLowerCase() : "";
+    const sleutel = kop && (BRIEF_SECTIES.find(([, , namen]) => namen.includes(naam)) || [])[0];
+    if (sleutel) {
+      huidig = sleutel;
+      uit[huidig] = (kop[2] || "").trim();
+      return;
+    }
+    if (huidig && regel.trim()) uit[huidig] = `${uit[huidig]}\n${regel.trim()}`.trim();
+  });
+  // Staat er helemaal geen kopje in, dan is de hele tekst de voorbereiding.
+  if (!Object.keys(uit).length && String(tekst || "").trim()) uit.voorber = String(tekst).trim();
+  return uit;
+}
+
+const briefNorm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+function normaliseBrief(raw) {
+  const items = (raw && (raw.items || raw.briefings)) || [];
+  return {
+    generatedAt: (raw && raw.generatedAt) || "",
+    items: items.map((i) => ({
+      day: String(i.day || "").slice(0, 10),
+      time: String(i.time || "").slice(0, 5),
+      title: String(i.title || "").trim(),
+      secties: briefSplit(i.text || i.body || ""),
+      text: String(i.text || i.body || "").trim(),
+    })).filter((i) => /^\d{4}-\d{2}-\d{2}$/.test(i.day) && (i.text || i.title)),
+  };
+}
+
+/* Het stukje dat bij deze afspraak hoort. Eerst op dag én tijd, want dat is
+   het enige wat een terugkerende afspraak uit elkaar houdt; lukt dat niet,
+   dan op dag en titel, want Copilot kan een kwartier verkeerd hebben gelezen. */
+function briefFor(m) {
+  if (!BRIEF || !BRIEF.items.length) return null;
+  const dag = String(m.startsAt).slice(0, 10);
+  const tijd = String(m.startsAt).slice(11, 16);
+  const titel = briefNorm(m.title);
+  const zelfdeDag = BRIEF.items.filter((i) => i.day === dag);
+  return zelfdeDag.find((i) => i.time === tijd && briefNorm(i.title) === titel)
+    || zelfdeDag.find((i) => i.time === tijd)
+    || zelfdeDag.find((i) => briefNorm(i.title) === titel)
+    || null;
+}
+
 function briefingCard(m) {
   const related = relatedMeetings(m);
   const prev = related[0] ? related[0].x : null;
@@ -4792,13 +4877,41 @@ function briefingCard(m) {
         .sort((a, b) => scoreTask(b) - scoreTask(a)).slice(0, 5)
     : [];
 
+  const cop = briefFor(m);
+
   // Niets te melden is ook een antwoord, maar dan hoeft er geen kaart te staan.
-  if (!prev && !open.length && !tasks.length) return "";
+  if (!cop && !prev && !open.length && !tasks.length) return "";
 
   const line = (label, body) => `<div style="margin-bottom:11px">
     <p class="lbl" style="margin-bottom:3px">${esc(label)}</p>${body}</div>`;
 
+  /* Wat Copilot erover schrijft staat bovenaan en is als zodanig gemerkt: het
+     is een samenvatting van een model, geen vastgelegd besluit. */
+  const copBlok = !cop ? "" : `<div class="brief-ai">
+    <p class="row wrap" style="gap:7px;align-items:center;margin-bottom:9px">
+      ${ico("sparkle", "", 14)}<span class="lbl" style="margin:0">${esc(tr("m_brief_ai"))}</span>
+      ${BRIEF.generatedAt ? `<span class="xs mut">${esc(fmtDateTime(BRIEF.generatedAt))}</span>` : ""}
+    </p>
+    ${BRIEF_SECTIES.map(([k, label]) => {
+      const tekst = cop.secties[k];
+      if (!tekst) return "";
+      const lijst = k === "taken" ? tekst.split("\n").map((r) => r.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean) : null;
+      return `<div style="margin-bottom:9px">
+        <p class="lbl" style="margin-bottom:3px">${esc(lbl(label))}</p>
+        ${lijst && lijst.length > 1
+          ? `<ul class="grid" style="gap:3px">${lijst.map((r) => `<li class="row" style="gap:7px;align-items:baseline">
+              <span class="mut" style="flex:0 0 auto">·</span>
+              <span class="xs" style="flex:1;min-width:0;line-height:1.55">${esc(r)}</span>
+              <button class="btn sm ghost" data-act="brief-task" data-v="${esc(r)}" data-id="${m.id}"
+                title="${esc(tr("m_brief_totask"))}">${ico("plus", "", 11)}</button></li>`).join("")}</ul>`
+          : `<p class="xs" style="white-space:pre-wrap;line-height:1.55">${esc(tekst)}</p>`}
+      </div>`;
+    }).join("")}
+    <p class="xs mut" style="margin-top:2px">${esc(tr("m_brief_ai_note"))}</p>
+  </div>`;
+
   return card(tr("m_brief"), `
+    ${copBlok}
     ${prev ? line(tr("m_brief_prev", fmtDate(prev.startsAt.slice(0, 10))),
       `<button class="tsk-t sm2" data-act="open-meeting" data-id="${prev.id}"
          style="display:block;font-weight:500">${esc(prev.title)}</button>
@@ -7314,7 +7427,7 @@ function meetingPeek(id) {
         ${(m.categories || []).map((c) => `<span class="cat-chip" style="cursor:default">
           <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>`).join("")}
       </p>` : "") +
-      attendeeCard(m) + mailCard(m) +
+      briefingCard(m) + attendeeCard(m) + mailCard(m) +
       (m.agenda ? card(tr("m_agenda"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : "") +
       (m.notes ? card(tr("m_notes"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(truncate(m.notes, 900))}</p>`) : "") +
       (m.decisions ? card(tr("m_decisions"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`) : "") +
@@ -8272,6 +8385,19 @@ async function agendaNewestFile(dir, pattern = /\.ics$/i) {
   return best;
 }
 
+/* De briefing uit dezelfde map, op dezelfde voorwaarden als de mail: nieuwste
+   bestand wint, alleen in het geheugen, en een fout hierin houdt de agenda
+   niet tegen. */
+async function briefRead(dir) {
+  try {
+    const file = await agendaNewestFile(dir, /^briefing-.*\.json$/i);
+    if (!file) { BRIEF = null; return null; }
+    const raw = JSON.parse(await file.text());
+    BRIEF = normaliseBrief(raw);
+    return BRIEF;
+  } catch (e) { BRIEF = null; return null; }
+}
+
 /* Het mailbestand uit dezelfde map. Mislukt dit, dan is dat geen reden om de
    agenda ook niet te lezen - de twee staan los van elkaar. */
 async function mailRead(dir) {
@@ -8299,8 +8425,9 @@ async function agendaRead(loud) {
       }
     }
 
-    // Mail eerst: dan staat hij klaar zodra de pagina opnieuw tekent.
+    // Mail en briefing eerst: dan staan ze klaar zodra de pagina opnieuw tekent.
     await mailRead(AGENDA_DIR);
+    await briefRead(AGENDA_DIR);
 
     const file = await agendaNewestFile(AGENDA_DIR);
     if (!file) { if (loud) { render(); toast(tr("ag_nofile")); } return null; }
@@ -8885,6 +9012,14 @@ document.addEventListener("click", (e) => {
     case "open-project": open_("project", id); break;
     case "open-meeting": open_("meeting", id); break;
     case "peek-meeting": meetingPeek(id); break;
+    /* Een taak die Copilot voorstelt wordt pas een taak als jij hem aanklikt.
+       Het dialoogvenster gaat open met de tekst er al in, zodat je hem nog
+       kunt bijschaven voor hij op je bord belandt. */
+    case "brief-task": {
+      const mt = DB.meetings.find((x) => x.id === id);
+      taskDialog(null, { title: el.dataset.v, projectId: mt ? mt.projectId : null });
+      break;
+    }
 
     case "new-project": projectDialog(null); break;
     case "edit-project": projectDialog(DB.projects.find((x) => x.id === id)); break;
@@ -8897,6 +9032,13 @@ document.addEventListener("click", (e) => {
     }
     case "meet-view": UI.meetView = el.dataset.v; UI.meetWeek = 0; saveUI(); render(); break;
     case "toggle-past": UI.pastOpen = UI.pastOpen === false; saveUI(); render(); break;
+    /* Vandaag brengt je naar de dag zelf: de lijst met de hele dag en de
+       streep waar je staat. Ook de week springt terug, zodat je na het
+       terugklikken naar Week niet in november blijkt te staan. */
+    case "meet-today": {
+      UI.meetView = "list"; UI.meetFilter.days = "today"; UI.meetWeek = 0;
+      UI.detail = null; saveUI(); render(); window.scrollTo(0, 0); break;
+    }
     /* Vanuit de instellingen én vanuit de agenda zelf; in het tweede geval
        springt de weergave meteen naar het weekrooster, anders zie je niets
        van je keuze. */
