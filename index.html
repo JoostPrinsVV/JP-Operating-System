@@ -4823,14 +4823,25 @@ function mailCard(m) {
 ------------------------------------------------------------------------- */
 let BRIEF = null;
 
+/* Een kopregel herkennen: "Doel:", "**Besproken onderwerpen:**", "- Acties/vervolg:".
+   Ruim genomen in lengte en leestekens, want Copilot houdt zich niet aan de
+   bewoordingen uit de prompt. */
+const KOP_RE = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ /&'-]{1,38}?)\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(.*)$/;
+/* Waar een kopje bij hoort. Op bevatting en niet op gelijkheid: dan vallen
+   "Acties/vervolg" en "Belangrijkste besluiten" ook op hun plek. De volgorde
+   in de tabel beslist bij twijfel, dus het meest specifieke staat vooraan. */
+const kopSleutel = (naam, tabel) =>
+  (tabel.find(([, , woorden]) => woorden.some((w) => naam.includes(w))) || [])[0];
+
 /* De kopjes die Copilot gebruikt, elk met de sleutel waar hij onder terechtkomt.
    Engels staat erbij voor het geval Copilot in die taal antwoordt. */
 const BRIEF_SECTIES = [
-  ["doel",    ["Purpose","Doel"],              ["doel", "purpose", "goal"]],
-  ["ontwik",  ["Developments","Ontwikkelingen"], ["ontwikkelingen", "context", "achtergrond", "developments", "background"]],
-  ["voorber", ["Preparation","Voorbereiding"], ["voorbereiding", "preparation", "prep"]],
-  ["vragen",  ["Open questions","Open vragen"], ["open vragen", "vragen", "open questions", "questions"]],
-  ["taken",   ["Suggested tasks","Voorgestelde taken"], ["taken", "acties", "actiepunten", "tasks", "actions"]],
+  ["vragen",  ["Open questions","Open vragen"], ["open vra", "open question", "vraagpunt"]],
+  ["doel",    ["Purpose","Doel"],               ["doel", "purpose", "goal"]],
+  ["ontwik",  ["Developments","Ontwikkelingen"], ["ontwikkel", "context", "achtergrond", "development",
+    "background", "besproken", "onderwerp", "besluit", "conclusie", "decision"]],
+  ["voorber", ["Preparation","Voorbereiding"],  ["voorbereid", "preparation", "prep"]],
+  ["taken",   ["Suggested tasks","Voorgestelde taken"], ["taken", "actie", "vervolg", "task", "action", "to do", "todo"]],
 ];
 
 /* "**Doel:** iets" of "Doel: iets" aan het begin van een regel. De tekst loopt
@@ -4840,11 +4851,9 @@ function briefSplit(tekst) {
   const uit = {};
   let huidig = null;
   regels.forEach((regel) => {
-    /* "Doel:", "**Doel:**", "- Doel:" - Copilot wisselt per keer van opmaak,
-       dus de vetgedrukt-sterretjes mogen voor én na de dubbele punt staan. */
-    const kop = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ ]{3,20}?)\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(.*)$/.exec(regel);
+    const kop = KOP_RE.exec(regel);
     const naam = kop ? kop[1].trim().toLowerCase() : "";
-    const sleutel = kop && (BRIEF_SECTIES.find(([, , namen]) => namen.includes(naam)) || [])[0];
+    const sleutel = kop && kopSleutel(naam, BRIEF_SECTIES);
     if (sleutel) {
       huidig = sleutel;
       uit[huidig] = (kop[2] || "").trim();
@@ -4883,10 +4892,14 @@ function briefHeader(tekst) {
   if (!kop) return null;
   const titel = kop[4].trim() ? [kop[4].trim()] : [];
   let i = 1;
+  /* Staat de titel niet achter de tijd maar op een eigen regel eronder, dan
+     zit daar van de omzetter een lege regel tussen. Die wordt overgeslagen,
+     anders houd je een afspraak zonder naam over. */
+  if (!titel.length) while (i < regels.length && !regels[i].trim()) i++;
   while (i < regels.length) {
     const r = regels[i].trim();
     if (!r) { i++; break; }                                   // lege regel sluit de kop
-    if (/^[A-Za-zÀ-ÿ ]{3,20}\s*:/.test(r)) break;             // een kopje begint
+    if (/^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ /&'-]{1,38}\s*:/.test(r)) break;   // een kopje begint
     titel.push(r); i++;
   }
   return {
@@ -4943,9 +4956,21 @@ function briefFor(m) {
    ook dat het in je back-up komt - zie de waarschuwing op de pagina zelf.
 ------------------------------------------------------------------------- */
 const TR_SECTIES = [
-  ["samenvatting", ["Summary","Samenvatting"], ["samenvatting", "summary", "verslag"]],
-  ["besluiten",    ["Decisions","Besluiten"],   ["besluiten", "besluit", "decisions"]],
+  ["samenvatting", ["Summary","Samenvatting"], ["samenvatting", "summary", "verslag", "notulen",
+    "belangrijkste punten", "kernpunten", "key points", "highlights", "besproken"]],
+  ["besluiten",    ["Decisions","Besluiten"],   ["besluiten", "besluit", "conclusies", "conclusie",
+    "decisions", "decision", "outcomes"]],
 ];
+/* Regels die door de omzetter zijn afgebroken weer tot alinea's maken. Een
+   lege regel blijft een alinea-grens; een regel met een streepje blijft een
+   eigen regel. */
+const plakRegels = (tekst) => String(tekst || "").split(/\n\s*\n/).map((alinea) =>
+  alinea.split("\n").reduce((acc, regel) => {
+    const r = regel.trim();
+    if (!r) return acc;
+    if (!acc) return r;
+    return /^[-*•]/.test(r) ? `${acc}\n${r}` : `${acc} ${r}`;
+  }, "")).filter(Boolean).join("\n\n");
 /* "Henri van der Ee: opzet aanleveren" - naam vóór de dubbele punt, en wat
    erachter staat is de taak. Staat er geen naam, dan hoort hij bij jou. */
 function trAction(regel) {
@@ -4962,10 +4987,11 @@ function trParse(tekst) {
   const secties = {};
   let huidig = null, acties = [];
   String(h.rest).split("\n").forEach((regel) => {
-    const kop = /^\s*(?:[-*•]\s*)?(?:\*\*|__)?\s*([A-Za-zÀ-ÿ ]{3,20}?)\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(.*)$/.exec(regel);
+    const kop = KOP_RE.exec(regel);
     const naam = kop ? kop[1].trim().toLowerCase() : "";
-    const sleutel = kop && (TR_SECTIES.find(([, , namen]) => namen.includes(naam)) || [])[0];
-    const isActies = kop && ["acties", "actiepunten", "taken", "actions", "tasks", "afspraken"].includes(naam);
+    const isActies = kop && ["actie", "vervolg", "taken", "action", "task", "to do", "todo", "afsprak"]
+      .some((w) => naam.includes(w));
+    const sleutel = !isActies && kop && kopSleutel(naam, TR_SECTIES);
     if (sleutel) { huidig = sleutel; secties[huidig] = (kop[2] || "").trim(); return; }
     if (isActies) { huidig = "acties"; if (kop[2].trim()) acties.push(kop[2].trim()); return; }
     if (!regel.trim()) return;
@@ -4976,12 +5002,23 @@ function trParse(tekst) {
       else acties[acties.length - 1] += ` ${regel.trim()}`;
       return;
     }
-    if (huidig) secties[huidig] = `${secties[huidig]} ${regel.trim()}`.trim();
+    if (huidig) {
+      // Een opsommingsregel houdt zijn eigen regel; de rest is doorgelopen tekst.
+      const lijm = /^\s*[-*•]/.test(regel) ? "\n" : " ";
+      secties[huidig] = `${secties[huidig]}${secties[huidig] ? lijm : ""}${regel.trim()}`.trim();
+    }
   });
   Object.keys(secties).forEach((k) => {
     secties[k] = secties[k].replace(/\*\*/g, "").trim();
     if (!secties[k]) delete secties[k];
   });
+  /* Herkent hij geen enkel kopje, dan is de hele tekst de samenvatting. Beter
+     een ruwe lap tekst dan een leeg kaartje: dan zie je tenminste wat Copilot
+     ervan maakte, en waarom het niet past. */
+  if (!Object.keys(secties).length && !acties.length) {
+    const ruw = plakRegels(h.rest).replace(/\*\*/g, "").trim();
+    if (ruw) secties.samenvatting = ruw;
+  }
   return {
     day: h.day, time: h.time, title: h.title, secties,
     acties: acties.map(trAction).filter(Boolean)
@@ -5003,8 +5040,13 @@ function trImport(raw) {
     const bestaand = DB.transcripts.find((t) => t.key === sleutel);
     if (bestaand) {
       /* Alleen aanvullen: een verslag dat je zelf hebt bijgewerkt blijft staan,
-         en een actie die al een taak is houdt zijn koppeling. */
-      if (!Object.keys(bestaand.secties || {}).length) bestaand.secties = p.secties;
+         en een actie die al een taak is houdt zijn koppeling. Een sectie die
+         er nog niet was komt er wel bij - zo repareert een nieuwe lezing een
+         verslag dat eerder leeg bleef. */
+      bestaand.secties = bestaand.secties || {};
+      Object.keys(p.secties).forEach((k) => {
+        if (!bestaand.secties[k]) { bestaand.secties[k] = p.secties[k]; bij++; }
+      });
       p.acties.forEach((a) => {
         if (bestaand.acties.some((b) => briefNorm(b.text) === briefNorm(a.text))) return;
         bestaand.acties.push({ id: uid(), ...a, taskId: null });
@@ -5078,6 +5120,21 @@ function viewTranscripts() {
   `<p class="xs mut" style="margin-top:6px">${esc(tr("tr_privacy"))}</p>`;
 }
 
+/* Schreef Copilot een opsomming, toon hem dan ook als opsomming: de sterretjes
+   en streepjes die hij gebruikt zijn opmaak, geen tekst. */
+function trText(tekst) {
+  const regels = String(tekst).split("\n").filter((r) => r.trim());
+  const bullets = regels.filter((r) => /^\s*[-*•]/.test(r));
+  if (bullets.length >= 2 && bullets.length === regels.length) {
+    return `<ul class="grid" style="gap:4px">${regels.map((r) =>
+      `<li class="row" style="gap:8px;align-items:baseline">
+        <span class="mut" style="flex:0 0 auto">·</span>
+        <span class="sm2" style="flex:1;min-width:0;line-height:1.6">${esc(r.replace(/^\s*[-*•]\s*/, ""))}</span>
+      </li>`).join("")}</ul>`;
+  }
+  return `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(tekst)}</p>`;
+}
+
 function trCard(t) {
   const m = trMeeting(t);
   // Per persoon gegroepeerd: zo zie je in één blik wat van jou is.
@@ -5091,7 +5148,7 @@ function trCard(t) {
   return card(t.title || tr("tr_untitled"),
     `${TR_SECTIES.map(([k, label]) => t.secties[k] ? `<div style="margin-bottom:11px">
         <p class="lbl" style="margin-bottom:3px">${esc(lbl(label))}</p>
-        <p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(t.secties[k])}</p>
+        ${trText(t.secties[k])}
       </div>` : "").join("")}
     ${t.acties.length ? `<div>
       <p class="lbl" style="margin-bottom:5px">${esc(tr("tr_actions"))}</p>
