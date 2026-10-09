@@ -1161,6 +1161,7 @@ const STR = {
   ml_after:["van ná de afspraak","van ná de afspraak"],
   ml_why_from:["afzender is {0}","afzender is {0}"],
   ml_why_to:["{0} staat in de geadresseerden","{0} staat in de geadresseerden"],
+  ml_why_sent:["door jou gestuurd aan {0}","door jou gestuurd aan {0}"],
   ml_why_subject:["onderwerp lijkt op de titel","onderwerp lijkt op de titel"],
   ml_why_other:["deelnemer gevonden","deelnemer gevonden"],
   ag_mail:["{0} mailberichten gelezen uit {1}","{0} mailberichten gelezen uit {1}"],
@@ -7882,15 +7883,25 @@ function mailScore(msg, ctx) {
   const reasons = [];
   let score = 0;
 
-  if (ctx.people.has(msg.from.email)) {
-    score += 50;
-    reasons.push(tr("ml_why_from", msg.from.name || msg.from.email));
-  }
-  const others = msg.people.filter((p) => p.email && p.email !== msg.from.email &&
-    p.email !== ctx.me && ctx.people.has(p.email));
-  if (others.length) {
-    score += Math.min(60, others.length * 30);
-    if (!reasons.length) reasons.push(tr("ml_why_to", others[0].name || others[0].email));
+  /* Welke deelnemers zitten in dit bericht? Afzender en geadresseerde tellen
+     even zwaar: een mail die jij aan iemand stuurde is net zoveel context voor
+     een overleg als een die je van diegene kreeg. Elke deelnemer extra geeft
+     tien punten, zodat een bericht aan de hele groep bovenaan komt - maar niet
+     zo veel dat het onderwerp er niet meer toe doet. */
+  const vanDeelnemer = ctx.people.has(msg.from.email);
+  const anderen = [];
+  const gezien = new Set([msg.from.email, ctx.me]);
+  msg.people.forEach((p) => {
+    if (!p.email || gezien.has(p.email) || !ctx.people.has(p.email)) return;
+    gezien.add(p.email); anderen.push(p);
+  });
+  const betrokken = (vanDeelnemer ? 1 : 0) + anderen.length;
+  if (betrokken) {
+    score += Math.min(70, 50 + (betrokken - 1) * 10);
+    const wie = vanDeelnemer ? (msg.from.name || msg.from.email)
+                             : (anderen[0].name || anderen[0].email);
+    reasons.push(vanDeelnemer ? tr("ml_why_from", wie)
+      : tr(msg.from.email === ctx.me ? "ml_why_sent" : "ml_why_to", wie));
   }
 
   if (ctx.words.length) {
