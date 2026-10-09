@@ -1166,6 +1166,7 @@ const STR = {
                "Deze afspraak heeft geen deelnemers met een mailadres, dus er valt niets te koppelen."],
   ml_nosubject:["(geen onderwerp)","(geen onderwerp)"],
   ml_open:["Openen in Outlook","Openen in Outlook"],
+  ml_invite:["uitnodiging","uitnodiging"],
   ml_thread:["{0} berichten","{0} berichten"],
   ml_attach:["Met bijlage","Met bijlage"],
   ml_inbox:["Ontvangen","Ontvangen"], ml_sent:["Verzonden","Verzonden"],
@@ -4753,6 +4754,7 @@ function mailCard(m) {
             ? `<a class="src-n" href="${esc(msg.webLink)}" target="_blank" rel="noopener noreferrer"
                  title="${esc(tr("ml_open"))}">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</a>`
             : `<span class="src-n">${esc(truncate(msg.subject || tr("ml_nosubject"), 90))}</span>`}
+          ${isInvite(msg) ? `<span class="badge info">${esc(tr("ml_invite"))}</span>` : ""}
           ${count > 1 ? `<span class="badge neutral">${esc(tr("ml_thread", count))}</span>` : ""}
           ${msg.hasAttachments ? `<span class="mut" title="${esc(tr("ml_attach"))}">${ico("folder", "", 12)}</span>` : ""}
         </p>
@@ -4760,7 +4762,13 @@ function mailCard(m) {
           ${esc(msg.from.name || msg.from.email)} · ${esc(fmtDateTime(msg.date))}
           ${after ? ` · ${esc(tr("ml_after"))}` : ""}
         </p>
-        ${msg.preview ? `<p class="xs" style="margin-top:3px;line-height:1.5">${esc(truncate(msg.preview, 190))}</p>` : ""}
+        ${(() => {
+          /* Bij een uitnodiging blijft alleen over wat de organisator er zelf
+             boven of onder heeft gezet; het Teams-blok gaat eruit. Blijft er
+             niets over, dan is er ook niets te tonen. */
+          const tekst = isInvite(msg) ? stripJoinBlurb(msg.preview).replace(/\s+/g, " ").trim() : msg.preview;
+          return tekst ? `<p class="xs" style="margin-top:3px;line-height:1.5">${esc(truncate(tekst, 190))}</p>` : "";
+        })()}
         <p class="xs mut" style="margin-top:3px;font-style:italic">${esc(reasons.join(" · ") || tr("ml_why_other"))}</p>
       </div>
       ${msg.webLink ? `<span class="ml-go" aria-hidden="true">${ico("arrow", "", 13)}</span>` : ""}
@@ -8116,6 +8124,20 @@ function normaliseMail(raw) {
   };
 }
 
+/* Een acceptatie of afwijzing van een uitnodiging. Outlook zet dat voor het
+   onderwerp, in de taal van de afzender. Als voorbereiding op een overleg zegt
+   het niets - wie er komt staat al bij de deelnemers. */
+const MAIL_RESPONSE = new RegExp("^\\s*(" + [
+  "geaccepteerd", "afgewezen", "voorlopig geaccepteerd", "voorlopig",
+  "accepted", "declined", "tentatively accepted", "tentative",
+].join("|") + ")\\s*:", "i");
+const isResponse = (msg) => MAIL_RESPONSE.test(msg.subject || "");
+
+/* De uitnodiging zelf. Die blijft staan - er staat soms een agenda onder -
+   maar het Teams-blok eronder is geen fragment waar je iets aan hebt. */
+const MAIL_INVITE = /_{10,}|microsoft teams-vergadering|microsoft teams meeting|deelnemen aan de vergadering|join the meeting now|teams\.microsoft\.com\/(l\/meetup-join|meet)\//i;
+const isInvite = (msg) => MAIL_INVITE.test(msg.preview || "");
+
 /* Woorden die in elk onderwerp staan en dus niets zeggen over het onderwerp. */
 const MAIL_STOP = new Set(("de het een en of van voor naar met op in te aan bij om dat die dit deze " +
   "re fw fwd antw aw the a an and or of for to in on with re: betreft").split(/\s+/));
@@ -8185,6 +8207,7 @@ function mailFor(m, max = 8) {
 
   const scored = [];
   MAIL.messages.forEach((msg) => {
+    if (isResponse(msg)) return;              // "Geaccepteerd: ..." is geen context
     const r = mailScore(msg, ctx);
     if (r.score >= 50) scored.push({ msg, ...r });
   });
