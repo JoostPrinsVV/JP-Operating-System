@@ -879,7 +879,9 @@ const STR = {
   no_goals:["No goals yet","Nog geen doelen"],
   milestones_n:["milestones","mijlpalen"], on_pace:["On pace","Op schema"],
   behind_pace:["Behind pace","Achter op schema"], pts_behind:["pts behind pace","punten achter op schema"],
-  todays_meetings:["Today's meetings","Overleggen vandaag"], no_meetings_today:["No meetings today","Geen overleggen vandaag"],
+  todays_meetings:["Today's calendar","Agenda vandaag"],
+  no_meetings_today:["Nothing in your calendar today","Niets in je agenda vandaag"],
+  db_meet_all:["Hele dag in de agenda","Hele dag in de agenda"],
   kpi_perf:["KPI performance","KPI-prestatie"], no_kpis:["No KPIs defined","Geen KPI's ingesteld"],
   of_target:["of target","van doel"], on_pace_l:["on pace","op schema"], behind_pace_l:["behind pace","achter op schema"],
   no_target:["No target set","Geen doel ingesteld"],
@@ -1626,7 +1628,7 @@ const STR = {
   db_news:["AI news round","AI-nieuwsronde"],
   db_tips:["AI tips","AI-tips"],
   db_goals:["Goal progress","Voortgang doelen"],
-  db_meetings:["Today's meetings","Overleggen vandaag"],
+  db_meetings:["Today's calendar","Agenda vandaag"],
   db_kpis:["KPI performance","KPI-prestatie"],
   db_flow_d:["Created against completed, per week. Eight weeks back.",
              "Aangemaakt tegenover afgerond, per week. Acht weken terug."],
@@ -3114,7 +3116,11 @@ function viewDashboard() {
     .sort((a, b) => scoreTask(b) - scoreTask(a)).slice(0, 8);
   const deadlines = DB.tasks.filter((t) => t.status !== "done" && t.dueDate && t.dueDate <= addDays(14))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 8);
-  const meetingsToday = DB.meetings.filter((m) => m.startsAt.slice(0, 10) === TODAY());
+  /* De hele dag op volgorde: hele-dag-afspraken bovenaan, de rest op tijd.
+     Ongesorteerd stond je agenda in de volgorde waarin hij ooit is ingelezen. */
+  const meetingsToday = DB.meetings.filter((m) => String(m.startsAt).slice(0, 10) === TODAY())
+    .sort((a, b) => (isAllDay(a) ? 0 : 1) - (isAllDay(b) ? 0 : 1) ||
+      String(a.startsAt).localeCompare(String(b.startsAt)));
   const open = DB.projects.filter((p) => p.status !== "done");
   const risky = open.filter((p) => p.status === "blocked" || p.health === 2);
 
@@ -3236,18 +3242,26 @@ function viewDashboard() {
       (!viewOn("meetings") ? "" : card(tr("todays_meetings"), meetingsToday.length
         ? `<ul class="grid" style="gap:2px">${meetingsToday.map((m) => {
             const rel = relWhen(m.startsAt, m.endsAt);
+            const heel = isAllDay(m);
+            const voorbij = !heel && new Date(m.endsAt || m.startsAt).getTime() < Date.now();
+            const kleur = (m.categories || []).length ? meetColor(m) : "";
             // The join link sits beside the row, not inside it: a link within
             // a button is invalid and breaks keyboard navigation.
             return `<li class="row" style="gap:4px">
-              <button class="mtg ${rel && rel.urgent ? "soon" : ""}" style="flex:1;min-width:0;
-                grid-template-columns:48px 1fr;padding:8px 9px"
-                data-act="open-meeting" data-id="${m.id}">
-                <span class="mtg-when"><span class="mtg-time tab" style="font-size:16px">${esc(fmtTime(m.startsAt))}</span></span>
+              <button class="mtg ${rel && rel.urgent ? "soon" : ""} ${voorbij ? "past" : ""}"
+                style="flex:1;min-width:0;grid-template-columns:48px 1fr;padding:8px 9px;
+                  ${kleur ? `border-left:3px solid ${kleur}` : ""}"
+                data-act="peek-meeting" data-id="${m.id}">
+                <span class="mtg-when">${heel
+                  ? `<span class="xs mut">${esc(tr("m_wk_allday"))}</span>`
+                  : `<span class="mtg-time tab" style="font-size:16px">${esc(fmtTime(m.startsAt))}</span>
+                     ${m.endsAt ? `<span class="mtg-date">${esc(fmtTime(m.endsAt))}</span>` : ""}`}</span>
                 <span class="mtg-body"><span class="mtg-title" style="font-size:12.5px">${esc(m.title)}</span>
                   <span class="tsk-m">
                     ${rel ? `<span class="badge ${rel.tone}" data-when="${esc(m.startsAt)}"
                       data-end="${esc(m.endsAt || "")}">${esc(rel.text)}</span>` : ""}
-                    ${m.location ? `<span>${esc(m.location)}</span>` : ""}</span>
+                    ${m.location ? `<span>${esc(m.location)}</span>` : ""}
+                    ${(m.categories || []).length ? `<span>${esc(m.categories[0])}</span>` : ""}</span>
                 </span></button>
               ${m.onlineUrl ? (() => {
                 // Eén klik: naar de app als dat kan, anders naar de browser.
@@ -3258,7 +3272,9 @@ function viewDashboard() {
                   aria-label="${esc(tr("m_join"))}">${ico("video", "", 14)}</a>`;
               })() : ""}
             </li>`;
-          }).join("")}</ul>`
+          }).join("")}</ul>
+          <button class="btn sm ghost" data-act="meet-today" style="margin-top:9px;padding-left:0">
+            ${ico("arrow", "", 12)} ${esc(tr("db_meet_all"))}</button>`
         : empty(tr("no_meetings_today"))));
 
   B.kpis =
