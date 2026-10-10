@@ -5120,10 +5120,18 @@ function trImport(raw) {
 
 async function trRead(dir) {
   try {
-    const file = await agendaNewestFile(dir, /^transcript.*\.json$/i);
-    if (!file) return null;
-    // Hetzelfde bestand twee keer lezen hoeft niet, maar schaadt ook niet.
-    return trImport(JSON.parse(await file.text()));
+    /* Verslagen worden bewaard, dus een week aan bestanden inlezen kan geen
+       kwaad: wat er al staat wordt alleen aangevuld. Zo haalt hij ook de dagen
+       in die je de app niet hebt geopend. */
+    let nieuw = 0, bij = 0;
+    const bestanden = await agendaFiles(dir, /^transcript.*\.json$/i, 7);
+    for (const file of bestanden.reverse()) {              // oudste eerst
+      try {
+        const r = trImport(JSON.parse(await file.text()));
+        nieuw += r.nieuw; bij += r.bij;
+      } catch (e) { /* een stuk bestand houdt de rest niet tegen */ }
+    }
+    return { nieuw, bij };
   } catch (e) { return null; }
 }
 
@@ -8857,26 +8865,38 @@ async function agendaForget() {
 /* The newest .ics in the folder wins, so a flow that keeps writing the same
    name and one that writes agenda-2026-10-06.ics both work. */
 async function agendaNewestFile(dir, pattern = /\.ics$/i) {
-  let best = null;
+  return (await agendaFiles(dir, pattern, 1))[0] || null;
+}
+
+/* De bestanden die passen, nieuwste eerst. Nodig omdat het nieuwste bestand
+   niet altijd het bruikbaarste is: op een dag zonder afspraken schrijft de
+   stroom een lege briefing weg, en die zou dan die van gisteren verdringen. */
+async function agendaFiles(dir, pattern, max = 7) {
+  const uit = [];
   for await (const [name, entry] of dir.entries()) {
     if (entry.kind !== "file" || !pattern.test(name)) continue;
-    const file = await entry.getFile();
-    if (!best || file.lastModified > best.lastModified) best = file;
+    uit.push(await entry.getFile());
   }
-  return best;
+  return uit.sort((a, b) => b.lastModified - a.lastModified).slice(0, max);
 }
 
 /* De briefing uit dezelfde map, op dezelfde voorwaarden als de mail: nieuwste
    bestand wint, alleen in het geheugen, en een fout hierin houdt de agenda
    niet tegen. */
 async function briefRead(dir) {
+  BRIEF = null;
   try {
-    const file = await agendaNewestFile(dir, /^briefing-.*\.json$/i);
-    if (!file) { BRIEF = null; return null; }
-    const raw = JSON.parse(await file.text());
-    BRIEF = normaliseBrief(raw);
-    return BRIEF;
-  } catch (e) { BRIEF = null; return null; }
+    /* Niet alleen het nieuwste bestand: een zaterdag zonder afspraken levert
+       een lege briefing op, en dan wil je die van vrijdag nog kunnen zien.
+       Het nieuwste bestand mét inhoud wint. */
+    for (const file of await agendaFiles(dir, /^briefing-.*\.json$/i, 7)) {
+      let b = null;
+      try { b = normaliseBrief(JSON.parse(await file.text())); } catch (e) { continue; }
+      if (b && b.items.length) { BRIEF = b; return BRIEF; }
+      if (!BRIEF) BRIEF = b;              // leeg, maar wel gelezen
+    }
+  } catch (e) { BRIEF = null; }
+  return BRIEF;
 }
 
 /* Het mailbestand uit dezelfde map. Mislukt dit, dan is dat geen reden om de
