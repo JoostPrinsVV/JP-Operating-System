@@ -8883,18 +8883,28 @@ async function agendaFiles(dir, pattern, max = 7) {
 /* De briefing uit dezelfde map, op dezelfde voorwaarden als de mail: nieuwste
    bestand wint, alleen in het geheugen, en een fout hierin houdt de agenda
    niet tegen. */
+/* Copilot schrijft elke ochtend alleen de afspraken van die dag weg. Eén
+   bestand is dus één dag, en als de app alleen het nieuwste zou lezen, zou de
+   briefing van gisteren bij het openen verdwijnen - ook die van een afspraak
+   die nog moest komen toen hij geschreven werd.
+
+   Daarom worden de bestanden van een week samengevoegd, oudste eerst, op dag
+   plus tijd plus titel. Schrijft een nieuwer bestand over dezelfde afspraak,
+   dan wint dat; voor de rest blijft alles staan. */
 async function briefRead(dir) {
   BRIEF = null;
   try {
-    /* Niet alleen het nieuwste bestand: een zaterdag zonder afspraken levert
-       een lege briefing op, en dan wil je die van vrijdag nog kunnen zien.
-       Het nieuwste bestand mét inhoud wint. */
-    for (const file of await agendaFiles(dir, /^briefing-.*\.json$/i, 7)) {
+    const bestanden = (await agendaFiles(dir, /^briefing-.*\.json$/i, 10)).reverse();
+    if (!bestanden.length) return null;
+    const samen = new Map();
+    let nieuwste = "";
+    for (const file of bestanden) {
       let b = null;
       try { b = normaliseBrief(JSON.parse(await file.text())); } catch (e) { continue; }
-      if (b && b.items.length) { BRIEF = b; return BRIEF; }
-      if (!BRIEF) BRIEF = b;              // leeg, maar wel gelezen
+      if (b.generatedAt) nieuwste = b.generatedAt;
+      b.items.forEach((i) => samen.set(`${i.day}|${i.time}|${briefNorm(i.title)}`, i));
     }
+    BRIEF = { generatedAt: nieuwste, items: [...samen.values()] };
   } catch (e) { BRIEF = null; }
   return BRIEF;
 }
