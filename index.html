@@ -612,6 +612,34 @@ a.btn{text-decoration:none}
   border:1px solid var(--border);border-radius:999px;background:var(--surface-2);
   font-size:11px;color:var(--ink);cursor:pointer;font-family:inherit}
 .cat-chip:hover{border-color:var(--ink-2)}
+/* ---- het dashboard samenstellen ----------------------------------------
+   Het dashboard in het klein: de drie vlakken naast elkaar zoals ze op de
+   pagina staan, met links wat er niet gebruikt wordt.
+------------------------------------------------------------------------- */
+.dash-ed{display:grid;grid-template-columns:186px 1fr;gap:14px;align-items:start}
+.dash-mini{display:grid;gap:10px}
+.dash-split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dash-zone-t{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-2);margin-bottom:4px}
+.dash-zone{border:1.5px dashed var(--border);border-radius:10px;padding:7px;min-height:66px;
+  display:grid;gap:5px;align-content:start;background:var(--surface-2);
+  transition:border-color .14s,background .14s}
+.dash-zone.over{border-color:var(--primary);
+  background:color-mix(in srgb,var(--primary) 7%,var(--surface))}
+.dash-pal{min-height:160px}
+.dash-leeg{justify-self:center;align-self:center;padding:6px 0}
+.dash-chip{display:flex;align-items:center;gap:5px;padding:6px 8px;border-radius:8px;
+  background:var(--surface);border:1px solid var(--border);font-size:11.5px;
+  cursor:grab;box-shadow:var(--shadow-xs);user-select:none}
+.dash-chip:hover{border-color:var(--ink-3)}
+.dash-chip:active{cursor:grabbing}
+.dash-chip.drag{opacity:.45;border-style:dashed}
+.dash-grip{color:var(--ink-3);flex:0 0 auto;display:grid;place-items:center}
+@media (max-width:620px){
+  .dash-ed{grid-template-columns:1fr}
+  .dash-split{grid-template-columns:1fr}
+}
+
 /* De kopregel van een verslag: de hele regel klapt het verslag open. */
 .tr-head{display:flex;align-items:center;gap:11px;width:100%;padding:12px 16px;
   background:none;border:0;cursor:pointer;text-align:left;color:inherit;font:inherit;
@@ -1610,12 +1638,16 @@ const STR = {
   v_renamed_back:["Back to {0}","Weer {0}"],
 
   /* composing the dashboard */
-  db_setup:["Compose","Samenstellen"],
-  db_setup_d:["Choose what you see and where. Changes apply straight away.",
-              "Kies wat je ziet en waar. Wijzigingen zijn meteen zichtbaar."],
-  db_reset:["Back to the default layout","Terug naar de standaardindeling"],
+  db_setup:["Edit dashboard","Dashboard bewerken"],
+  db_setup_d:["Dit is je dashboard in het klein. Sleep een overzicht naar een vlak, of klik erop om het door te schuiven. Wijzigingen zijn meteen zichtbaar.",
+              "Dit is je dashboard in het klein. Sleep een overzicht naar een vlak, of klik erop om het door te schuiven. Wijzigingen zijn meteen zichtbaar."],
+  db_off:["Niet in gebruik","Niet in gebruik"],
+  db_hint:["Slepen werkt met de muis. Klikken schuift een overzicht door naar het volgende vlak — handig op een aanraakscherm.",
+           "Slepen werkt met de muis. Klikken schuift een overzicht door naar het volgende vlak — handig op een aanraakscherm."],
+  db_chip_t:["Slepen, of klikken om door te schuiven","Slepen, of klikken om door te schuiven"],
+  db_zone_empty:["Sleep hier iets heen","Sleep hier iets heen"],
+  db_reset:["Terug naar de standaardindeling","Terug naar de standaardindeling"],
   db_reset_done:["Default layout restored","Standaardindeling teruggezet"],
-  db_up:["Move up","Omhoog"], db_down:["Move down","Omlaag"],
   db_empty:["Your dashboard is empty","Je dashboard is leeg"],
   db_empty_d:["Everything is switched off. Compose it to put something back.",
               "Alles staat uit. Stel hem samen om iets terug te zetten."],
@@ -2001,6 +2033,7 @@ const ICONS = {
   collapse: "M11 7l-5 5 5 5M18 7l-5 5 5 5",
   chevdown: "M6 9l6 6 6-6",
   chevup: "M18 15l-6-6-6 6",
+  drag: "M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01",
   mic: "M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3zM19 11a7 7 0 0 1-14 0M12 18v4M8 22h8",
   close: "M18 6 6 18M6 6l12 12",
   play: "M6 4l13 8-13 8z",
@@ -3351,45 +3384,115 @@ function flowCard() {
     tr("db_flow_d"));
 }
 
+/* ---- het dashboard samenstellen -----------------------------------------
+   Een lijst met pijltjes vertelt je niet hoe je dashboard eruit komt te zien.
+   Daarom staat het hier in het klein nagebouwd: de drie vlakken waar een blok
+   in kan, met links de blokken die nergens staan. Slepen verplaatst, klikken
+   schuift door naar het volgende vlak - want een muis is niet voor iedereen
+   het makkelijkste gereedschap, en op een aanraakscherm werkt slepen hier niet.
+------------------------------------------------------------------------- */
+const DASH_ZONES = ["top", "left", "right"];
+let DASH_DRAG = null, DASH_DROPPED_AT = 0;
+
 function dashSetupDialog() {
-  const layout = dashLayout();
   openDialog({
-    title: tr("db_setup"), desc: tr("db_setup_d"), submit: tr("close"),
-    body: `<div id="dash-rows"></div>
-      <button type="button" class="btn sm ghost" data-act="dash-reset" style="margin-top:10px">
-        ${esc(tr("db_reset"))}</button>`,
+    title: tr("db_setup"), desc: tr("db_setup_d"), submit: tr("close"), wide: true,
+    body: `<div class="dash-ed">
+        <aside>
+          <p class="dash-zone-t" style="margin-bottom:5px">${esc(tr("db_off"))}</p>
+          <div class="dash-zone dash-pal" data-col="off"></div>
+          <p class="xs mut" style="margin-top:9px;line-height:1.5">${esc(tr("db_hint"))}</p>
+          <button type="button" class="btn sm ghost" data-act="dash-reset"
+            style="margin-top:9px;padding-left:0">${ico("back", "", 12)} ${esc(tr("db_reset"))}</button>
+        </aside>
+        <div class="dash-mini">
+          <div>
+            <p class="dash-zone-t">${esc(lbl(DASH_COLS[0][1]))}</p>
+            <div class="dash-zone" data-col="top"></div>
+          </div>
+          <div class="dash-split">
+            <div>
+              <p class="dash-zone-t">${esc(lbl(DASH_COLS[1][1]))}</p>
+              <div class="dash-zone" data-col="left"></div>
+            </div>
+            <div>
+              <p class="dash-zone-t">${esc(lbl(DASH_COLS[2][1]))}</p>
+              <div class="dash-zone" data-col="right"></div>
+            </div>
+          </div>
+        </div>
+      </div>`,
     onSubmit: () => {},
   });
-  paintDashSetup(layout);
+  paintDashSetup();
 }
 
-function paintDashSetup(layout) {
-  const host = $("#dash-rows");
-  if (!host) return;
-  DB.profile.dashboard = layout;
-  host.innerHTML = layout.map((b, i) => `<div class="row" style="gap:8px;padding:5px 0;
-      border-bottom:1px solid var(--border);align-items:center">
-    <span class="sm2" style="flex:1;min-width:0;${b.col === "off" ? "color:var(--ink-3)" : ""}">${esc(dashBlockLabel(b.key))}</span>
-    <select class="inp" data-i="${i}" data-k="col" style="width:auto;height:28px;font-size:12px">
-      ${opts(DASH_COLS, b.col)}</select>
-    <button type="button" class="btn icon sm ghost" data-i="${i}" data-k="up"
-      ${i === 0 ? "disabled" : ""} aria-label="${esc(tr("db_up"))}">↑</button>
-    <button type="button" class="btn icon sm ghost" data-i="${i}" data-k="down"
-      ${i === layout.length - 1 ? "disabled" : ""} aria-label="${esc(tr("db_down"))}">↓</button>
-  </div>`).join("");
+function paintDashSetup() {
+  const zones = [...document.querySelectorAll(".dash-zone")];
+  if (!zones.length) return;
+  const layout = dashLayout();
 
-  host.querySelectorAll("[data-k]").forEach((el) => {
-    const i = Number(el.dataset.i), k = el.dataset.k;
-    const act = () => {
-      if (k === "col") layout[i].col = el.value;
-      else {
-        const j = k === "up" ? i - 1 : i + 1;
-        if (j < 0 || j >= layout.length) return;
-        [layout[i], layout[j]] = [layout[j], layout[i]];
-      }
-      save(); paintDashSetup(layout); render();
-    };
-    if (k === "col") el.onchange = act; else el.onclick = act;
+  zones.forEach((z) => {
+    const col = z.dataset.col;
+    z.innerHTML = layout.filter((b) => b.col === col).map((b) => `<span class="dash-chip"
+      draggable="true" data-key="${b.key}" title="${esc(tr("db_chip_t"))}">
+      <span class="dash-grip" aria-hidden="true">${ico("drag", "", 11)}</span>
+      <span class="trunc">${esc(dashBlockLabel(b.key))}</span></span>`).join("")
+      || `<span class="dash-leeg xs mut">${esc(tr("db_zone_empty"))}</span>`;
+  });
+
+  /* De volgorde komt straks uit de pagina zelf, dus slepen hoeft alleen de
+     blokjes te verplaatsen - er wordt niets bijgehouden wat daarnaast kan
+     gaan lopen. */
+  const bewaar = () => {
+    const nieuw = [];
+    zones.forEach((z) => z.querySelectorAll(".dash-chip").forEach((c) =>
+      nieuw.push({ key: c.dataset.key, col: z.dataset.col })));
+    dashLayout().forEach((b) => { if (!nieuw.some((n) => n.key === b.key)) nieuw.push(b); });
+    DB.profile.dashboard = nieuw;
+    save(); render();
+  };
+
+  document.querySelectorAll(".dash-chip").forEach((chip) => {
+    chip.addEventListener("dragstart", (e) => {
+      DASH_DRAG = chip; chip.classList.add("drag");
+      try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", chip.dataset.key); } catch (err) { /* ignore */ }
+    });
+    chip.addEventListener("dragend", () => {
+      chip.classList.remove("drag"); DASH_DRAG = null; DASH_DROPPED_AT = Date.now();
+      zones.forEach((z) => z.classList.remove("over"));
+      bewaar(); paintDashSetup();
+    });
+    // Zonder slepen: doorschuiven naar het volgende vlak.
+    chip.addEventListener("click", () => {
+      if (Date.now() - DASH_DROPPED_AT < 300) return;
+      const volgorde = [...DASH_ZONES, "off"];
+      const hier = chip.closest(".dash-zone").dataset.col;
+      const naar = volgorde[(volgorde.indexOf(hier) + 1) % volgorde.length];
+      const doel = zones.find((z) => z.dataset.col === naar);
+      doel.querySelector(".dash-leeg")?.remove();
+      doel.appendChild(chip);
+      bewaar(); paintDashSetup();
+    });
+  });
+
+  zones.forEach((z) => {
+    z.addEventListener("dragover", (e) => {
+      if (!DASH_DRAG) return;
+      e.preventDefault();
+      z.classList.add("over");
+      z.querySelector(".dash-leeg")?.remove();
+      // Invoegen vóór het blokje waar je muis bovenin zit, anders achteraan.
+      const na = [...z.querySelectorAll(".dash-chip:not(.drag)")].find((c) => {
+        const r = c.getBoundingClientRect();
+        return e.clientY < r.top + r.height / 2;
+      });
+      if (na) z.insertBefore(DASH_DRAG, na); else z.appendChild(DASH_DRAG);
+    });
+    z.addEventListener("dragleave", (e) => {
+      if (!z.contains(e.relatedTarget)) z.classList.remove("over");
+    });
+    z.addEventListener("drop", (e) => { e.preventDefault(); z.classList.remove("over"); });
   });
 }
 /* This week plus the next three, straight from Mijn planning. */
@@ -9935,7 +10038,7 @@ document.addEventListener("click", (e) => {
     case "dash-setup": dashSetupDialog(); break;
     case "dash-reset":
       DB.profile.dashboard = DASH_DEFAULT.map((b) => ({ ...b }));
-      save(); render(); paintDashSetup(dashLayout()); toast(tr("db_reset_done")); break;
+      save(); render(); paintDashSetup(); toast(tr("db_reset_done")); break;
     case "new-kpi": kpiEditDialog(null); break;
     case "edit-kpi": kpiEditDialog(DB.kpis.find((x) => x.id === id)); break;
     case "cleanup": cleanupDialog(); break;
