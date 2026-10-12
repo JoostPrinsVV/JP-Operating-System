@@ -10040,7 +10040,16 @@ $("#scrim").onclick = () => setRailWide(false);
 
 /* Clicking the backdrop closes the dialog. The content fills the element, so
    a click landing on the dialog itself came from outside the panel. */
-dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+/* Klikken naast het venster sluit het. Maar tekst selecteren in een veld en
+   de muis net buiten het venster loslaten telt voor de browser ook als een
+   klik op de achtergrond - en dan sloot hij midden in het typen. Daarom moet
+   de muisknop óók op de achtergrond zijn ingedrukt. */
+let dlgVanAchtergrond = false;
+dlg.addEventListener("pointerdown", (e) => { dlgVanAchtergrond = e.target === dlg; });
+dlg.addEventListener("click", (e) => {
+  if (e.target === dlg && dlgVanAchtergrond) dlg.close();
+  dlgVanAchtergrond = false;
+});
 /* A closing dialog must not leave stale handlers pointing at removed nodes. */
 dlg.addEventListener("close", () => { onSubmitFn = null; onDeleteFn = null; });
 $("#btn-theme").onclick = () => {
