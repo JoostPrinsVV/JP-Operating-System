@@ -1134,8 +1134,14 @@ const STR = {
   k_target_line:["Dashed line is the year target ({0} {1})","Streepjeslijn is het jaardoel ({0} {1})"],
   k_none:["No KPIs defined","Geen KPI's ingesteld"], k_recorded:["Value recorded","Waarde vastgelegd"],
   k_note:["Note","Notitie"],
-  k_record_d:["Values are tracked per month. Recording the same month twice corrects the figure rather than adding to it.",
-              "Waarden worden per maand bijgehouden. Dezelfde maand nogmaals vastleggen corrigeert het getal, het telt niet op."],
+  k_record_d:["Elke meting staat op zijn eigen dag. Meerdere in dezelfde maand tellen bij elkaar op tot het maandtotaal in de grafiek.",
+              "Elke meting staat op zijn eigen dag. Meerdere in dezelfde maand tellen bij elkaar op tot het maandtotaal in de grafiek."],
+  k_when:["Wanneer","Wanneer"],
+  k_edit_entry:["Meting bewerken","Meting bewerken"],
+  k_del_entry:["Meting verwijderen","Meting verwijderen"],
+  k_entries_n:["{0} metingen","{0} metingen"], k_entries_1:["1 meting","1 meting"],
+  k_entries_none:["Nog niets vastgelegd bij deze KPI.","Nog niets vastgelegd bij deze KPI."],
+  k_no_note:["(geen toelichting)","(geen toelichting)"],
 
   /* meetings */
   m_sub:["Notes, decisions and follow-up. Action items become tasks in one click.",
@@ -2804,6 +2810,11 @@ function migrate() {
      alsnog rechtgezet; dat scheelt opnieuw inlezen. */
   DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
+  /* Een meting stond vroeger alleen op een maand. De eerste van die maand is
+     de enige dag die we met zekerheid kunnen afleiden. */
+  (DB.kpiEntries || []).forEach((e) => {
+    if (!e.date && e.period) { e.date = `${e.period}-01`; changed = true; }
+  });
   if (!Array.isArray(DB.timeEntries)) { DB.timeEntries = []; changed = true; }
   if (DB.timer === undefined) { DB.timer = null; changed = true; }
   if (!Array.isArray(DB.engagements)) { DB.engagements = []; changed = true; }
@@ -2910,6 +2921,7 @@ const UI = {
   meetFilter: { days: 30 },
   trFilter: "all",
   trOpen: {},            // welke verslagen uitgeklapt staan
+  kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
   pastOpen: true,        // staat de lijst met wat is geweest open
@@ -3871,10 +3883,45 @@ function viewProjects() {
 /* ---- KPIs -------------------------------------------------------------- */
 function kpiSeries(kpiId, cumulative) {
   const Y = new Date().getFullYear(), e = kpiEntries(kpiId);
-  const by = {}; e.forEach((x) => { if (x.period.startsWith(String(Y))) by[Number(x.period.slice(5, 7)) - 1] = Number(x.value); });
+  /* Optellen, niet overschrijven: er kunnen meerdere metingen in één maand
+     staan, en samen vormen ze het maandtotaal. */
+  const by = {};
+  e.forEach((x) => {
+    if (!String(x.period).startsWith(String(Y))) return;
+    const i = Number(String(x.period).slice(5, 7)) - 1;
+    by[i] = (by[i] || 0) + Number(x.value);
+  });
   let run = 0;
   return MONTHS.map((label, i) => { const v = by[i] || 0; run += v; return { label, value: cumulative ? run : v }; });
 }
+/* De metingen zelf, niet het maandtotaal: welke training op welke dag, met de
+   notitie die je erbij schreef. Dichtgeklapt, want het zijn er met het jaar
+   steeds meer en de grafiek erboven is wat je meestal zoekt. */
+function kpiEntriesPanel(k) {
+  const lijst = kpiEntries(k.id)
+    .sort((a, b) => String(b.date || `${b.period}-01`).localeCompare(String(a.date || `${a.period}-01`)));
+  const open = (UI.kpiOpen || {})[k.id];
+
+  return `<div style="margin-top:10px">
+    <button class="tr-head" data-act="kpi-entries" data-id="${k.id}" aria-expanded="${Boolean(open)}"
+      style="padding:7px 9px;border-radius:9px">
+      <span class="tr-chev">${ico(open ? "chevup" : "chevdown", "", 13)}</span>
+      <span class="xs" style="flex:1;min-width:0">${esc(lijst.length === 1
+        ? tr("k_entries_1") : tr("k_entries_n", lijst.length))}</span>
+    </button>
+    ${!open ? "" : (lijst.length
+      ? `<ul class="divide" style="margin-top:4px">${lijst.map((e) => `<li class="row"
+          style="gap:10px;padding:7px 2px;align-items:baseline">
+          <span class="xs tab mut" style="width:72px;flex:0 0 auto">${esc(fmtDate(e.date || `${e.period}-01`))}</span>
+          <span class="xs" style="flex:1;min-width:0;line-height:1.5">${esc(e.note || tr("k_no_note"))}</span>
+          <span class="xs tab" style="flex:0 0 auto;font-weight:500">${num(e.value, 1)}${k.unit ? ` <span class="mut" style="font-weight:400">${esc(k.unit)}</span>` : ""}</span>
+          <button class="btn icon sm ghost" data-act="edit-kpi-entry" data-id="${k.id}" data-v="${e.id}"
+            style="flex:0 0 auto" title="${esc(tr("edit"))}" aria-label="${esc(tr("edit"))}">${ico("pencil", "", 11)}</button>
+        </li>`).join("")}</ul>`
+      : `<p class="xs mut" style="padding:7px 2px">${esc(tr("k_entries_none"))}</p>`)}
+  </div>`;
+}
+
 function viewKpis() {
   const ye = yearElapsed(), Y = new Date().getFullYear();
   const onTrack = DB.kpis.filter((k) => k.target && (kpiYtd(k.id) / k.target) * 100 >= ye).length;
@@ -3916,7 +3963,8 @@ function viewKpis() {
         <button class="btn sm outline" data-act="log-kpi" data-id="${k.id}">${ico("plus", "", 13)} ${esc(tr("k_record"))}</button>
         ${cum && k.target ? `<span class="xs mut">${esc(tr("k_target_line", num(k.target), k.unit))}</span>` : ""}
       </div>
-      <details style="margin-top:10px"><summary class="xs mut" style="cursor:pointer">${esc(tr("k_table"))}</summary>
+      ${kpiEntriesPanel(k)}
+      <details style="margin-top:8px"><summary class="xs mut" style="cursor:pointer">${esc(tr("k_table"))}</summary>
         <div class="tbl-wrap" style="margin-top:8px;max-height:200px;overflow:auto">
           <table><thead><tr><th>${esc(tr("k_month"))}</th><th style="text-align:right">${esc(k.unit || tr("k_value"))}</th></tr></thead>
           <tbody>${pts.map((p) => `<tr style="cursor:default"><td class="mut">${p.label}</td>
@@ -8173,19 +8221,34 @@ function kpiEditDialog(kpi) {
 const slugKey = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
   .replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "kpi";
 
-function kpiDialog(kpi) {
+/* Een meting staat op een dag, niet op een maand. Dat lijkt een detail, maar
+   het is het verschil tussen "drie trainingen in oktober" en drie regels die
+   vertellen wélke en wannéér. De maand wordt uit de datum afgeleid, zodat de
+   grafiek blijft werken zoals hij werkte. */
+function kpiDialog(kpi, entry) {
+  const e = entry || { date: TODAY(), value: "", note: "" };
   openDialog({
-    title: tr("k_record_for", kpi.name), submit: tr("k_record"),
-    desc: tr("k_record_d"),
+    title: entry ? tr("k_edit_entry") : tr("k_record_for", kpi.name),
+    submit: entry ? tr("dl_save_changes") : tr("k_record"),
+    desc: entry ? "" : tr("k_record_d"),
+    delLabel: entry ? tr("k_del_entry") : "",
+    del: entry ? () => {
+      checkpoint(tr("u_kpi"));
+      DB.kpiEntries = DB.kpiEntries.filter((x) => x.id !== entry.id);
+      save(); render(); toast(tr("dl_removed"), true);
+    } : null,
     body: `<div class="f2">
-      ${field(tr("k_month"), `<input class="inp" type="month" name="period" required value="${TODAY().slice(0, 7)}">`)}
-      ${field(`${tr("k_value")}${kpi.unit ? ` (${kpi.unit})` : ""}`, `<input class="inp" type="number" name="value" step="any" required>`)}
-    </div>` + field(tr("k_note"), `<input class="inp" name="note" placeholder="${esc(tr("k_note_ph"))}">`),
+      ${field(tr("k_when"), `<input class="inp" type="date" name="date" required value="${esc(e.date || TODAY())}">`)}
+      ${field(`${tr("k_value")}${kpi.unit ? ` (${kpi.unit})` : ""}`,
+        `<input class="inp" type="number" name="value" step="any" required value="${esc(String(e.value ?? ""))}">`)}
+    </div>` + field(tr("k_note"), `<input class="inp" name="note" maxlength="140"
+        value="${esc(e.note || "")}" placeholder="${esc(tr("k_note_ph"))}">`),
     onSubmit: (f) => {
-      const existing = DB.kpiEntries.find((e) => e.kpiId === kpi.id && e.period === f.period);
-      if (existing) { existing.value = Number(f.value); existing.note = f.note; }
-      else DB.kpiEntries.push({ id: uid(), kpiId: kpi.id, period: f.period, value: Number(f.value), note: f.note });
-      save(); toast(tr("k_recorded")); render();
+      const datum = f.date || TODAY();
+      const patch = { date: datum, period: datum.slice(0, 7), value: Number(f.value), note: f.note };
+      if (entry) Object.assign(entry, patch);
+      else DB.kpiEntries.push({ id: uid(), kpiId: kpi.id, ...patch });
+      save(); toast(entry ? tr("dl_updated") : tr("k_recorded")); render();
     },
   });
 }
@@ -9894,6 +9957,17 @@ document.addEventListener("click", (e) => {
       const k = DB.kpis.find((x) => x.id === id); if (k) { k._cum = el.dataset.v === "1"; save(); render(); } break;
     }
     case "log-kpi": kpiDialog(DB.kpis.find((x) => x.id === id)); break;
+    case "kpi-entries": {
+      UI.kpiOpen = UI.kpiOpen || {};
+      if (UI.kpiOpen[id]) delete UI.kpiOpen[id]; else UI.kpiOpen[id] = true;
+      render(); break;
+    }
+    case "edit-kpi-entry": {
+      const k = DB.kpis.find((x) => x.id === id);
+      const e = DB.kpiEntries.find((x) => x.id === el.dataset.v);
+      if (k && e) kpiDialog(k, e);
+      break;
+    }
 
     case "idea-filter": UI.ideaFilter = el.dataset.v; render(); break;
     case "classify": classifyDialog(DB.ideas.find((x) => x.id === id)); break;
