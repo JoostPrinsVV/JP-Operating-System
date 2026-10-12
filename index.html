@@ -2056,8 +2056,11 @@ const STATUSES = [
   ["waiting", ["Waiting","Wachten"], "neutral", ["Blocked on someone else","Wacht op iemand anders"]],
   ["done", ["Done","Klaar"], "success", ["Completed","Afgerond"]],
 ];
-const PRIOS = [["low",["Low","Laag"],"neutral"],["medium",["Medium","Normaal"],"info"],
-  ["high",["High","Hoog"],"warning"],["critical",["Critical","Kritiek"],"danger"]];
+/* Dezelfde schaal als de prioriteitsscore hiernaast: groen rustig, oranje
+   let op, rood nu. Kritiek deelt het rood met hoog en onderscheidt zich door
+   zijn naam - een nog feller rood bestaat niet en zou ook niets toevoegen. */
+const PRIOS = [["low",["Low","Laag"],"success"],["medium",["Medium","Normaal"],"warning"],
+  ["high",["High","Hoog"],"danger"],["critical",["Critical","Kritiek"],"danger"]];
 const PSTAT = [["idea",["Idea","Idee"],"neutral"],["planning",["Planning","In voorbereiding"],"info"],
   ["active",["Active","Actief"],"success"],["blocked",["Blocked","Geblokkeerd"],"danger"],
   ["done",["Done","Klaar"],"neutral"]];
@@ -2115,8 +2118,10 @@ function scoreTask(t) {
     (MOMENTUM[t.status] ?? 0) * W.momentum;
   return Math.round(clamp(raw, 0, 100) * 100) / 100;
 }
+/* Een stoplicht: hoog is rood, midden oranje, laag groen. Grijs voor de
+   onderste trede leest als "uitgeschakeld" in plaats van "heeft geen haast". */
 const band = (s) => s >= 65 ? [["Now","Nu"], "danger"]
-  : s >= 40 ? [["Soon","Binnenkort"], "warning"] : [["Later","Later"], "neutral"];
+  : s >= 40 ? [["Soon","Binnenkort"], "warning"] : [["Later","Later"], "success"];
 
 /* ---- goal progress (port of goal_progress() in 0003_functions.sql) ------ */
 function goalProgress(goalId) {
