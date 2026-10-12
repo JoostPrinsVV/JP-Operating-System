@@ -1284,6 +1284,9 @@ const STR = {
   ag_synced:["{0} afspraken toegevoegd uit je agendamap","{0} afspraken toegevoegd uit je agendamap"],
   ag_synced_filled:["{0} afspraken toegevoegd, {1}","{0} afspraken toegevoegd, {1}"],
   ag_n_links:["{0} vergaderlinks aangevuld","{0} vergaderlinks aangevuld"],
+  ag_n_removed:["{0} verwijderd uit Outlook","{0} verwijderd uit Outlook"],
+  ag_n_cancelled:["{0} doorgestreept","{0} doorgestreept"],
+  m_cancelled:["Verwijderd in Outlook","Verwijderd in Outlook"],
   ag_n_att:["{0} deelnemerslijsten aangevuld","{0} deelnemerslijsten aangevuld"],
   ag_noatt:["Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen.",
             "Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen."],
@@ -3873,9 +3876,10 @@ function meetingRow(m, isNext, past) {
       ${m.endsAt ? `<span class="mtg-date">${esc(fmtTime(m.endsAt))}</span>` : ""}
     </span>
     <span class="mtg-body">
-      <span class="mtg-title">${m.onlineUrl ? `<span class="mtg-cam"
+      <span class="mtg-title" ${m.cancelled ? 'style="text-decoration:line-through"' : ""}>${m.onlineUrl ? `<span class="mtg-cam"
         title="${esc(onlineKindOf(m.onlineUrl) || tr("m_online"))}">${ico("video", "", 12)}</span>` : ""}${esc(m.title)}</span>
       <span class="tsk-m">
+        ${m.cancelled ? `<span class="badge warning">${esc(tr("m_cancelled"))}</span>` : ""}
         ${isNext ? `<span style="color:var(--primary);font-weight:600">${esc(tr("m_next"))}</span>` : ""}
         ${m.location ? `<span>${esc(m.location)}</span>` : ""}
         ${m.attendees.length ? `<span>${m.attendees.length} ${esc(tr("m_attendees"))}</span>` : ""}
@@ -4135,7 +4139,7 @@ function weekGrid(monday) {
               left:calc(${lane * w}% + 2px);width:calc(${w}% - 4px)"
             title="${esc(`${fmtTime(m.startsAt)}${m.endsAt ? `–${fmtTime(m.endsAt)}` : ""} ${m.title}`)}">
             ${h >= 34 ? `<span class="cw-et">${esc(fmtTime(m.startsAt))}${m.endsAt ? `–${esc(fmtTime(m.endsAt))}` : ""}</span>` : ""}
-            <span class="cw-en">${esc(m.title)}</span>
+            <span class="cw-en" ${m.cancelled ? 'style="text-decoration:line-through"' : ""}>${esc(m.title)}</span>
           </button>`;
         }).join("")}</div>`;
     }).join("")}
@@ -4386,7 +4390,8 @@ function viewMeetingDetail(id) {
 
   return `<button class="btn sm ghost" data-nav="meetings" style="margin-bottom:8px;padding-left:0">${ico("back", "", 13)} ${esc(tr("m_back"))}</button>` +
   pageHead(m.title, fmtDateTime(m.startsAt),
-    `<span class="badge neutral">${esc(lbl(kind[1]))}</span>
+    `${m.cancelled ? `<span class="badge warning">${esc(tr("m_cancelled"))}</span>` : ""}
+     <span class="badge neutral">${esc(lbl(kind[1]))}</span>
      ${meetingBooked(m.id)
        ? `<span class="badge success">${ico("check", "", 11)} ${esc(tr("h_book_done"))}</span>`
        : `<button class="btn sm outline" data-act="book-meeting" data-id="${m.id}">
@@ -8604,6 +8609,8 @@ function importEvents(events, from, to) {
       if ((e.categories || []).length && !(existing.categories || []).length) {
         existing.categories = e.categories.slice(0, 8); touched = true;
       }
+      // Stond hij als verwijderd gemerkt en is hij terug, dan is dat voorbij.
+      if (existing.cancelled) { delete existing.cancelled; touched = true; }
       if (!touched) skipped++;
       return;
     }
@@ -8617,10 +8624,51 @@ function importEvents(events, from, to) {
   /* Een categorie die uit Outlook komt en hier nog niet bestond, wordt er een
      - dan kun je hem meteen ook zelf aan een afspraak hangen. */
   const nieuweCats = catEnsure(events.flatMap((e) => e.categories || []));
-  if (added || filled || attFilled || nieuweCats) save();
+  const { removed, cancelled } = removeDeleted(events, from, to);
+  if (added || filled || attFilled || nieuweCats || removed || cancelled) save();
   // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
   // zoeken in de app als het eigenlijk aan de flow ligt.
-  return { added, filled, attFilled, skipped, withAtt };
+  return { added, filled, attFilled, skipped, withAtt, removed, cancelled };
+}
+
+/* Wat je in Outlook weggooit, hoort hier ook weg. Zien kun je dat alleen zo:
+   wat valt binnen de periode die dít bestand beslaat, kwam ooit uit Outlook,
+   en staat er nu niet meer in?
+
+   Drie grendels, want dit is de enige plek waar de app uit zichzelf afspraken
+   weggooit. Alleen binnen de periode van het bestand, want een export van
+   alleen de komende maand zegt niets over vorige week. Alleen bij een bestand
+   met genoeg afspraken erin, zodat een half weggeschreven bestand je agenda
+   niet leegt. En alleen bij afspraken die je niet zelf hebt aangemaakt. */
+function removeDeleted(events, from, to) {
+  let removed = 0, cancelled = 0;
+  const binnen = events.filter((e) => e.uid && e.start.day >= from && e.start.day <= to);
+  if (binnen.length < 3) return { removed, cancelled };
+
+  const dagen = binnen.map((e) => e.start.day);
+  const vanaf = dagen.reduce((a, d) => (d < a ? d : a));
+  const tot = dagen.reduce((a, d) => (d > a ? d : a));
+  const inBestand = new Set(binnen.map((e) => meetingKey(e.uid, e.start.iso)));
+
+  DB.meetings = DB.meetings.filter((m) => {
+    const dag = String(m.startsAt).slice(0, 10);
+    if (!m.outlookUid || dag < vanaf || dag > tot) return true;
+    if (inBestand.has(meetingKey(m.outlookUid, m.startsAt))) return true;
+
+    /* Hangt er eigen werk aan, dan wordt hij doorgestreept in plaats van
+       weggegooid. Notities tellen niet mee - die komen uit de import zelf -
+       maar besluiten, een eigen agenda, actiepunten en geboekte uren wel. */
+    const eigenWerk = Boolean(String(m.decisions || "").trim()) ||
+      Boolean(String(m.agenda || "").trim()) ||
+      DB.actions.some((a) => a.meetingId === m.id) || meetingBooked(m.id);
+    if (eigenWerk) {
+      if (!m.cancelled) { m.cancelled = true; cancelled++; }
+      return true;
+    }
+    removed++;
+    return false;
+  });
+  return { removed, cancelled };
 }
 
 function icsImport() {
@@ -8973,11 +9021,13 @@ async function agendaRead(loud) {
     s.folder = AGENDA_DIR.name;
     save();
 
-    if (r.added || r.filled || r.attFilled) {
+    if (r.added || r.filled || r.attFilled || r.removed || r.cancelled) {
       render();
       const aangevuld = [
         r.filled ? tr("ag_n_links", r.filled) : "",
         r.attFilled ? tr("ag_n_att", r.attFilled) : "",
+        r.removed ? tr("ag_n_removed", r.removed) : "",
+        r.cancelled ? tr("ag_n_cancelled", r.cancelled) : "",
       ].filter(Boolean).join(", ");
       toast(aangevuld ? tr("ag_synced_filled", r.added, aangevuld) : tr("ag_synced", r.added));
     } else if (loud) {
