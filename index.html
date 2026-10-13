@@ -1747,9 +1747,17 @@ const STR = {
   n_sub:["Your weekly round of sources, and what you keep from it.",
          "Je wekelijkse ronde langs de bronnen, en wat je eruit bewaart."],
   n_v_round:["News round","Nieuwsronde"], n_v_articles:["My articles","Mijn artikelen"],
-  n_weekly:["Every week","Elke week"],
-  n_weekly_d:["The core of the round — Dutch practice and the tooling you roll out yourself. About 25 minutes.",
+  n_weekly:["Elke ronde","Elke ronde"],
+  n_weekly_d:["De kern van je ronde — Nederlandse beroepspraktijk en de tooling die je zelf uitrolt. Zo'n 25 minuten.",
               "De kern van je ronde — Nederlandse beroepspraktijk en de tooling die je zelf uitrolt. Zo'n 25 minuten."],
+  n_days:["Leesdagen","Leesdagen"],
+  n_days_d:["Op deze dagen begint een nieuwe ronde en staat je lijst weer open. Maandelijkse bronnen blijven afgevinkt tot de volgende maand.",
+            "Op deze dagen begint een nieuwe ronde en staat je lijst weer open. Maandelijkse bronnen blijven afgevinkt tot de volgende maand."],
+  n_days_next:["Volgende ronde: {0}","Volgende ronde: {0}"],
+  n_days_none_d:["Geen leesdagen gekozen — de ronde loopt nu per week, van maandag tot maandag.",
+                 "Geen leesdagen gekozen — de ronde loopt nu per week, van maandag tot maandag."],
+  n_days_set:["Leesdagen: {0}","Leesdagen: {0}"],
+  n_days_none:["Geen leesdagen; de ronde loopt per week","Geen leesdagen; de ronde loopt per week"],
   n_monthly:["Every month","Elke maand"],
   n_monthly_d:["Slower, but this is what sets your frameworks: standards, supervisors and the law.",
                "Trager, maar dit bepaalt je kaders: standaarden, toezicht en wetgeving."],
@@ -1763,11 +1771,11 @@ const STR = {
             "Wat deze bron je geeft dat de andere niet geven"],
   n_src_saved:["Source saved","Bron opgeslagen"], n_src_added:["Source added","Bron toegevoegd"],
   n_save_from:["Save an article from this source","Artikel uit deze bron bewaren"],
-  n_reset:["Untick everything","Alles weer aanvinken"],
-  n_reset_done:["The round is open again","De ronde staat weer open"],
+  n_reset:["Deze ronde leegmaken","Deze ronde leegmaken"],
+  n_reset_done:["De ronde staat weer open","De ronde staat weer open"],
   n_open:["Open article","Artikel openen"],
-  n_t_round:["This week's round","Ronde deze week"],
-  n_t_round_h:["week {0}","week {0}"],
+  n_t_round:["Deze ronde","Deze ronde"],
+  n_t_round_h:["open sinds {0}","open sinds {0}"],
   n_t_toread:["Still to read","Nog te lezen"],
   n_t_toread_h:["Click to filter","Klik om te filteren"],
   n_t_shared:["Shared","Gedeeld"], n_t_shared_h:["in {0} — target is 4","in {0} — streefwaarde is 4"],
@@ -2605,7 +2613,45 @@ function isoWeekKey(day = TODAY()) {
   const thu = new Date(Date.UTC(y, m - 1, d + 3));
   return `${thu.getUTCFullYear()}-W${pad2(isoWeekNo(mon))}`;
 }
-const roundDone = () => (DB.newsRound || {})[isoWeekKey()] || [];
+/* ---- de nieuwsronde -----------------------------------------------------
+   Een ronde liep per week. Dat past niet bij lezen op vaste dagen: wie op
+   maandag, woensdag en vrijdag langs zijn bronnen gaat, wil maandag een
+   schone lijst en woensdag weer. De ronde begint daarom op de laatste
+   leesdag die is geweest.
+
+   Maandelijkse bronnen volgen dat niet - die zou je dan dertien keer per
+   maand afvinken - en houden hun eigen maandvakje.
+------------------------------------------------------------------------- */
+const NEWS_DAYS_DEFAULT = [0, 2, 4];            // ma, wo, vr
+const newsPlan = () => (DB.newsPlan = DB.newsPlan || { days: [...NEWS_DAYS_DEFAULT] });
+const weekdayIndex = (d) => (d.getDay() + 6) % 7;  // 0 = maandag
+
+/* De dag waarop de huidige ronde begon. Zonder gekozen dagen valt hij terug
+   op de maandag, zodat er altijd een ronde is. */
+function roundStart(from = new Date()) {
+  const dagen = newsPlan().days || [];
+  if (!dagen.length) return mondayOf(from);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(from); d.setDate(d.getDate() - i);
+    if (dagen.includes(weekdayIndex(d))) return iso(d);
+  }
+  return iso(from);
+}
+/* De eerstvolgende leesdag ná vandaag. */
+function roundNext(from = new Date()) {
+  const dagen = newsPlan().days || [];
+  if (!dagen.length) return null;
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(from); d.setDate(d.getDate() + i);
+    if (dagen.includes(weekdayIndex(d))) return iso(d);
+  }
+  return null;
+}
+const roundKey = () => `r:${roundStart()}`;
+const monthKey = () => `m:${TODAY().slice(0, 7)}`;
+const bucketFor = (src) => (src && src.cadence === "month" ? monthKey() : roundKey());
+const roundDone = () => [...((DB.newsRound || {})[roundKey()] || []),
+  ...((DB.newsRound || {})[monthKey()] || [])];
 const sourcesFor = (cadence) => DB.sources.filter((s) => s.cadence === cadence)
   .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
 
@@ -2783,11 +2829,23 @@ function migrate() {
   }
   if (!DB.tipPlan || typeof DB.tipPlan !== "object") { DB.tipPlan = { everyWeeks: 1, weekday: 4 }; changed = true; }
   if (!DB.newsRound || typeof DB.newsRound !== "object") { DB.newsRound = {}; changed = true; }
-  else {
-    /* Ticks are kept per week and never cleaned up on their own, so the last
-       twelve stay and the rest go. */
+  if (!DB.newsPlan || !Array.isArray(DB.newsPlan.days)) {
+    DB.newsPlan = { days: [...NEWS_DAYS_DEFAULT] }; changed = true;
+  }
+  {
+    /* De ronde liep vroeger per week, met sleutels als 2026-W42. Wat je deze
+       week al had afgevinkt verhuist naar de lopende ronde; de rest gaat weg,
+       want die telde een periode die niet meer bestaat. */
+    const oud = Object.keys(DB.newsRound).filter((k) => /^\d{4}-W\d{2}$/.test(k));
+    if (oud.length) {
+      const nu = DB.newsRound[isoWeekKey()];
+      if (nu && nu.length && !(DB.newsRound[roundKey()] || []).length) DB.newsRound[roundKey()] = [...nu];
+      oud.forEach((k) => delete DB.newsRound[k]);
+      changed = true;
+    }
+    // Afvinkingen worden nergens opgeruimd, dus de laatste twintig blijven.
     const keys = Object.keys(DB.newsRound).sort().reverse();
-    keys.slice(12).forEach((k) => { delete DB.newsRound[k]; changed = true; });
+    keys.slice(20).forEach((k) => { delete DB.newsRound[k]; changed = true; });
   }
   /* De categorieën worden één keer gezaaid met wat er in Outlook staat.
      Daarna zijn ze van jou: een lege lijst is een keuze, een ontbrekende
@@ -7314,6 +7372,14 @@ function viewKnowledge() {
     body = `<div class="grid" style="gap:14px">
       ${group(tr("n_weekly"), tr("n_weekly_d"), week)}
       ${group(tr("n_monthly"), tr("n_monthly_d"), month)}
+      ${card(tr("n_days"), `<div class="row wrap" style="gap:5px">
+          ${DAY_KEYS.map((_, i) => `<button class="btn sm ${newsPlan().days.includes(i) ? "" : "outline"}"
+            data-act="news-day" data-v="${i}" aria-pressed="${newsPlan().days.includes(i)}"
+            style="min-width:46px">${esc(dayName(i))}</button>`).join("")}
+        </div>
+        <p class="xs mut" style="margin-top:9px">${esc(roundNext()
+          ? tr("n_days_next", fmtDate(roundNext())) : tr("n_days_none_d"))}</p>`,
+        tr("n_days_d"))}
       <div class="row wrap" style="gap:8px">
         <button class="btn sm outline" data-act="new-source">${ico("plus", "", 13)} ${esc(tr("n_addsrc"))}</button>
         ${done.length ? `<button class="btn sm ghost" data-act="round-reset">${esc(tr("n_reset"))}</button>` : ""}
@@ -7355,7 +7421,7 @@ function viewKnowledge() {
   return pageHead(tr("nav_knowledge"), tr("n_sub"),
     `<button class="btn sm" data-act="new-article">${ico("plus")} ${esc(tr("n_addart"))}</button>`) +
   `<div class="tiles" style="margin-bottom:14px">
-    ${tile(tr("n_t_round"), `${weekDone}/${week.length}`, "", tr("n_t_round_h", isoWeekKey().split("-W")[1]),
+    ${tile(tr("n_t_round"), `${weekDone}/${week.length}`, "", tr("n_t_round_h", fmtDate(roundStart())),
       "news", weekDone === week.length && week.length ? "var(--success)" : "var(--c1)")}
     ${tile(tr("n_t_toread"), toread.length, "", tr("n_t_toread_h"), "book",
       toread.length > 10 ? "var(--warning)" : "var(--c4)",
@@ -10151,7 +10217,7 @@ document.addEventListener("click", (e) => {
       UI.knowFilter.status = UI.knowFilter.status === "toread" ? "all" : "toread";
       go("knowledge"); break;
     case "toggle-source": {
-      const key = isoWeekKey();
+      const key = bucketFor(DB.sources.find((x) => x.id === id));
       const list = new Set(DB.newsRound[key] || []);
       if (list.has(id)) list.delete(id); else list.add(id);
       DB.newsRound[key] = [...list];
@@ -10159,8 +10225,17 @@ document.addEventListener("click", (e) => {
     }
     case "round-reset":
       checkpoint(tr("u_round"));
-      DB.newsRound[isoWeekKey()] = [];
+      // Alleen deze ronde; de maandelijkse bronnen blijven staan.
+      DB.newsRound[roundKey()] = [];
       save(); render(); toast(tr("n_reset_done"), true); break;
+    case "news-day": {
+      const d = Number(el.dataset.v);
+      const p = newsPlan();
+      p.days = p.days.includes(d) ? p.days.filter((x) => x !== d) : [...p.days, d].sort((a, b) => a - b);
+      save(); render();
+      toast(p.days.length ? tr("n_days_set", p.days.map((x) => dayName(x, true)).join(", ")) : tr("n_days_none"));
+      break;
+    }
     case "new-source": sourceDialog(null); break;
     case "edit-source": sourceDialog(DB.sources.find((x) => x.id === id)); break;
     case "new-folder": folderDialog(null); break;
