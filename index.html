@@ -2760,10 +2760,13 @@ const fmtBytes = (b) => b < 1024 ? `${b} B`
    summer, plus reserved blocks for the AI role and holidays. */
 /* Blank weeks from this week through to the end of summer 2027. The calendar
    is structure, not content: what goes in each week is yours to fill in. */
+/* De weken zelf worden wel aangemaakt - zonder die rij is er niets om op te
+   klikken - maar leeg. Wat voor werk jij in een week doet is geen aanname die
+   de app voor je hoort te maken. */
 function seedPlanning() {
   return planningWeeks().map((wk) => ({
-    id: uid(), week: wk, clientId: null, engagement: "intern",
-    hours: 36, status: "concept", notes: "",
+    id: uid(), week: wk, clientId: null, engagement: "",
+    hours: 0, status: "concept", notes: "",
   }));
 }
 
@@ -6987,7 +6990,8 @@ function viewPlanning() {
           : `<span class="daychip" style="background:${dayColour(d)};color:${dayInk(d)}"
               title="${esc(dayName(i, true))} · ${esc(dayLabel(d))}">${esc(dayName(i).slice(0, 2))}</span>`).join("")}</span>
         <span style="min-width:0">
-          <span class="wk-name">${c ? esc(c.name) : esc(engLabel(p.engagement))}</span>
+          <span class="wk-name">${c ? esc(c.name)
+            : esc(p.engagement ? engLabel(p.engagement) : tr("p_open"))}</span>
           <span class="wk-eng" style="display:block">${c ? esc(engLabel(p.engagement)) : esc(p.notes || tr("p_noclient"))}
             ${p.hours ? ` · ${p.hours}${LANG === "nl" ? "u" : "h"}` : ""}</span>
         </span>
@@ -7058,7 +7062,7 @@ const DAY_LONG = ["d_mon_l", "d_tue_l", "d_wed_l", "d_thu_l", "d_fri_l", "d_sat_
 const dayName = (i, long) => tr((long ? DAY_LONG : DAY_KEYS)[i]);
 
 const DAY_COLOUR = {
-  intern: "var(--axis)", study: "var(--c5)",
+  intern: "var(--axis)", study: "var(--c5)", open: "var(--surface-3)",
   free: "var(--surface-3)", leave: "var(--border)", off: "transparent",
 };
 function dayColour(d) {
@@ -7068,8 +7072,9 @@ function dayColour(d) {
   }
   return DAY_COLOUR[d.type] || "var(--axis)";
 }
-/* Part-time and leave use pale fills, which white text cannot sit on. */
-const dayInk = (d) => (d.type === "free" || d.type === "leave")
+/* Part-time, leave and an unplanned week use pale fills, which white text
+   cannot sit on. */
+const dayInk = (d) => (d.type === "free" || d.type === "leave" || d.type === "open")
   ? "var(--ink-2)" : "rgba(255,255,255,.95)";
 
 function dayLabel(d) {
@@ -7078,7 +7083,7 @@ function dayLabel(d) {
     return c ? c.name : tr("p_noclient");
   }
   return tr({ intern: "dt_intern", study: "dt_study", free: "dt_free",
-    leave: "dt_leave", off: "dt_off" }[d.type] || "dt_intern");
+    leave: "dt_leave", off: "dt_off", open: "dt_open" }[d.type] || "dt_open");
 }
 
 /* Seven resolved days for a planning week. Stored days win; the rest is
@@ -7094,6 +7099,9 @@ function weekComposition(p) {
     if (prof.studyDay === i) return { type: "study" };
     if (p.engagement === "vrij") return { type: "leave" };
     if (p.clientId) return { type: "client", clientId: p.clientId };
+    // Nog niets ingevuld is iets anders dan intern werk, en hoort er ook
+    // anders uit te zien: bleek in plaats van gevuld.
+    if (!p.engagement) return { type: "open" };
     return { type: "intern" };
   });
 }
