@@ -1341,8 +1341,17 @@ const STR = {
   ag_today_at:["vandaag om {0}","vandaag om {0}"],
   ag_needsclick:["De browser moet opnieuw toestemming vragen — druk op Nu inlezen.",
                  "De browser moet opnieuw toestemming vragen — druk op Nu inlezen."],
-  ag_synced:["{0} afspraken toegevoegd uit je agendamap","{0} afspraken toegevoegd uit je agendamap"],
-  ag_synced_filled:["{0} afspraken toegevoegd, {1}","{0} afspraken toegevoegd, {1}"],
+  ag_n_added:["{0} afspraken toegevoegd","{0} afspraken toegevoegd"],
+  ag_n_added_1:["1 afspraak toegevoegd","1 afspraak toegevoegd"],
+  sy_refresh:["Vernieuwen","Vernieuwen"],
+  sy_refresh_d:["Lees je agendamap opnieuw: afspraken, briefings, verslagen en voorstellen",
+                "Lees je agendamap opnieuw: afspraken, briefings, verslagen en voorstellen"],
+  sy_tr:["{0} verslagen gevonden","{0} verslagen gevonden"],
+  sy_tr_1:["1 verslag gevonden","1 verslag gevonden"],
+  sy_trbij:["{0} verslagen aangevuld","{0} verslagen aangevuld"],
+  sy_trbij_1:["1 verslag aangevuld","1 verslag aangevuld"],
+  sy_sug:["{0} voorstellen van Copilot","{0} voorstellen van Copilot"],
+  sy_sug_1:["1 voorstel van Copilot","1 voorstel van Copilot"],
   ag_n_links:["{0} vergaderlinks aangevuld","{0} vergaderlinks aangevuld"],
   ag_n_removed:["{0} verwijderd uit Outlook","{0} verwijderd uit Outlook"],
   ag_n_cancelled:["{0} doorgestreept","{0} doorgestreept"],
@@ -1350,7 +1359,7 @@ const STR = {
   ag_n_att:["{0} deelnemerslijsten aangevuld","{0} deelnemerslijsten aangevuld"],
   ag_noatt:["Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen.",
             "Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen."],
-  ag_uptodate:["Niets nieuws — je agenda was al bij","Niets nieuws — je agenda was al bij"],
+  ag_uptodate:["Niets nieuws — alles was al bij","Niets nieuws — alles was al bij"],
   ag_nofile:["Geen .ics-bestand in die map gevonden","Geen .ics-bestand in die map gevonden"],
   ag_denied:["Zonder toestemming kan ik de map niet lezen","Zonder toestemming kan ik de map niet lezen"],
   ag_failed:["Inlezen mislukt — staat de map er nog?","Inlezen mislukt — staat de map er nog?"],
@@ -2048,6 +2057,8 @@ const ICONS = {
   plus: "M12 5v14M5 12h14",
   check: "M20 6 9 17l-5-5",
   download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
+  refresh: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5" +
+           "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M16 8h5V3",
   receipt: "M5 2v20l3-2 2 2 2-2 2 2 2-2 3 2V2l-3 2-2-2-2 2-2-2-2 2zM9 8h6M9 12h6",
   news: "M4 4h13a1 1 0 0 1 1 1v14a2 2 0 0 0 2 2H5a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1zM7 8h7M7 12h7M7 16h4M18 10h2a1 1 0 0 1 1 1v8",
   book: "M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5zM8 7h8M8 11h6",
@@ -3424,7 +3435,11 @@ function viewDashboard() {
 
   return pageHead(first ? `${tr("hello")}, ${first}` : tr("nav_dashboard"),
     dateLine,
-    `<button class="btn sm ghost" data-act="dash-setup">${ico("dashboard")} ${esc(tr("db_setup"))}</button>
+    /* Dezelfde knop als op de agendapagina: alles uit je map opnieuw inlezen.
+       Hij staat hier omdat dit de pagina is waar je begint. */
+    `${FS_OK && AGENDA_DIR ? `<button class="btn sm ghost" data-act="agenda-read"
+        title="${esc(tr("sy_refresh_d"))}">${ico("refresh")} ${esc(tr("sy_refresh"))}</button>` : ""}
+     <button class="btn sm ghost" data-act="dash-setup">${ico("dashboard")} ${esc(tr("db_setup"))}</button>
      ${viewOn("review") ? `<button class="btn sm outline" data-nav="review">${ico("review")} ${esc(tr("nav_review"))}</button>` : ""}`) +
     top.join("") +
     (left.length || right.length
@@ -9407,14 +9422,31 @@ async function agendaRead(loud) {
     // Mail en briefing eerst: dan staan ze klaar zodra de pagina opnieuw tekent.
     await mailRead(AGENDA_DIR);
     await briefRead(AGENDA_DIR);
-    await trRead(AGENDA_DIR);
-    await sugRead(AGENDA_DIR);
+    const trR = await trRead(AGENDA_DIR);
+    const sgR = await sugRead(AGENDA_DIR);
+
+    /* Uit dezelfde map komt meer dan je agenda. Wat erbij kwam hoort in
+       dezelfde melding te staan, anders lijkt een ronde zonder nieuwe
+       afspraken alsof er niets is gebeurd. */
+    const erbij = [
+      trR && trR.nieuw ? tr(trR.nieuw === 1 ? "sy_tr_1" : "sy_tr", trR.nieuw) : "",
+      trR && trR.bij ? tr(trR.bij === 1 ? "sy_trbij_1" : "sy_trbij", trR.bij) : "",
+      sgR && sgR.nieuw ? tr(sgR.nieuw === 1 ? "sy_sug_1" : "sy_sug", sgR.nieuw) : "",
+    ].filter(Boolean);
+    /* Zonder .ics is er nog steeds nieuws te melden, dus die melding gaat voor
+       op de klacht dat het agendabestand ontbreekt. */
+    const zonderAgenda = (anders) => {
+      render();
+      if (erbij.length) toast(erbij.join(", "));
+      else if (loud) toast(tr(anders));
+      return null;
+    };
 
     const file = await agendaNewestFile(AGENDA_DIR);
-    if (!file) { if (loud) { render(); toast(tr("ag_nofile")); } return null; }
+    if (!file) return zonderAgenda("ag_nofile");
 
     const text = await file.text();
-    if (!/BEGIN:VCALENDAR/i.test(text)) { if (loud) toast(tr("m_import_bad")); return null; }
+    if (!/BEGIN:VCALENDAR/i.test(text)) return zonderAgenda("m_import_bad");
 
     const parsed = parseIcs(text);
     // A window wide enough for last week's notes and next quarter's planning.
@@ -9426,15 +9458,17 @@ async function agendaRead(loud) {
     s.folder = AGENDA_DIR.name;
     save();
 
-    if (r.added || r.filled || r.attFilled || r.removed || r.cancelled) {
+    const delen = [
+      r.added ? tr(r.added === 1 ? "ag_n_added_1" : "ag_n_added", r.added) : "",
+      r.filled ? tr("ag_n_links", r.filled) : "",
+      r.attFilled ? tr("ag_n_att", r.attFilled) : "",
+      r.removed ? tr("ag_n_removed", r.removed) : "",
+      r.cancelled ? tr("ag_n_cancelled", r.cancelled) : "",
+      ...erbij,
+    ].filter(Boolean);
+    if (delen.length) {
       render();
-      const aangevuld = [
-        r.filled ? tr("ag_n_links", r.filled) : "",
-        r.attFilled ? tr("ag_n_att", r.attFilled) : "",
-        r.removed ? tr("ag_n_removed", r.removed) : "",
-        r.cancelled ? tr("ag_n_cancelled", r.cancelled) : "",
-      ].filter(Boolean).join(", ");
-      toast(aangevuld ? tr("ag_synced_filled", r.added, aangevuld) : tr("ag_synced", r.added));
+      toast(delen.join(", "));
     } else if (loud) {
       render();
       // Geen deelnemers in het hele bestand is bijna altijd de flow, niet de app.
