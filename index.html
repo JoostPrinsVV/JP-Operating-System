@@ -1004,6 +1004,7 @@ const STR = {
   d_sun_l:["Sunday","Zondag"],
 
   dt_client:["Client","Klant"], dt_intern:["Internal / AI","Intern / AI"],
+  dt_open:["Not planned yet","Nog niet ingepland"],
   dt_study:["Study","Studie"], dt_free:["Part-time day","Parttimedag"],
   dt_leave:["Leave","Vrij"], dt_off:["Not a working day","Geen werkdag"],
   p_perday:["Days this week","Dagen deze week"],
@@ -1025,9 +1026,10 @@ const STR = {
   p_full:["Full planning","Hele planning"],
   p_wk:["wk","wk"], p_save:["Save week","Week opslaan"],
   p_client:["Client","Klant"], p_engagement:["Engagement","Opdracht"], p_hrs:["Hours","Uren"],
-  p_note:["Note","Notitie"], p_noclient_opt:["No client — internal / AI block","Geen klant — intern / AI-blok"],
-  p_leaveblank:["Leave the client empty to reserve the week for your AI role.",
-                "Laat de klant leeg om de week te reserveren voor je AI-rol."],
+  p_note:["Note","Notitie"], p_noclient_opt:["No client","Geen klant"],
+  p_leaveblank:["Leave the client empty for a week without client work.",
+                "Laat de klant leeg voor een week zonder klantwerk."],
+  p_open:["Not planned yet","Nog niet ingepland"],
   p_from:["From week","Van week"], p_to:["Through","Tot en met"],
   p_hrs_wk:["Hours per week","Uren per week"],
   p_bulk_d:["Put the same client and engagement on a run of consecutive weeks.",
@@ -6946,14 +6948,17 @@ function viewPlanning() {
   let rows = all;
   if (f.scope === "upcoming") rows = rows.filter((p) => p.week >= now);
   if (f.scope === "assigned") rows = rows.filter((p) => p.clientId);
-  if (f.scope === "free") rows = rows.filter((p) => !p.clientId && p.engagement !== "vrij");
+  /* Een AI-blok is een week die je zelf op intern hebt gezet, niet elke week
+     waar nog geen klant op staat - anders telt een lege planning als een jaar
+     vol AI-werk. */
+  if (f.scope === "free") rows = rows.filter((p) => !p.clientId && p.engagement === "intern");
   if (f.scope === "leave") rows = rows.filter((p) => p.engagement === "vrij");
   if (f.client !== "all") rows = rows.filter((p) => p.clientId === f.client);
 
   const future = all.filter((p) => p.week >= now);
   const billable = future.filter((p) => p.clientId).length;
   const leave = future.filter((p) => p.engagement === "vrij").length;
-  const aiWeeks = future.filter((p) => !p.clientId && p.engagement !== "vrij").length;
+  const aiWeeks = future.filter((p) => !p.clientId && p.engagement === "intern").length;
   const plannedHours = future.reduce((s, p) => s + (p.hours || 0), 0);
 
   // Weeks per client across the horizon - the real question a planner asks.
