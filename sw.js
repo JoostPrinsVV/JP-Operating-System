@@ -11,7 +11,9 @@
    never leaves the browser; this file only caches the program.
    ========================================================================= */
 
-const VERSION = "joost-os-v1";
+/* Verhoogd toen het logo veranderde: iconen worden cache-eerst geserveerd, dus
+   zonder nieuwe versie blijft de oude tegel in het startmenu staan. */
+const VERSION = "joost-os-v2";
 const SHELL = [
   "./",
   "./index.html",
