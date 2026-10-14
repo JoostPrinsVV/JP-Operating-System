@@ -1,6 +1,6 @@
 {
-  "name": "Joost OS",
-  "short_name": "Joost OS",
+  "name": "My Intelligent Workspace",
+  "short_name": "Workspace",
   "description": "Persoonlijk werkbesturingssysteem: planning, uren, taken, doelen, KPI's, kennis en declaraties.",
   "start_url": "./",
   "scope": "./",

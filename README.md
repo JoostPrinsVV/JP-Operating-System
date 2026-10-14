@@ -1,4 +1,4 @@
-# Joost OS
+# My Intelligent Workspace
 
 Persoonlijk werkbesturingssysteem voor de AI-rol binnen Audit & Assurance:
 planning, urenregistratie, taken, overleggen, declaraties, doelen, KPI's,
@@ -49,7 +49,7 @@ Open de URL in **Edge** of **Chrome**. Rechts in de adresbalk verschijnt een
 installatie-icoon (een scherm met een pijl), of via het menu
 **… → Apps → Deze site als app installeren**.
 
-Daarna staat Joost OS als los venster in je startmenu en op je taakbalk, met
+Daarna staat My Intelligent Workspace als los venster in je startmenu en op je taakbalk, met
 eigen icoon en zonder adresbalk. Hij opent ook zonder internetverbinding.
 
 Op iOS: Safari → Deel → *Zet op beginscherm*.

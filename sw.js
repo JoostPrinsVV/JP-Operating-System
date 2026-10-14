@@ -1,4 +1,4 @@
-/* Joost OS - service worker
+/* My Intelligent Workspace - service worker
    ===========================================================================
    Two jobs: make the app installable, and make it open without a network.
 

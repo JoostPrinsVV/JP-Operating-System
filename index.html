@@ -9,20 +9,20 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Joost OS">
+<meta name="apple-mobile-web-app-title" content="My Intelligent Workspace">
 <meta name="robots" content="noindex, nofollow">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="icon-512.png" sizes="512x512" type="image/png">
 <style>html,body{margin:0;padding:0;min-height:100%}</style>
-<title>Joost OS</title>
+<title>My Intelligent Workspace</title>
 <!-- Geen lettertype van buiten. Daarmee doet deze pagina geen enkel verzoek
      aan derden: er gaat niets naar Google, ook geen IP-adres. Het werk in deze
      app is vertrouwelijk genoeg om die ene regel gemak niet waard te zijn. -->
 
 <style>
 /* ============================================================================
-   Joost OS - standalone. Visser & Visser design system.
+   My Intelligent Workspace - standalone. Visser & Visser design system.
    Chart palette is the validated categorical set (see docs/DESIGN.md).
    Fonts degrade to the system stack with no network.
    ========================================================================== */
@@ -791,7 +791,7 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-2);border:1p
 
 <script>
 /* ============================================================================
-   Joost OS - standalone build
+   My Intelligent Workspace - standalone build
    No server, no build step, no network. State lives in localStorage; the
    priority scorer and goal-progress maths are ports of the ones in
    src/lib/priority.ts and supabase/migrations/0003_functions.sql.
@@ -1041,8 +1041,8 @@ const STR = {
   s_counts:["{0} tasks · {1} projects · {2} ideas · {3} meetings · {4} study sessions",
             "{0} taken · {1} projecten · {2} ideeën · {3} overleggen · {4} studiesessies"],
   s_about:["About this build","Over deze versie"],
-  s_about_d:["The standalone build of Joost OS: one HTML file, no server, no network. The priority scorer and the goal-progress maths are the same as in the full app — the AI Chief of Staff is the part that needs a server, so here the weekly review is computed from your data instead of written by a model.",
-             "De standalone versie van Joost OS: één HTML-bestand, geen server, geen netwerk. De prioriteitsscore en de doelvoortgang zijn dezelfde als in de volledige app — de AI Chief of Staff heeft een server nodig, dus hier wordt de weekreview uit je eigen gegevens berekend in plaats van geschreven door een model."],
+  s_about_d:["The standalone build of My Intelligent Workspace: one HTML file, no server, no network. The priority scorer and the goal-progress maths are the same as in the full app — the AI Chief of Staff is the part that needs a server, so here the weekly review is computed from your data instead of written by a model.",
+             "De standalone versie van My Intelligent Workspace: één HTML-bestand, geen server, geen netwerk. De prioriteitsscore en de doelvoortgang zijn dezelfde als in de volledige app — de AI Chief of Staff heeft een server nodig, dus hier wordt de weekreview uit je eigen gegevens berekend in plaats van geschreven door een model."],
   s_keys:["Keyboard:","Sneltoetsen:"],
   s_k_jump:["jump","springen"], s_k_menu:["menu wider or narrower","menu breder of smaller"],
   s_k_new:["new task","nieuwe taak"], s_k_close:["close","sluiten"],
@@ -1486,7 +1486,7 @@ const STR = {
                "Plak een eerdere export. Dit overschrijft de huidige werkplek."],
   dl_replace:["Replace everything","Alles vervangen"],
   dl_notjson:["That is not valid JSON.","Dat is geen geldige JSON."],
-  dl_notexport:["That does not look like a Joost OS export.","Dat lijkt geen Joost OS-export."],
+  dl_notexport:["That does not look like a My Intelligent Workspace export.","Dat lijkt geen My Intelligent Workspace-export."],
   dl_imported:["Data imported","Gegevens geïmporteerd"],
   dl_reset:["Reset to sample data?","Terug naar voorbeelddata?"],
   dl_reset_d:["This replaces everything in this browser with the original sample workspace. It cannot be undone.",
@@ -1607,7 +1607,7 @@ const STR = {
   b_nag_d:["Everything is in this one browser. Clearing your browsing data wipes it, and there is no other copy.",
            "Alles staat in deze ene browser. Browsegegevens wissen betekent alles kwijt, en er is geen andere kopie."],
   b_bad_json:["That is not valid JSON.","Dat is geen geldige JSON."],
-  b_bad_file:["That does not look like a Joost OS backup.","Dat lijkt geen Joost OS back-up."],
+  b_bad_file:["That does not look like a My Intelligent Workspace backup.","Dat lijkt geen My Intelligent Workspace back-up."],
   b_restore_t:["Replace everything with this backup?","Alles vervangen door deze back-up?"],
   b_restore_from:["From {0}","Uit {0}"],
   b_restore_go:["Restore","Terugzetten"],
@@ -7796,7 +7796,7 @@ function renderRail() {
           <path d="M2 3h6l4 11 4-11h6l-7 18h-6z" fill="var(--c2)"/>
           <path d="M2 3h6l2 5.5L7.5 15z" fill="var(--c4)"/></svg></span>
       <span class="brand-text">
-        <span class="brand-name">Joost OS</span>
+        <span class="brand-name">My Intelligent Workspace</span>
         <span class="brand-sub">Visser &amp; Visser</span></span>
     </button>
     ${NAV.map((s) => {
@@ -7864,7 +7864,7 @@ function render() {
   else html = (VIEWS[UI.view] || viewDashboard)();
   RENAMABLE = null;
 
-  document.title = `${viewLabel(UI.view)} · Joost OS`;
+  document.title = `${viewLabel(UI.view)} · My Intelligent Workspace`;
   $("#view").innerHTML = html;
   paintTimerPill();
   wireView();
@@ -9366,7 +9366,11 @@ const backupStale = () => {
   const d = backupAge();
   return d === null || d >= backupEvery();
 };
-const backupName = () => `joost-os-back-up-${TODAY()}.json`;
+/* De interne sleutels - de opslag, de map-verwijzing, het onthouden van de
+     gekozen map - houden hun oude naam. Die hernoemen zou elke werkruimte
+     leegmaken, en niemand ziet ze ooit. De bestandsnaam van een back-up zie je
+     wel, dus die volgt de naam van de app. */
+  const backupName = () => `mijn-werkplek-back-up-${TODAY()}.json`;
 
 function backupAgeText() {
   const d = backupAge();
