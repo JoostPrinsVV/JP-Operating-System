@@ -16,9 +16,9 @@
 <link rel="icon" href="icon-512.png" sizes="512x512" type="image/png">
 <style>html,body{margin:0;padding:0;min-height:100%}</style>
 <title>Joost OS</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<!-- Geen lettertype van buiten. Daarmee doet deze pagina geen enkel verzoek
+     aan derden: er gaat niets naar Google, ook geen IP-adres. Het werk in deze
+     app is vertrouwelijk genoeg om die ene regel gemak niet waard te zijn. -->
 
 <style>
 /* ============================================================================
@@ -46,8 +46,10 @@
   --shadow-md:0 8px 20px rgba(16,29,79,.12);
   --shadow-lg:0 18px 40px rgba(16,29,79,.18);
 
-  --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* Het lettertype van het systeem: op Windows Segoe UI, op een Mac San
+     Francisco. Niets op te halen, dus ook niets dat kan uitlekken. */
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;
   --rail:232px;
 }
 @media (prefers-color-scheme:dark){
@@ -2329,29 +2331,14 @@ const CAT_COLORS = [
   ["bruin",       "#8E562E", ["Brown","Bruin"]],
   ["grijs",       "#767676", ["Grey","Grijs"]],
 ];
-/* De categorieën zelf, met de kleur die ze in de postbus hebben. Dit is de
-   startlijst van een nieuwe werkruimte; daarna is het gewone gegevens die je
-   kunt hernoemen, bijkleuren en aanvullen. Wat uit de agenda binnenkomt en
-   hier nog niet staat, komt er vanzelf bij. */
-const CAT_SEED = [
-  ["Activiteit internationaal", "donkeroranje"],
-  ["AI (andere disciplines)",   "magenta"],
-  ["AI-focus",                  "groen"],
-  ["AI-meetings",               "turkoois"],
-  ["AI-research",               "bruin"],
-  ["Controles",                 "oranje"],
-  ["Indirect",                  "rood"],
-  ["Interimcontroles",          "geel"],
-  ["Locatie werk",              "blauw"],
-  ["Mentor",                    "paars"],
-  ["Nyenrode",                  "rood"],
-  ["Privé",                     "lichtpaars"],
-  ["Reistijd",                  "bruin"],
-  ["Team dAtA",                 "oranje"],
-  ["Verjaardagen",              "paars"],
-  ["Verlof",                    "donkerrood"],
-];
-const seedCategories = () => CAT_SEED.map(([name, color]) => ({ id: uid(), name, color }));
+/* Een nieuwe werkruimte begint zonder categorieën. Ze komen vanzelf binnen
+   zodra je agenda ze meestuurt - elke categorie die in een afspraak staat en
+   hier nog niet, wordt bij het inlezen toegevoegd met een vaste kleur. Zelf
+   een rijtje neerzetten kan ook, onder de agenda.
+
+   Ze staan bewust niet in de code: deze pagina is openbaar, en welke
+   categorieën iemand in zijn agenda voert zegt iets over zijn werk. */
+const seedCategories = () => [];
 
 /* Outlook kijkt niet naar hoofdletters of spaties aan de rand, dus hier ook
    niet: "controles " en "Controles" zijn dezelfde categorie. */

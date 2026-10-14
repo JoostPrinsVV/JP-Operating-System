@@ -109,9 +109,15 @@ Wat het níét vangt is of de app werkelijk doet wat je bedoelt. Daarvoor is
 
 ## Privacy
 
-De app doet geen enkel netwerkverzoek behalve het lettertype van Google Fonts
-en de bestanden in deze map. Er is geen analytics, geen telemetrie, geen
-server. Wat je invult blijft in je eigen browser staan.
+De app doet **geen enkel verzoek aan derden**. Geen analytics, geen telemetrie,
+geen server, geen lettertype van buiten — alleen de bestanden in deze map. In
+de code staat geen `fetch`, `XMLHttpRequest`, `sendBeacon`, WebSocket of
+`EventSource`; er is dus geen manier waarop gegevens de browser verlaten.
 
-Wil je ook het lettertype lokaal houden, haal dan de drie `fonts.googleapis.com`-
-regels bovenin `index.html` weg; de app valt dan terug op het systeemlettertype.
+Wat je invult blijft in de localStorage van je eigen browser staan. Mail,
+briefings en transcriptie-invoer worden gelezen uit een map die je zelf
+aanwijst en gaan nergens heen.
+
+De pagina zelf staat wel openbaar op GitHub Pages: het *programma* is dus voor
+iedereen met de URL te openen, de *inhoud* niet — die staat per bezoeker in
+zijn eigen browser. Houd daarom ook niets persoonlijks in de code zelf.
