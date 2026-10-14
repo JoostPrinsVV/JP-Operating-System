@@ -14,6 +14,7 @@ gegevens blijven in de browser van de gebruiker en gaan nergens heen.
 | Bestand | Waarvoor |
 |---|---|
 | `index.html` | De hele applicatie |
+| `ONBOARDING.md` | Een nieuwe gebruiker van niets naar klaar: app, map, stromen, prompts |
 | `manifest.webmanifest` | Maakt hem installeerbaar als bureaublad-app |
 | `sw.js` | Service worker: offline openen en installeerbaarheid |
 | `icon-192.png`, `icon-512.png` | App-icoon |
