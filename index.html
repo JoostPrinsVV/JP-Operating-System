@@ -855,6 +855,18 @@ const STR = {
   tr_who_me:["Actie staat nu op jou","Actie staat nu op jou"],
   tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
   tr_untitled:["Zonder titel","Zonder titel"],
+  sg_title:["Copilot analyse - mogelijk nog op te pakken taken",
+            "Copilot analyse - mogelijk nog op te pakken taken"],
+  sg_d:["Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je aanmaakt of negeert komt niet opnieuw langs.",
+        "Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je aanmaakt of negeert komt niet opnieuw langs."],
+  sg_make:["Taak maken","Taak maken"],
+  sg_ignore:["Negeren","Negeren"],
+  sg_back:["Terugzetten","Terugzetten"],
+  sg_none:["Niets meer open. Maandagochtend staat er weer een nieuwe ronde.",
+           "Niets meer open. Maandagochtend staat er weer een nieuwe ronde."],
+  sg_none_ignored:["Je hebt nog niets genegeerd.","Je hebt nog niets genegeerd."],
+  sg_show_ignored:["{0} genegeerd","{0} genegeerd"],
+  sg_show_open:["Terug naar de open voorstellen ({0})","Terug naar de open voorstellen ({0})"],
   tr_none:["Nog geen verslagen","Nog geen verslagen"],
   tr_none_open:["Alle acties staan op een lijst","Alle acties staan op een lijst"],
   tr_none_d:["Ze komen binnen zodra de avondstroom een transcriptie heeft kunnen samenvatten. Een overleg zonder transcriptie slaat hij over.",
@@ -2855,6 +2867,7 @@ function migrate() {
      alsnog rechtgezet; dat scheelt opnieuw inlezen. */
   DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
+  if (!Array.isArray(DB.suggestions)) { DB.suggestions = []; changed = true; }
   /* Een meting stond vroeger alleen op een maand. De eerste van die maand is
      de enige dag die we met zekerheid kunnen afleiden. */
   (DB.kpiEntries || []).forEach((e) => {
@@ -2966,6 +2979,7 @@ const UI = {
   meetFilter: { days: 30 },
   trFilter: "all",
   trOpen: {},            // welke verslagen uitgeklapt staan
+  sugIgnored: false,     // toont de genegeerde voorstellen in plaats van de open
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -3641,6 +3655,154 @@ function focusTasks(v) {
   if (!same && UI.view !== "tasks") { go("tasks"); return; }
   render();
 }
+/* ---- vergeten taken ------------------------------------------------------
+   Copilot leest elke maandag dertig dagen mail en Teams terug en stelt voor
+   wat er nog open lijkt te staan. Dertig dagen, elke week opnieuw: een taak
+   die je vergeet, vergeet je juist omdat hij oud is, dus een venster van een
+   week zou precies de dingen tonen die je nog wél weet.
+
+   Dat hij daardoor elke week dezelfde dingen aandraagt wordt hier opgelost en
+   niet in de prompt: wat je één keer hebt beoordeeld - aangemaakt of genegeerd
+   - komt niet terug.
+------------------------------------------------------------------------- */
+const SUG_SECTIES = [
+  ["waarom", ["Why","Waarom"], ["waarom", "why", "aanleiding", "context", "toelichting"]],
+  ["bron",   ["Source","Bron"], ["bron", "source", "gevonden", "waar"]],
+];
+
+/* De betekenisdragende woorden uit een voorstel, zonder volgorde en zonder
+   buigingen van leestekens. Copilot formuleert het elke week nét anders;
+   hierop vergelijken vangt dat op. */
+const sugWoorden = (s) => [...new Set(String(s || "").toLowerCase()
+  .normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+  .filter((w) => w.length > 2 && !MAIL_STOP.has(w)))];
+const sugKey = (s) => sugWoorden(s).sort().join(" ");
+
+/* Twee voorstellen zijn hetzelfde als ze vrijwel dezelfde woorden delen: acht
+   van de tien van de kortste, en minstens drie woorden.
+
+   De lat ligt expres hoog. Op woorden tellen ziet niet welk woord het
+   werkwoord is, en juist daar zit vaak het verschil: "toegang regelen" en
+   "toegang intrekken" delen alles behalve de bedoeling. Ten onrechte
+   samenvoegen laat een echte taak voorgoed verdwijnen; ten onrechte splitsen
+   kost één klik. */
+function sugLijkt(a, b) {
+  const A = sugWoorden(a), B = new Set(sugWoorden(b));
+  if (!A.length || !B.size) return false;
+  const gedeeld = A.filter((w) => B.has(w)).length;
+  return gedeeld >= 3 && gedeeld / Math.min(A.length, B.size) >= 0.8;
+}
+
+function sugParse(tekst) {
+  const regels = String(tekst || "").replace(/\r/g, "").split("\n");
+  const titel = [];
+  let i = 0;
+  // De taak zelf staat bovenaan, tot de eerste lege regel of het eerste kopje.
+  while (i < regels.length && !regels[i].trim()) i++;
+  while (i < regels.length) {
+    const r = regels[i].trim();
+    if (!r) { i++; break; }
+    if (KOP_RE.test(r) && kopSleutel((KOP_RE.exec(r)[1] || "").toLowerCase(), SUG_SECTIES)) break;
+    titel.push(r); i++;
+  }
+  const text = titel.join(" ").replace(/\s+/g, " ").replace(/\*\*/g, "").trim();
+  if (!text) return null;
+
+  const secties = {};
+  let huidig = null;
+  regels.slice(i).forEach((regel) => {
+    const kop = KOP_RE.exec(regel);
+    const sleutel = kop && kopSleutel(kop[1].trim().toLowerCase(), SUG_SECTIES);
+    if (sleutel) { huidig = sleutel; secties[huidig] = (kop[2] || "").trim(); return; }
+    if (huidig && regel.trim()) secties[huidig] = `${secties[huidig]} ${regel.trim()}`.trim();
+  });
+  Object.keys(secties).forEach((k) => {
+    secties[k] = secties[k].replace(/\*\*/g, "").trim();
+    if (!secties[k]) delete secties[k];
+  });
+  return { text, why: secties.waarom || "", source: secties.bron || "" };
+}
+
+function sugImport(raw) {
+  const items = (raw && (raw.items || raw.suggestions)) || [];
+  DB.suggestions = DB.suggestions || [];
+  let nieuw = 0, bekend = 0;
+  items.forEach((i) => {
+    const p = sugParse(String(i.text || i.body || ""));
+    if (!p) return;
+    const key = sugKey(p.text);
+    /* Al beoordeeld of al in de lijst? Dan niet nog eens. Eerst op de
+       vingerafdruk, en anders op gelijkenis met wat er al staat. */
+    const bestaand = DB.suggestions.find((s) => s.key === key || sugLijkt(p.text, s.text));
+    if (bestaand) {
+      bestaand.lastSeen = TODAY();
+      if (!bestaand.why && p.why) bestaand.why = p.why;
+      bekend++;
+      return;
+    }
+    DB.suggestions.push({ id: uid(), key, text: p.text, why: p.why, source: p.source,
+      status: "open", taskId: null, firstSeen: TODAY(), lastSeen: TODAY() });
+    nieuw++;
+  });
+  /* Beoordeelde voorstellen van ouder dan een half jaar mogen weg; ze houden
+     alleen nog dubbelen tegen die niemand meer zou herkennen. */
+  const grens = addDays(-183);
+  DB.suggestions = DB.suggestions.filter((s) => s.status === "open" || (s.lastSeen || "9999") >= grens);
+  if (nieuw || bekend) save();
+  return { nieuw, bekend };
+}
+
+async function sugRead(dir) {
+  try {
+    let nieuw = 0, bekend = 0;
+    const bestanden = await agendaFiles(dir, /^taken-.*\.json$/i, 7);
+    for (const file of bestanden.reverse()) {
+      try {
+        const r = sugImport(JSON.parse(await file.text()));
+        nieuw += r.nieuw; bekend += r.bekend;
+      } catch (e) { /* een stuk bestand houdt de rest niet tegen */ }
+    }
+    return { nieuw, bekend };
+  } catch (e) { return null; }
+}
+
+/* De sectie onder je taken. Open voorstellen staan er; wat je hebt genegeerd
+   is op te vragen, zodat een misklik niet definitief is. */
+function suggestionCard() {
+  const alle = DB.suggestions || [];
+  const open = alle.filter((s) => s.status === "open");
+  const genegeerd = alle.filter((s) => s.status === "ignored");
+  if (!alle.length) return "";
+  const toon = UI.sugIgnored ? genegeerd : open;
+
+  const rij = (s) => `<li class="row" style="gap:10px;padding:9px 2px;align-items:flex-start">
+    <span style="flex:1;min-width:0">
+      <span class="sm2" style="display:block;line-height:1.5">${esc(s.text)}</span>
+      ${s.why ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(s.why)}</span>` : ""}
+      ${s.source ? `<span class="xs mut" style="display:block;margin-top:1px;font-style:italic">${esc(s.source)}</span>` : ""}
+    </span>
+    ${s.status === "ignored"
+      ? `<button class="btn sm ghost" data-act="sug-open" data-id="${s.id}" style="flex:0 0 auto">
+          ${ico("back", "", 11)} ${esc(tr("sg_back"))}</button>`
+      : `<span class="row" style="gap:4px;flex:0 0 auto">
+          <button class="btn sm outline" data-act="sug-task" data-id="${s.id}">
+            ${ico("plus", "", 11)} ${esc(tr("sg_make"))}</button>
+          <button class="btn sm ghost" data-act="sug-ignore" data-id="${s.id}">${esc(tr("sg_ignore"))}</button>
+        </span>`}
+  </li>`;
+
+  return card(tr("sg_title"),
+    (toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
+      : `<p class="xs mut">${esc(UI.sugIgnored ? tr("sg_none_ignored") : tr("sg_none"))}</p>`) +
+    /* De knop blijft ook staan als de genegeerde lijst leeg raakt doordat je
+       het laatste voorstel terugzet; anders is er geen weg terug. */
+    (genegeerd.length || UI.sugIgnored ? `<button class="btn sm ghost" data-act="sug-toggle" style="margin-top:9px;padding-left:0">
+      ${ico(UI.sugIgnored ? "chevup" : "chevdown", "", 12)} ${esc(UI.sugIgnored
+        ? tr("sg_show_open", open.length) : tr("sg_show_ignored", genegeerd.length))}</button>` : ""),
+    tr("sg_d"));
+}
+
 function viewTasks() {
   const all = filteredTasks(), f = UI.taskFilter;
   const seg = (v, l) => `<button data-act="task-view" data-v="${v}" aria-pressed="${UI.taskView === v}">${l}</button>`;
@@ -3670,7 +3832,7 @@ function viewTasks() {
       ${[["open", tr("t_open")], ["done", tr("t_done")], ["all", tr("t_all")]].map(([v, l]) =>
         `<option value="${v}" ${f.show === v ? "selected" : ""}>${esc(l)}</option>`).join("")}
     </select>
-  </div>${chipRow()}${body}`;
+  </div>${chipRow()}${body}${suggestionCard()}`;
 }
 
 /* Every applied preset gets a removable chip, so a filtered list never looks
@@ -9228,6 +9390,7 @@ async function agendaRead(loud) {
     await mailRead(AGENDA_DIR);
     await briefRead(AGENDA_DIR);
     await trRead(AGENDA_DIR);
+    await sugRead(AGENDA_DIR);
 
     const file = await agendaNewestFile(AGENDA_DIR);
     if (!file) { if (loud) { render(); toast(tr("ag_nofile")); } return null; }
@@ -9910,6 +10073,30 @@ document.addEventListener("click", (e) => {
       } });
       break;
     }
+    /* Een voorstel van Copilot wordt pas een taak als jij hem doorzet, net als
+       een actie uit een verslag. Of je hem nu aanmaakt of negeert: hij is
+       beoordeeld en komt volgende maandag niet opnieuw langs. */
+    case "sug-task": {
+      const s = (DB.suggestions || []).find((x) => x.id === id);
+      if (!s) break;
+      taskDialog(null, { title: s.text, onSaved: (taak) => {
+        s.status = "task"; s.taskId = taak.id; save(); render();
+      } });
+      break;
+    }
+    case "sug-ignore": {
+      const s = (DB.suggestions || []).find((x) => x.id === id);
+      if (!s) break;
+      s.status = "ignored"; save(); render();
+      break;
+    }
+    case "sug-open": {
+      const s = (DB.suggestions || []).find((x) => x.id === id);
+      if (!s) break;
+      s.status = "open"; s.taskId = null; save(); render();
+      break;
+    }
+    case "sug-toggle": UI.sugIgnored = !UI.sugIgnored; render(); break;
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
