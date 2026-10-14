@@ -207,6 +207,18 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 /* Only things you can act on lift on hover. */
 .card.lift:hover{box-shadow:var(--shadow-sm);border-color:color-mix(in srgb,var(--ink-3) 35%,var(--border))}
 
+/* Wat Copilot aandraagt is geen taak van jou - het staat op je lijst te
+   wachten op een oordeel. Donkere kop en wat lucht erboven, zodat je dat
+   verschil ziet zonder te lezen. */
+.sug-card{margin-top:22px}
+.sug-h{display:flex;align-items:center;flex-wrap:wrap;gap:9px;padding:11px 16px;
+  background:var(--navy);color:var(--navy-ink);border-radius:15px 15px 0 0}
+.sug-t{font-size:13px;font-weight:650;letter-spacing:-.012em}
+.sug-bar{width:1px;height:13px;background:var(--navy-muted);opacity:.55}
+.sug-sub{font-size:12px;color:var(--navy-muted)}
+.sug-d{font-size:11.5px;color:var(--ink-2);line-height:1.5;margin:15px 0 3px}
+.sug-txt{font-weight:600}
+
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;
   padding:0 13px;border-radius:9px;border:1px solid transparent;background:var(--primary);
   color:var(--primary-ink);font-size:13px;font-weight:500;cursor:pointer;letter-spacing:-.005em;
@@ -855,8 +867,8 @@ const STR = {
   tr_who_me:["Actie staat nu op jou","Actie staat nu op jou"],
   tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
   tr_untitled:["Zonder titel","Zonder titel"],
-  sg_title:["Copilot analyse - mogelijk nog op te pakken taken",
-            "Copilot analyse - mogelijk nog op te pakken taken"],
+  sg_head:["Copilot-analyse","Copilot-analyse"],
+  sg_sub:["Mogelijk nog op te pakken taken","Mogelijk nog op te pakken taken"],
   sg_d:["Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je aanmaakt of negeert komt niet opnieuw langs.",
         "Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je aanmaakt of negeert komt niet opnieuw langs."],
   sg_make:["Taak maken","Taak maken"],
@@ -3778,7 +3790,7 @@ function suggestionCard() {
 
   const rij = (s) => `<li class="row" style="gap:10px;padding:9px 2px;align-items:flex-start">
     <span style="flex:1;min-width:0">
-      <span class="sm2" style="display:block;line-height:1.5">${esc(s.text)}</span>
+      <span class="sm2 sug-txt" style="display:block;line-height:1.5">${esc(s.text)}</span>
       ${s.why ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(s.why)}</span>` : ""}
       ${s.source ? `<span class="xs mut" style="display:block;margin-top:1px;font-style:italic">${esc(s.source)}</span>` : ""}
     </span>
@@ -3792,15 +3804,21 @@ function suggestionCard() {
         </span>`}
   </li>`;
 
-  return card(tr("sg_title"),
+  return `<section class="card sug-card">
+    <div class="sug-h">${ico("sparkle", "ico", 15)}
+      <h2 class="sug-t">${esc(tr("sg_head"))}</h2>
+      <span class="sug-bar"></span>
+      <span class="sug-sub">${esc(tr("sg_sub"))}</span>
+    </div>
+    <div class="card-b"><p class="sug-d">${esc(tr("sg_d"))}</p>` +
     (toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
       : `<p class="xs mut">${esc(UI.sugIgnored ? tr("sg_none_ignored") : tr("sg_none"))}</p>`) +
     /* De knop blijft ook staan als de genegeerde lijst leeg raakt doordat je
        het laatste voorstel terugzet; anders is er geen weg terug. */
     (genegeerd.length || UI.sugIgnored ? `<button class="btn sm ghost" data-act="sug-toggle" style="margin-top:9px;padding-left:0">
       ${ico(UI.sugIgnored ? "chevup" : "chevdown", "", 12)} ${esc(UI.sugIgnored
-        ? tr("sg_show_open", open.length) : tr("sg_show_ignored", genegeerd.length))}</button>` : ""),
-    tr("sg_d"));
+        ? tr("sg_show_open", open.length) : tr("sg_show_ignored", genegeerd.length))}</button>` : "") +
+    `</div></section>`;
 }
 
 function viewTasks() {
