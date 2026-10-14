@@ -1723,6 +1723,27 @@ const STR = {
   b_every_set:["Reminder set to {0} days","Herinnering op {0} dagen gezet"],
   b_contains:["A backup holds everything: all tabs, your settings, the layout of your dashboard, your language and theme. Restoring it puts the workspace back exactly as it was.",
               "Een back-up bevat alles: alle tabbladen, je instellingen, de indeling van je dashboard, je taal en je thema. Terugzetten herstelt de werkruimte precies zoals hij was."],
+  bk_title:["Automatic backup to a folder","Automatische back-up naar een map"],
+  bk_none_d:["Point at a folder in OneDrive and the app writes a copy of your workspace there at the end of every working day. From then on it is part of Microsoft's backup, instead of living only in this browser.",
+             "Wijs een map in OneDrive aan, dan zet de app daar aan het eind van elke werkdag een kopie van je werkruimte neer. Vanaf dat moment valt hij onder de back-up van Microsoft, in plaats van alleen in deze browser te staan."],
+  bk_link:["Choose a folder","Map kiezen"],
+  bk_forget:["Forget","Vergeten"],
+  bk_forgotten:["The backup folder has been released","De back-upmap is losgelaten"],
+  bk_grant:["Allow writing","Schrijven toestaan"],
+  bk_needs_ok:["The browser has to ask permission to write to this folder again",
+               "De browser moet opnieuw toestemming vragen om in deze map te schrijven"],
+  bk_now:["Back up now","Nu een kopie"],
+  bk_done:["Workspace copied to {0}","Werkruimte gekopieerd naar {0}"],
+  bk_failed:["Writing to that folder did not work","Schrijven naar die map lukte niet"],
+  bk_today:["Written today","Vandaag weggeschreven"],
+  bk_on:["Automatic backup is on","Automatische back-up staat aan"],
+  bk_off:["Automatic backup is off","Automatische back-up staat uit"],
+  bk_on_date:["Last written on {0}","Laatst weggeschreven op {0}"],
+  bk_never_auto:["Not written automatically yet","Nog niet automatisch weggeschreven"],
+  bk_auto:["Write a copy at {0}:00, at the end of the working day",
+           "Elke dag om {0}:00 een kopie wegschrijven, aan het eind van de werkdag"],
+  bk_auto_d:["One copy a day, the last {0} are kept. Was the laptop already closed at that time? Then it happens the next time you open the app.",
+             "Eén kopie per dag, de laatste {0} blijven bewaard. Was de laptop op dat moment al dicht, dan gebeurt het bij het eerstvolgende openen."],
 
   /* AI tips */
   nav_tips:["AI tips","AI-tips"],
@@ -6227,6 +6248,7 @@ function viewSettings() {
         <button class="btn sm outline" data-act="cleanup">${ico("trash", "", 13)} ${esc(tr("w_title"))}</button>
         <button class="btn sm danger" data-act="reset">${esc(tr("s_reset"))}</button>
       </div>
+      ${backupFolderCard()}
       <p class="xs mut">${esc(tr("s_counts", DB.tasks.length, DB.projects.length, DB.ideas.length,
         DB.meetings.length, DB.sessions.length))}</p>`, tr("s_data_d"))}
 
@@ -9615,6 +9637,168 @@ async function downloadBackup() {
   toast(tr("b_done"));
 }
 
+/* ---- automatische back-up ------------------------------------------------
+   De grootste zwakte van een app zonder server: alles staat in de opslag van
+   één browser op één laptop. Een herinnering die je kunt wegklikken is daar
+   geen antwoord op.
+
+   Daarom schrijft hij aan het eind van de werkdag zelf een kopie weg naar een
+   map die jij aanwijst. Staat die in OneDrive, dan is je werkruimte vanaf dat
+   moment onderdeel van de back-up van Microsoft.
+
+   Dit is een aparte map en een apart recht. De agendamap wordt alleen gelezen,
+   en dat houden we zo: schrijfrecht vragen op een map waar stromen in
+   schrijven is een risico dat hier niets oplost.
+------------------------------------------------------------------------- */
+const IDB_BACKUP_KEY = "backupDir";
+const BACKUP_HOUR = 17;            // het eind van de werkdag
+const BACKUP_KEEP = 14;            // twee werkweken aan kopieën
+const BACKUP_RE = /^mijn-werkplek-back-up-\d{4}-\d{2}-\d{2}\.json$/i;
+let BACKUP_DIR = null, BACKUP_PERM = "unknown";
+
+const backupAuto = () => (DB.backup = DB.backup || {});
+
+async function backupLoadHandle() {
+  if (!FS_OK) return null;
+  try { BACKUP_DIR = await idbGet(IDB_BACKUP_KEY); } catch (e) { BACKUP_DIR = null; }
+  if (BACKUP_DIR) {
+    try { BACKUP_PERM = await BACKUP_DIR.queryPermission({ mode: "readwrite" }); }
+    catch (e) { BACKUP_PERM = "prompt"; }
+  }
+  return BACKUP_DIR;
+}
+
+async function backupPick() {
+  if (!FS_OK) { toast(tr("ag_unsupported")); return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker({ id: "joost-os-backup", mode: "readwrite" }); }
+  catch (e) { return; }                       // geannuleerd is ook een antwoord
+  BACKUP_DIR = dir; BACKUP_PERM = "granted";
+  try { await idbSet(IDB_BACKUP_KEY, dir); } catch (e) { toast(tr("ag_nostore")); }
+  const s = backupAuto();
+  s.folder = dir.name; s.auto = true;
+  save();
+  await backupWrite(true);
+}
+
+async function backupForget() {
+  BACKUP_DIR = null; BACKUP_PERM = "unknown";
+  try { await idbDel(IDB_BACKUP_KEY); } catch (e) { /* niets aan te doen */ }
+  const s = backupAuto();
+  s.folder = ""; s.auto = false; s.lastAuto = "";
+  save(); render(); toast(tr("bk_forgotten"));
+}
+
+/* Toestemming vragen mag alleen vanuit een klik, dus dit hangt aan een knop
+   en niet aan het opstarten. */
+async function backupGrant() {
+  if (!BACKUP_DIR) return;
+  try { BACKUP_PERM = await BACKUP_DIR.requestPermission({ mode: "readwrite" }); }
+  catch (e) { BACKUP_PERM = "prompt"; }
+  if (BACKUP_PERM === "granted") await backupWrite(true);
+  else { render(); toast(tr("ag_denied")); }
+}
+
+/* Oudere kopieën opruimen. Mislukt dat, dan is dat geen reden om de nieuwe
+   back-up als mislukt te beschouwen - hij staat er al. */
+async function backupPrune() {
+  try {
+    const namen = [];
+    for await (const [naam, entry] of BACKUP_DIR.entries()) {
+      if (entry.kind === "file" && BACKUP_RE.test(naam)) namen.push(naam);
+    }
+    // De naam bevat de datum, dus alfabetisch is op ouderdom.
+    namen.sort().slice(0, Math.max(0, namen.length - BACKUP_KEEP))
+      .forEach((naam) => { void BACKUP_DIR.removeEntry(naam).catch(() => {}); });
+  } catch (e) { /* opruimen is bijzaak */ }
+}
+
+async function backupWrite(loud) {
+  if (!BACKUP_DIR) return false;
+  try {
+    if (BACKUP_PERM !== "granted") {
+      BACKUP_PERM = await BACKUP_DIR.queryPermission({ mode: "readwrite" });
+      if (BACKUP_PERM !== "granted") { if (loud) toast(tr("bk_needs_ok")); return false; }
+    }
+    const fh = await BACKUP_DIR.getFileHandle(backupName(), { create: true });
+    const w = await fh.createWritable();
+    await w.write(backupPayload());
+    await w.close();
+    await backupPrune();
+
+    /* Een kopie in je eigen OneDrive telt net zo goed als een gedownload
+       bestand, dus de herinnering op het dashboard mag hiervan tot rust komen. */
+    const s = backupAuto();
+    s.at = new Date().toISOString();
+    s.lastAuto = TODAY();
+    s.folder = BACKUP_DIR.name;
+    save(); render();
+    if (loud) toast(tr("bk_done", BACKUP_DIR.name));
+    return true;
+  } catch (e) {
+    if (loud) toast(tr("bk_failed"));
+    return false;
+  }
+}
+
+/* Eén kopie per dag, aan het eind van de werkdag. Een app zonder server kan
+   alleen iets doen terwijl hij openstaat, dus als de laptop om vijf uur al
+   dicht was, gebeurt het bij het eerstvolgende openen alsnog. */
+function backupDue() {
+  const s = backupAuto();
+  if (!s.auto || !BACKUP_DIR || BACKUP_PERM !== "granted") return false;
+  if (s.lastAuto === TODAY()) return false;
+  if (new Date().getHours() >= BACKUP_HOUR) return true;
+  return !s.lastAuto || s.lastAuto < addDays(-1);     // een dag overgeslagen
+}
+
+async function backupTick() {
+  if (backupDue()) await backupWrite(false);
+}
+
+async function backupBoot() {
+  if (!FS_OK) return;
+  await backupLoadHandle();
+  if (BACKUP_DIR) render();
+  await backupTick();
+  // Staat de app open als het vijf uur wordt, dan merkt hij dat vanzelf.
+  setInterval(() => { void backupTick(); }, 5 * 60 * 1000);
+}
+
+function backupFolderCard() {
+  if (!FS_OK) return "";
+  const s = backupAuto();
+  if (!BACKUP_DIR) {
+    return `<div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--border)">
+      <p class="sm2" style="font-weight:600">${esc(tr("bk_title"))}</p>
+      <p class="xs mut" style="margin-top:3px;line-height:1.6">${esc(tr("bk_none_d"))}</p>
+      <button class="btn sm outline" data-act="backup-pick" style="margin-top:10px">
+        ${ico("folder", "", 13)} ${esc(tr("bk_link"))}</button></div>`;
+  }
+  const wacht = BACKUP_PERM !== "granted";
+  const laatst = s.lastAuto === TODAY() ? tr("bk_today")
+    : s.lastAuto ? tr("bk_on_date", s.lastAuto) : tr("bk_never_auto");
+  return `<div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--border)">
+    <p class="sm2" style="font-weight:600">${esc(tr("bk_title"))}</p>
+    <div class="row wrap spread" style="gap:10px;margin-top:7px">
+      <div style="min-width:0">
+        <p class="sm2 row" style="gap:6px">${ico("folder", "", 13)}${esc(s.folder || "—")}</p>
+        <p class="xs mut" style="margin-top:3px">${esc(wacht ? tr("bk_needs_ok") : laatst)}</p>
+      </div>
+      <div class="row wrap" style="gap:7px">
+        ${wacht ? `<button class="btn sm" data-act="backup-grant">${esc(tr("bk_grant"))}</button>`
+                : `<button class="btn sm outline" data-act="backup-now">${esc(tr("bk_now"))}</button>`}
+        <button class="btn sm ghost" data-act="backup-forget">${esc(tr("bk_forget"))}</button>
+      </div>
+    </div>
+    <label class="row" style="gap:8px;margin-top:10px">
+      <input type="checkbox" data-act="backup-toggle" ${s.auto ? "checked" : ""}>
+      <span class="sm2">${esc(tr("bk_auto", BACKUP_HOUR))}</span>
+    </label>
+    <p class="xs mut" style="margin-top:6px;line-height:1.6">${esc(tr("bk_auto_d", BACKUP_KEEP))}</p>
+  </div>`;
+}
+
 /* Replacing the workspace is the most destructive thing here, so it asks
    first and leaves an undo behind. */
 function restoreFrom(text, source) {
@@ -10415,6 +10599,16 @@ document.addEventListener("click", (e) => {
     case "import": importDialog(); break;
     case "backup": void downloadBackup(); break;
     case "backup-every": break;   // handled by its own change listener
+    case "backup-pick": void backupPick(); break;
+    case "backup-grant": void backupGrant(); break;
+    case "backup-now": void backupWrite(true); break;
+    case "backup-forget": void backupForget(); break;
+    case "backup-toggle":
+      backupAuto().auto = !backupAuto().auto;
+      save(); render();
+      toast(tr(backupAuto().auto ? "bk_on" : "bk_off"));
+      if (backupAuto().auto) void backupTick();
+      break;
     case "rename-view": renameViewDialog(el.dataset.v); break;
     case "dash-setup": dashSetupDialog(); break;
     case "dash-reset":
@@ -10599,6 +10793,8 @@ startTick();
 
 /* Leest de gekoppelde agendamap zodra de app open is. */
 void agendaAutoSync();
+/* En zet aan het eind van de werkdag een kopie van je werkruimte weg. */
+void backupBoot();
 
 /* Installable, and openable without a network. Registered after boot so a
    browser that refuses it (file://, private mode) costs the app nothing. */

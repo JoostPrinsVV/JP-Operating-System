@@ -74,6 +74,16 @@ Hetzelfde geldt andersom: de app op je telefoon en die op je laptop zijn twee
 aparte werkruimtes. Er is geen synchronisatie; het back-upbestand is de manier
 om iets over te zetten.
 
+### Automatisch
+
+**Instellingen → Automatische back-up naar een map.** Wijs een map aan — in
+OneDrive is het nuttigst — en de app zet daar elke werkdag om 17:00 een kopie
+van de hele werkruimte neer, met de laatste veertien bewaard. Was de laptop op
+dat moment dicht, dan gebeurt het bij het eerstvolgende openen.
+
+Dit is een andere map dan je agendamap en een ander recht: die wordt alleen
+gelezen, hierin wordt alleen geschreven.
+
 ---
 
 ## Bijwerken

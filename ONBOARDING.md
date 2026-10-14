@@ -65,11 +65,25 @@ voor iemand anders. Staat hij er niet, dan komt alles op jouw bord.
 Loop meteen ook **Instellingen → Werkpatroon** langs: werkdagen en fte. Daar
 hangt je capaciteitsberekening aan.
 
-### 1.4 Een back-up maken is jouw taak
+### 1.4 De automatische back-up aanzetten
 
-Er is geen server, dus er is ook niemand die een back-up voor je maakt.
-**Instellingen → Back-up downloaden** geeft je één `.json`-bestand met alles
-erin. De app begint erover te zeuren als het te lang geleden is.
+Er is geen server, dus alles staat in de opslag van deze ene browser op deze
+ene laptop. Zet dit meteen goed; het is de enige echte zwakte in de opzet.
+
+**Instellingen → Automatische back-up naar een map → Map kiezen.** Maak in je
+OneDrive een map `/AI operating system/Back-ups` en wijs die aan. De browser
+vraagt eenmalig toestemming om erin te schrijven.
+
+Vanaf dat moment zet de app daar elke werkdag om 17:00 een kopie van je hele
+werkruimte neer, en bewaart hij de laatste veertien. Omdat die map in OneDrive
+staat, valt je werkruimte daarmee onder de back-up van Microsoft.
+
+> Was je laptop om vijf uur al dicht? Dan gebeurt het bij het eerstvolgende
+> openen van de app. Een app zonder server kan alleen iets doen terwijl hij
+> openstaat.
+
+Met **Back-up downloaden** haal je daarnaast op elk moment zelf een
+`.json`-bestand op — handig als je overstapt naar een andere laptop.
 
 ---
 
@@ -82,7 +96,12 @@ Maak in **jouw eigen OneDrive voor Bedrijven**:
 
 ```
 /AI operating system/Agenda
+/AI operating system/Back-ups
 ```
+
+De eerste is voor wat Copilot en Power Automate aanleveren; de tweede is waar
+de app zijn eigen back-up neerzet. Twee aparte mappen, want de app leest de
+eerste alleen en schrijft alleen in de tweede.
 
 > **Maak je eigen map.** Wijs niet de map van een collega aan, ook niet als je
 > die gedeeld hebt gekregen. In die bestanden staan hun afspraken,
@@ -258,7 +277,8 @@ weggeschreven.
 - [ ] Alle geplande prompts staan in Copilot, met de juiste onderwerpregels
 - [ ] De map is gekoppeld in de app, met automatisch inlezen aan
 - [ ] Elke stroom is één keer met de hand uitgevoerd en werd groen
-- [ ] Er is één keer een back-up gedownload
+- [ ] De automatische back-up staat aan en heeft één keer een bestand
+      weggeschreven naar `/AI operating system/Back-ups`
 
 ---
 
