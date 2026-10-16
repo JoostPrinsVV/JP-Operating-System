@@ -987,8 +987,8 @@ const STR = {
   p_load:["My planning by week","Mijn planning per week"],
   p_load_d:["A full bar is a 40-hour week · click a week to change it",
             "Volle balk is een week van 40 uur · klik een week om hem te wijzigen"],
-  p_load_note:["Coloured is client work, grey is your own work or leave, pale is a week you have not planned yet.",
-               "Gekleurd is klantwerk, grijs is eigen werk of vrij, bleek is een week die je nog niet hebt ingepland."],
+  p_load_note:["Every day carries the colour of its engagement type, or of the client. Pale is a week you have not planned yet.",
+               "Elke dag heeft de kleur van zijn opdrachttype, of die van de klant. Bleek is een week die je nog niet hebt ingepland."],
   /* week pattern */
   s_pattern:["Working week","Werkweek"],
   s_pattern_d:["Your standard week. It fills in every week in the planning, until you set a day differently.",
@@ -1039,6 +1039,24 @@ const STR = {
   p_leaveblank:["Leave the client empty for a week without client work. A client or a kind of work that does not exist yet is created the moment you type it.",
                 "Laat de klant leeg voor een week zonder klantwerk. Een klant of een soort werk dat nog niet bestaat, maak je aan door het te typen."],
   p_eng_ph:["Kind of work","Soort werk"],
+  p_eng_none:["Not planned yet","Nog niet ingepland"],
+  eng_types:["Engagement types","Opdrachttypes"],
+  eng_types_d:["The kinds of work you plan a week or a day with. The colour is what makes the planning readable at a glance.",
+               "Het soort werk waarmee je een week of een dag inplant. De kleur is wat je planning in één blik leesbaar maakt."],
+  eng_done:["Done","Klaar"],
+  eng_new:["New type","Nieuw type"],
+  eng_edit:["Engagement type","Opdrachttype"],
+  eng_edit_d:["The name shows in your planning and your hours. Pick a colour that stands apart from the ones you already use.",
+              "De naam komt terug in je planning en je uren. Kies een kleur die zich onderscheidt van wat je al gebruikt."],
+  eng_name:["Name","Naam"],
+  eng_name_ph:["AI study, client visit, training…","AI-studie, klantbezoek, training…"],
+  eng_del_t:["Delete this type?","Dit type verwijderen?"],
+  eng_deleted:["{0} deleted — the weeks it was on are empty again",
+               "{0} verwijderd — de weken waar hij op stond zijn weer leeg"],
+  eng_dup:["{0} already exists","{0} bestaat al"],
+  eng_added:["{0} added","{0} toegevoegd"],
+  eng_saved:["{0} saved","{0} opgeslagen"],
+  u_eng:["engagement type","opdrachttype"],
   p_days:["Which days?","Welke dagen?"],
   p_days_d:["Leave everything unticked and the whole week is planned. Tick days and only those days change — every Friday your AI study day, for instance. The rest of the week keeps what it had, and so do the hours, the status and the goal.",
             "Vink je niets aan, dan wordt de hele week ingepland. Vink je dagen aan, dan verandert alleen die dag — bijvoorbeeld elke vrijdag je AI-studiedag. De rest van de week blijft zoals hij was, en de uren, de status en het doel ook."],
@@ -2377,6 +2395,13 @@ const ENGAGEMENTS = [
   ["training", ["Delivering training","Training geven"]],
   ["vrij", ["Leave / holiday","Vrij / vakantie"]],
 ];
+/* Een beginkleur per ingebouwd type, zodat de planning meteen te lezen is in
+   plaats van een strook grijs. Je kunt ze allemaal wijzigen. */
+const ENG_SEED_COLORS = {
+  jaarrekeningcontrole: "blauw", interim: "turkoois", samenstel: "groen",
+  beoordeling: "donkergroen", afronding: "paars", intern: "oranje",
+  training: "magenta", vrij: "grijs",
+};
 const PSTATUS = [["concept",["Draft","Concept"],"neutral"],["bevestigd",["Confirmed","Bevestigd"],"info"],
   ["loopt",["Running","Loopt"],"warning"],["afgerond",["Finished","Afgerond"],"success"]];
 
@@ -2931,6 +2956,15 @@ function migrate() {
   DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
   if (!Array.isArray(DB.suggestions)) { DB.suggestions = []; changed = true; }
+  /* De ingebouwde opdrachttypes komen in de lijst te staan, zodat ze te
+     hernoemen en te kleuren zijn zoals elk ander type. Hun id blijft wat hij
+     was, dus bestaande weken en urenregels houden hun opdracht. */
+  DB.engagements = DB.engagements || [];
+  ENGAGEMENTS.forEach(([id], i) => {
+    if (DB.engagements.some((e) => e.id === id)) return;
+    DB.engagements.splice(i, 0, { id, name: "", color: ENG_SEED_COLORS[id] || "" });
+    changed = true;
+  });
   /* Een meting stond vroeger alleen op een maand. De eerste van die maand is
      de enige dag die we met zekerheid kunnen afleiden. */
   (DB.kpiEntries || []).forEach((e) => {
@@ -6934,17 +6968,23 @@ function afasBlock(days) {
    is capacity, not a gap - the AI role needs those blocks, so they are shown
    as deliberately reserved rather than empty.
 ------------------------------------------------------------------------- */
-/* Built-in engagement types plus any the user typed in themselves. */
-const allEngagements = () => [
-  ...ENGAGEMENTS.map(([id, l]) => [id, lbl(l)]),
-  ...(DB.engagements || []).map((e) => [e.id, e.name]),
-];
+/* Alle opdrachttypes staan in DB.engagements, ook de ingebouwde. Die krijgen
+   bij de eerste keer openen een rij met hun eigen id, zodat bestaand werk zijn
+   opdracht houdt, en een lege naam - dan blijft het ingebouwde label gelden en
+   vertaalt hij nog gewoon mee met de taal. Hernoem je er een, dan staat die
+   naam er vanaf dan, in beide talen. */
+const engFind = (v) => (DB.engagements || []).find((e) => e.id === v);
+const allEngagements = () => (DB.engagements || []).map((e) => [e.id, engLabel(e.id)]);
 const engLabel = (v) => {
-  const custom = (DB.engagements || []).find((e) => e.id === v);
-  if (custom) return custom.name;
+  const eigen = engFind(v);
+  if (eigen && eigen.name) return eigen.name;
   const found = ENGAGEMENTS.find((e) => e[0] === v);
-  return found ? lbl(found[1]) : v;
+  return found ? lbl(found[1]) : (v || "");
 };
+const engColor = (v) => { const e = engFind(v); return e && e.color ? catHex(e.color) : ""; };
+const engOptions = (sel) => `<option value="">${esc(tr("p_eng_none"))}</option>` +
+  allEngagements().map(([id, l]) =>
+    `<option value="${esc(id)}" ${sel === id ? "selected" : ""}>${esc(l)}</option>`).join("");
 /* Resolves what someone typed into an engagement id, creating one if needed. */
 function resolveEngagement(text) {
   const s = String(text || "").trim();
@@ -6953,7 +6993,8 @@ function resolveEngagement(text) {
   if (hit) return hit[0];
   const id = "eng_" + uid();
   DB.engagements = DB.engagements || [];
-  DB.engagements.push({ id, name: s });
+  // Zonder gekozen kleur toch een kleur, anders valt het type weg in het grijs.
+  DB.engagements.push({ id, name: s, color: CAT_COLORS[DB.engagements.length % CAT_COLORS.length][0] });
   toast(tr("h_newengagement"));
   return id;
 }
@@ -7047,7 +7088,8 @@ function viewPlanning() {
   }).join("");
 
   return pageHead(tr("nav_planning"), tr("p_sub", future.length),
-    `<button class="btn sm outline" data-act="new-client">${ico("building")} ${esc(tr("h_newclient"))}</button>
+    `<button class="btn sm outline" data-act="eng-types">${ico("planning")} ${esc(tr("eng_types"))}</button>
+     <button class="btn sm outline" data-act="new-client">${ico("building")} ${esc(tr("h_newclient"))}</button>
      <button class="btn sm outline" data-act="plan-bulk">${ico("pencil")} ${esc(tr("p_bulk"))}</button>`) +
 
   `<div class="tiles" style="margin-bottom:16px">
@@ -7115,6 +7157,8 @@ function dayColour(d) {
     const c = clientOf(d.clientId);
     return c ? slotColor(c.slot) : "var(--axis)";
   }
+  // Een dag die bij een opdrachttype hoort, krijgt de kleur van dat type.
+  if (d.type === "intern" && d.eng) return engColor(d.eng) || DAY_COLOUR.intern;
   return DAY_COLOUR[d.type] || "var(--axis)";
 }
 /* Part-time, leave and an unplanned week use pale fills, which white text
@@ -8205,6 +8249,15 @@ function openDialog({ title, desc = "", body, submit = "Save", del = null, onSub
 }
 const field = (label, inner) => `<label class="field"><span class="lbl">${esc(label)}</span>${inner}</label>`;
 
+/* Wat er nu in het open venster staat, zodat een venster dat even opzij moet -
+   om een opdrachttype aan te maken - daarna terugkomt zoals je het achterliet.
+   DLG_REOPEN weet welk venster dat was. */
+let DLG_REOPEN = null;
+function leesDlg() {
+  const f = $("#dlg-form");
+  return f ? Object.fromEntries(new FormData(f)) : {};
+}
+
 /* A small "are you sure" built on the same dialog, so it behaves like every
    other popup here - escape closes it, the cross closes it, nothing is done
    until you press the red button. Not window.confirm: that can be suppressed
@@ -8730,29 +8783,36 @@ function dayEditor(p) {
   </div>`;
 }
 
-function weekDialog(p) {
+/* Een keuzemenu met de opdrachttypes, plus een knop ernaast voor een type dat
+   er nog niet is. Zo blijft de lijst de lijst - typen leverde types op die per
+   tikfout twee keer bestonden en nooit een kleur kregen. */
+const engPicker = (id, sel) => `<span class="row" style="gap:6px">
+  <select class="inp" id="${id}" name="engagement" style="flex:1">${engOptions(sel || "")}</select>
+  <button type="button" class="btn icon sm outline" data-act="eng-new"
+    title="${esc(tr("eng_new"))}" aria-label="${esc(tr("eng_new"))}">${ico("plus", "", 13)}</button>
+</span>`;
+
+/* `pre` draagt wat er in het venster stond toen je op "nieuw type" klikte, zodat
+   je na het aanmaken niet opnieuw hoeft te beginnen. */
+function weekDialog(p, pre = {}) {
   const d = parseD(p.week), end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 4);
+  DLG_REOPEN = (eerder, nieuweEng) => weekDialog(p, { ...eerder, engagement: nieuweEng });
   openDialog({
     title: `${tr("p_wk")} ${isoWeekNo(p.week)} · ${d.getDate()} ${MONTHS[d.getMonth()].toLowerCase()} – ${end.getDate()} ${MONTHS[end.getMonth()].toLowerCase()} ${d.getFullYear()}`,
     desc: tr("p_leaveblank"),
     submit: tr("p_save"),
-    /* Typvelden en geen keuzemenu's: een klant of een soort werk die er nog
-       niet is, maak je hier aan in plaats van eerst ergens anders heen te
-       moeten. Precies zoals het op je urenregistratie al werkte. */
     body: `<div class="f2">
         ${field(tr("p_client"), combo({ id: "p-client", name: "clientName",
-          value: p.clientId ? (clientOf(p.clientId)?.name ?? "") : "",
+          value: pre.clientName ?? (p.clientId ? (clientOf(p.clientId)?.name ?? "") : ""),
           list: DB.clients.map((c) => c.name), placeholder: tr("h_noclient") }))}
-        ${field(tr("p_engagement"), combo({ id: "p-eng", name: "engagementName",
-          value: p.engagement ? engLabel(p.engagement) : "",
-          list: allEngagements().map(([, l]) => l), placeholder: tr("p_eng_ph") }))}
+        ${field(tr("p_engagement"), engPicker("p-eng", pre.engagement ?? p.engagement))}
       </div>
       <div class="f2">
-        ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, p.status)}</select>`)}
-        ${field(tr("p_hrs"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="${p.hours}">`)}
-        ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions(p.goalId || "")}</select>`)}
+        ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, pre.status ?? p.status)}</select>`)}
+        ${field(tr("p_hrs"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="${esc(pre.hours ?? p.hours)}">`)}
+        ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions(pre.goalId ?? (p.goalId || ""))}</select>`)}
       </div>` +
-      field(tr("p_note"), `<input class="inp" name="notes" value="${esc(p.notes || "")}">`) +
+      field(tr("p_note"), `<input class="inp" name="notes" value="${esc(pre.notes ?? (p.notes || ""))}">`) +
       dayEditor(p),
     onSubmit: (f) => {
       // Collect the seven day pickers back into a stored pattern. "auto"
@@ -8771,7 +8831,7 @@ function weekDialog(p) {
          is precies de aanname die een week juist niet hoort te doen. */
       Object.assign(p, {
         clientId: resolveClient(f.clientName),
-        engagement: String(f.engagementName || "").trim() ? resolveEngagement(f.engagementName) : "",
+        engagement: f.engagement || "",
         goalId: f.goalId || null,
         status: f.status, hours: Number(f.hours) || 0, notes: f.notes,
         days: any ? days : null });
@@ -8780,8 +8840,89 @@ function weekDialog(p) {
   });
 }
 
+/* ---- opdrachttypes -------------------------------------------------------
+   Het soort werk dat een week of een dag vult, met een kleur eraan. De kleur
+   is wat de planning leesbaar maakt: je ziet in één blik welke weken waar
+   heen gaan, zonder te lezen.
+------------------------------------------------------------------------- */
+function engTypesDialog() {
+  DLG_REOPEN = null;
+  const lijst = allEngagements();
+  openDialog({
+    title: tr("eng_types"),
+    desc: tr("eng_types_d"),
+    submit: tr("eng_done"),
+    cancelLabel: tr("eng_new"),
+    body: `<ul class="divide">${lijst.map(([id, naam]) => {
+      const hex = engColor(id);
+      const n = DB.planning.filter((p) => p.engagement === id).length;
+      return `<li><button type="button" class="tsk-t row" data-act="eng-edit" data-id="${esc(id)}"
+        style="gap:10px;width:100%;padding:9px 6px;border-radius:9px">
+        <span class="cat-dot" style="background:${hex || "var(--axis)"};flex:0 0 auto"></span>
+        <span class="sm2" style="flex:1;text-align:left">${esc(naam)}</span>
+        <span class="xs mut">${n ? esc(n === 1 ? tr("p_week") : `${n} ${tr("p_weeks")}`) : ""}</span>
+        ${ico("pencil", "ico mut", 13)}
+      </button></li>`;
+    }).join("")}</ul>`,
+    onSubmit: () => {},
+  });
+  // De annuleerknop is hier de knop voor een nieuw type.
+  const nieuw = $("#dlg-cancel");
+  if (nieuw) nieuw.onclick = () => engTypeDialog(null);
+}
+
+/* `onDone` brengt je terug naar het venster waar je vandaan kwam, met het
+   nieuwe type er al in. Zonder dat beland je weer in de lijst. */
+function engTypeDialog(type, onDone) {
+  const bestaat = Boolean(type);
+  const e = type || { id: "", name: "", color: CAT_COLORS[(DB.engagements || []).length % CAT_COLORS.length][0] };
+  openDialog({
+    title: bestaat ? tr("eng_edit") : tr("eng_new"),
+    desc: tr("eng_edit_d"),
+    submit: bestaat ? tr("dl_save_changes") : tr("add"),
+    delLabel: bestaat ? tr("eng_del_t") : "",
+    /* Verwijderen haalt het type van de weken af waar het op stond. Die weken
+       blijven bestaan, ze zijn alleen weer leeg - beter dan een week die naar
+       een type verwijst dat niemand meer kan vinden. */
+    del: bestaat ? () => {
+      checkpoint(tr("u_eng"));
+      DB.engagements = DB.engagements.filter((x) => x.id !== type.id);
+      DB.planning.forEach((p) => {
+        if (p.engagement === type.id) p.engagement = "";
+        if (!Array.isArray(p.days)) return;
+        p.days = p.days.map((d) => (d && d.type === "intern" && d.eng === type.id ? null : d));
+        if (!p.days.some(Boolean)) p.days = null;
+      });
+      DB.timeEntries.forEach((t) => { if (t.engagement === type.id) t.engagement = ""; });
+      save(); render(); toast(tr("eng_deleted", engLabel(type.id)), true);
+    } : null,
+    body: field(tr("eng_name"), `<input class="inp" name="name" required value="${esc(engLabel(e.id))}"
+        placeholder="${esc(tr("eng_name_ph"))}">`) +
+      field(tr("cat_color"), colorSwatches(e.color)),
+    onSubmit: (f) => {
+      const naam = String(f.name || "").trim();
+      if (!naam) return false;
+      const botsing = allEngagements().find(([id, l]) =>
+        l.toLowerCase() === naam.toLowerCase() && id !== e.id);
+      if (botsing) { toast(tr("eng_dup", naam)); return false; }
+      let id = e.id;
+      if (bestaat) {
+        type.name = naam; type.color = f.color || type.color;
+      } else {
+        id = "eng_" + uid();
+        DB.engagements.push({ id, name: naam, color: f.color || "blauw" });
+      }
+      save(); render();
+      toast(bestaat ? tr("eng_saved", naam) : tr("eng_added", naam));
+      if (onDone) setTimeout(() => onDone(id), 0);
+      else setTimeout(engTypesDialog, 0);
+    },
+  });
+}
+
 /* Planning a run of weeks at once - how a real engagement gets scheduled. */
-function bulkPlanDialog() {
+function bulkPlanDialog(pre = {}) {
+  DLG_REOPEN = (eerder, nieuweEng) => bulkPlanDialog({ ...eerder, engagement: nieuweEng });
   const weeks = [...DB.planning].sort((a, b) => a.week.localeCompare(b.week))
     .filter((p) => p.week >= mondayOf());
   const wkOpt = (sel) => weeks.map((p) => {
@@ -8794,25 +8935,24 @@ function bulkPlanDialog() {
     desc: tr("p_bulk_d"),
     submit: tr("p_bulk"),
     body: `<div class="f2">
-        ${field(tr("p_from"), `<select class="inp" name="from">${wkOpt(weeks[0]?.week)}</select>`)}
-        ${field(tr("p_to"), `<select class="inp" name="to">${wkOpt(weeks[Math.min(3, weeks.length - 1)]?.week)}</select>`)}
+        ${field(tr("p_from"), `<select class="inp" name="from">${wkOpt(pre.from ?? weeks[0]?.week)}</select>`)}
+        ${field(tr("p_to"), `<select class="inp" name="to">${wkOpt(pre.to ?? weeks[Math.min(3, weeks.length - 1)]?.week)}</select>`)}
       </div>` +
       `<div class="f2">
-        ${field(tr("p_client"), combo({ id: "b-client", name: "clientName", value: "",
+        ${field(tr("p_client"), combo({ id: "b-client", name: "clientName", value: pre.clientName ?? "",
           list: DB.clients.map((c) => c.name), placeholder: tr("h_noclient") }))}
-        ${field(tr("p_engagement"), combo({ id: "b-eng", name: "engagementName", value: "",
-          list: allEngagements().map(([, l]) => l), placeholder: tr("p_eng_ph") }))}
+        ${field(tr("p_engagement"), engPicker("b-eng", pre.engagement ?? ""))}
       </div>
       <div class="f2">
-        ${field(tr("p_hrs_wk"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="36">`)}
-        ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, "bevestigd")}</select>`)}
-        ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions("")}</select>`)}
+        ${field(tr("p_hrs_wk"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="${esc(pre.hours ?? 36)}">`)}
+        ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, pre.status ?? "bevestigd")}</select>`)}
+        ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions(pre.goalId ?? "")}</select>`)}
       </div>
       <div class="field">
         <span class="lbl">${esc(tr("p_days"))}</span>
         <div class="row wrap" style="gap:6px">
           ${DAY_KEYS.map((_, i) => `<label class="daypick">
-            <input type="checkbox" name="d${i}">
+            <input type="checkbox" name="d${i}" ${pre[`d${i}`] ? "checked" : ""}>
             <span>${esc(dayName(i))}</span></label>`).join("")}
         </div>
         <p class="xs mut" style="margin-top:7px;line-height:1.6">${esc(tr("p_days_d"))}</p>
@@ -8821,7 +8961,7 @@ function bulkPlanDialog() {
       const lo = f.from <= f.to ? f.from : f.to, hi = f.from <= f.to ? f.to : f.from;
       const hit = DB.planning.filter((p) => p.week >= lo && p.week <= hi);
       const clientId = resolveClient(f.clientName);
-      const engagement = String(f.engagementName || "").trim() ? resolveEngagement(f.engagementName) : "";
+      const engagement = f.engagement || "";
       const dagen = DAY_KEYS.map((_, i) => i).filter((i) => f[`d${i}`]);
 
       if (dagen.length) {
@@ -10655,6 +10795,15 @@ document.addEventListener("click", (e) => {
 
     case "edit-week": weekDialog(DB.planning.find((x) => x.id === id)); break;
     case "plan-bulk": bulkPlanDialog(); break;
+    case "eng-types": engTypesDialog(); break;
+    /* Het venster waar je vandaan komt wordt hier vastgelegd, vóór het
+       typevenster het overneemt - daarna is het formulier er niet meer. */
+    case "eng-new": {
+      const pre = leesDlg(), terug = DLG_REOPEN;
+      engTypeDialog(null, terug ? (nieuw) => terug(pre, nieuw) : null);
+      break;
+    }
+    case "eng-edit": engTypeDialog(engFind(id)); break;
     case "plan-scope": {
       const v = el.dataset.v;
       UI.planFilter.scope = UI.planFilter.scope === v && v !== "all" ? "all" : v;
