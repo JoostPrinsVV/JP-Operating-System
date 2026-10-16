@@ -7152,19 +7152,34 @@ const DAY_COLOUR = {
   intern: "var(--axis)", study: "var(--c5)", open: "var(--surface-3)",
   free: "var(--surface-3)", leave: "var(--border)", off: "transparent",
 };
-function dayColour(d) {
+/* De volle kleur van een dag: die van de klant, of die van het opdrachttype. */
+function dayTint(d) {
   if (d.type === "client") {
     const c = clientOf(d.clientId);
     return c ? slotColor(c.slot) : "var(--axis)";
   }
-  // Een dag die bij een opdrachttype hoort, krijgt de kleur van dat type.
-  if (d.type === "intern" && d.eng) return engColor(d.eng) || DAY_COLOUR.intern;
+  if (d.type === "intern") return engColor(d.eng || "intern") || "var(--axis)";
+  if (d.type === "study") return "var(--c5)";
   return DAY_COLOUR[d.type] || "var(--axis)";
 }
-/* Part-time, leave and an unplanned week use pale fills, which white text
-   cannot sit on. */
-const dayInk = (d) => (d.type === "free" || d.type === "leave" || d.type === "open")
-  ? "var(--ink-2)" : "rgba(255,255,255,.95)";
+
+/* Een planning is een vlak van kleur, geen rij waarschuwingslampjes. Op volle
+   sterkte schreeuwt een jaar aan weken je toe en zie je juist niets; verdund
+   met de ondergrond blijft de tint herkenbaar en wordt het rustig. Mengen met
+   de ondergrond in plaats van met wit, zodat het in het donkere thema vanzelf
+   de andere kant op gaat. */
+const soft = (c) => `color-mix(in srgb, ${c} 26%, var(--surface))`;
+
+function dayColour(d) {
+  if (d.type === "off") return "transparent";
+  // Deze zijn al bleek; nog verder verdunnen laat ze verdwijnen.
+  if (d.type === "free" || d.type === "leave" || d.type === "open") return DAY_COLOUR[d.type];
+  return soft(dayTint(d));
+}
+/* De stipjes in de tooltip zijn te klein om verdund te worden. */
+const dayDot = (d) => (d.type === "off" ? "transparent" : dayTint(d));
+// Alle vlakken zijn nu licht genoeg voor donkere letters.
+const dayInk = () => "var(--ink)";
 
 function dayLabel(d) {
   if (d.type === "client") {
@@ -7265,7 +7280,7 @@ function stripCard(all) {
         <span class="bar-tip">
           <b>${esc(tr("p_wk"))} ${isoWeekNo(p.week)} · ${parseD(p.week).getDate()} ${MONTHS[parseD(p.week).getMonth()].toLowerCase()}</b>
           ${days.map(({ d, i }) => `<span class="tip-row">
-            <i style="background:${dayColour(d)}"></i>${esc(dayName(i))} · ${esc(dayLabel(d))}</span>`).join("")}
+            <i style="background:${dayDot(d)}"></i>${esc(dayName(i))} · ${esc(dayLabel(d))}</span>`).join("")}
         </span>
       </button>`;
     }).join("")}</div>
