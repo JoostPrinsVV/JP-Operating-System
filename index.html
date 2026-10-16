@@ -978,8 +978,8 @@ const STR = {
   p_load:["My planning by week","Mijn planning per week"],
   p_load_d:["A full bar is a 40-hour week · click a week to change it",
             "Volle balk is een week van 40 uur · klik een week om hem te wijzigen"],
-  p_load_note:["Coloured is client work, grey is an AI block or leave.",
-               "Gekleurd is klantwerk, grijs is een AI-blok of vrij."],
+  p_load_note:["Coloured is client work, grey is your own work or leave, pale is a week you have not planned yet.",
+               "Gekleurd is klantwerk, grijs is eigen werk of vrij, bleek is een week die je nog niet hebt ingepland."],
   /* week pattern */
   s_pattern:["Working week","Werkweek"],
   s_pattern_d:["Your standard week. It fills in every week in the planning, until you set a day differently.",
@@ -1027,8 +1027,9 @@ const STR = {
   p_wk:["wk","wk"], p_save:["Save week","Week opslaan"],
   p_client:["Client","Klant"], p_engagement:["Engagement","Opdracht"], p_hrs:["Hours","Uren"],
   p_note:["Note","Notitie"], p_noclient_opt:["No client","Geen klant"],
-  p_leaveblank:["Leave the client empty for a week without client work.",
-                "Laat de klant leeg voor een week zonder klantwerk."],
+  p_leaveblank:["Leave the client empty for a week without client work. A client or a kind of work that does not exist yet is created the moment you type it.",
+                "Laat de klant leeg voor een week zonder klantwerk. Een klant of een soort werk dat nog niet bestaat, maak je aan door het te typen."],
+  p_eng_ph:["Kind of work","Soort werk"],
   p_open:["Not planned yet","Nog niet ingepland"],
   p_from:["From week","Van week"], p_to:["Through","Tot en met"],
   p_hrs_wk:["Hours per week","Uren per week"],
@@ -6970,17 +6971,18 @@ function viewPlanning() {
   let rows = all;
   if (f.scope === "upcoming") rows = rows.filter((p) => p.week >= now);
   if (f.scope === "assigned") rows = rows.filter((p) => p.clientId);
-  /* Een AI-blok is een week die je zelf op intern hebt gezet, niet elke week
-     waar nog geen klant op staat - anders telt een lege planning als een jaar
-     vol AI-werk. */
-  if (f.scope === "free") rows = rows.filter((p) => !p.clientId && p.engagement === "intern");
+  /* Een week zonder klant waar je wél iets hebt ingevuld: intern werk, of een
+     eigen categorie. Een week waar nog niets op staat telt niet mee - anders
+     zou een lege planning als een jaar vol AI-werk tellen. */
+  const eigenWerk = (p) => !p.clientId && p.engagement && p.engagement !== "vrij";
+  if (f.scope === "free") rows = rows.filter(eigenWerk);
   if (f.scope === "leave") rows = rows.filter((p) => p.engagement === "vrij");
   if (f.client !== "all") rows = rows.filter((p) => p.clientId === f.client);
 
   const future = all.filter((p) => p.week >= now);
   const billable = future.filter((p) => p.clientId).length;
   const leave = future.filter((p) => p.engagement === "vrij").length;
-  const aiWeeks = future.filter((p) => !p.clientId && p.engagement === "intern").length;
+  const aiWeeks = future.filter(eigenWerk).length;
   const plannedHours = future.reduce((s, p) => s + (p.hours || 0), 0);
 
   // Weeks per client across the horizon - the real question a planner asks.
@@ -7003,6 +7005,7 @@ function viewPlanning() {
         <span class="mon-r"></span><span class="xs mut">${esc(tr("p_at_client_m", mAssigned, mw.length))}</span></div>`;
     }
     const c = clientOf(p.clientId);
+    const doel = p.goalId && DB.goals.find((g) => g.id === p.goalId);
     const isNow = p.week === now;
     const free = !p.clientId;
     const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 4);
@@ -7025,12 +7028,14 @@ function viewPlanning() {
       </span>
       <span class="row" style="gap:6px">
         ${isNow ? `<span class="badge info">${esc(tr("p_thisweek"))}</span>` : ""}
+        ${doel ? `<span class="badge neutral" title="${esc(doel.title)}">${esc(doel.code)}</span>` : ""}
         ${badge(PSTATUS, p.status)}
       </span></button>`;
   }).join("");
 
   return pageHead(tr("nav_planning"), tr("p_sub", future.length),
-    `<button class="btn sm outline" data-act="plan-bulk">${ico("pencil")} ${esc(tr("p_bulk"))}</button>`) +
+    `<button class="btn sm outline" data-act="new-client">${ico("building")} ${esc(tr("h_newclient"))}</button>
+     <button class="btn sm outline" data-act="plan-bulk">${ico("pencil")} ${esc(tr("p_bulk"))}</button>`) +
 
   `<div class="tiles" style="margin-bottom:16px">
     ${tile(tr("p_atclient"), billable, "", "", "building", "var(--c1)",
@@ -7109,6 +7114,7 @@ function dayLabel(d) {
     const c = clientOf(d.clientId);
     return c ? c.name : tr("p_noclient");
   }
+  if (d.type === "intern" && d.eng) return engLabel(d.eng);
   return tr({ intern: "dt_intern", study: "dt_study", free: "dt_free",
     leave: "dt_leave", off: "dt_off", open: "dt_open" }[d.type] || "dt_open");
 }
@@ -7129,7 +7135,9 @@ function weekComposition(p) {
     // Nog niets ingevuld is iets anders dan intern werk, en hoort er ook
     // anders uit te zien: bleek in plaats van gevuld.
     if (!p.engagement) return { type: "open" };
-    return { type: "intern" };
+    // De opdracht gaat mee, zodat een eigen categorie ook bij zijn eigen naam
+    // wordt genoemd in plaats van onder "Intern / AI" te verdwijnen.
+    return { type: "intern", eng: p.engagement };
   });
 }
 /* The days that actually count as work, for bars and totals. */
@@ -8678,9 +8686,6 @@ function reviewDialog() {
   });
 }
 
-const clientOptions = (sel) => `<option value="">${esc(tr("p_noclient_opt"))}</option>` +
-  DB.clients.map((c) => `<option value="${c.id}" ${sel === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("");
-
 /* Per-day pickers for one week. "Standaardweek" leaves the day derived, so
    a week only stores the days you actually changed your mind about. */
 function dayEditor(p) {
@@ -8718,11 +8723,21 @@ function weekDialog(p) {
     title: `${tr("p_wk")} ${isoWeekNo(p.week)} · ${d.getDate()} ${MONTHS[d.getMonth()].toLowerCase()} – ${end.getDate()} ${MONTHS[end.getMonth()].toLowerCase()} ${d.getFullYear()}`,
     desc: tr("p_leaveblank"),
     submit: tr("p_save"),
-    body: field(tr("p_client"), `<select class="inp" name="clientId">${clientOptions(p.clientId)}</select>`) +
-      `<div class="f2">
-        ${field(tr("p_engagement"), `<select class="inp" name="engagement">${opts(ENGAGEMENTS, p.engagement)}</select>`)}
+    /* Typvelden en geen keuzemenu's: een klant of een soort werk die er nog
+       niet is, maak je hier aan in plaats van eerst ergens anders heen te
+       moeten. Precies zoals het op je urenregistratie al werkte. */
+    body: `<div class="f2">
+        ${field(tr("p_client"), combo({ id: "p-client", name: "clientName",
+          value: p.clientId ? (clientOf(p.clientId)?.name ?? "") : "",
+          list: DB.clients.map((c) => c.name), placeholder: tr("h_noclient") }))}
+        ${field(tr("p_engagement"), combo({ id: "p-eng", name: "engagementName",
+          value: p.engagement ? engLabel(p.engagement) : "",
+          list: allEngagements().map(([, l]) => l), placeholder: tr("p_eng_ph") }))}
+      </div>
+      <div class="f2">
         ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, p.status)}</select>`)}
         ${field(tr("p_hrs"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="${p.hours}">`)}
+        ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions(p.goalId || "")}</select>`)}
       </div>` +
       field(tr("p_note"), `<input class="inp" name="notes" value="${esc(p.notes || "")}">`) +
       dayEditor(p),
@@ -8739,7 +8754,12 @@ function weekDialog(p) {
           ? { type: "client", clientId: v.slice(7) }
           : { type: v.slice(5) });
       }
-      Object.assign(p, { clientId: f.clientId || null, engagement: f.engagement,
+      /* Leeg blijft leeg. resolveEngagement maakt van niets "intern", en dat
+         is precies de aanname die een week juist niet hoort te doen. */
+      Object.assign(p, {
+        clientId: resolveClient(f.clientName),
+        engagement: String(f.engagementName || "").trim() ? resolveEngagement(f.engagementName) : "",
+        goalId: f.goalId || null,
         status: f.status, hours: Number(f.hours) || 0, notes: f.notes,
         days: any ? days : null });
       save(); toast(tr("p_updated")); render();
@@ -8764,16 +8784,23 @@ function bulkPlanDialog() {
         ${field(tr("p_from"), `<select class="inp" name="from">${wkOpt(weeks[0]?.week)}</select>`)}
         ${field(tr("p_to"), `<select class="inp" name="to">${wkOpt(weeks[Math.min(3, weeks.length - 1)]?.week)}</select>`)}
       </div>` +
-      field(tr("p_client"), `<select class="inp" name="clientId">${clientOptions("")}</select>`) +
       `<div class="f2">
-        ${field(tr("p_engagement"), `<select class="inp" name="engagement">${opts(ENGAGEMENTS, "jaarrekeningcontrole")}</select>`)}
+        ${field(tr("p_client"), combo({ id: "b-client", name: "clientName", value: "",
+          list: DB.clients.map((c) => c.name), placeholder: tr("h_noclient") }))}
+        ${field(tr("p_engagement"), combo({ id: "b-eng", name: "engagementName", value: "",
+          list: allEngagements().map(([, l]) => l), placeholder: tr("p_eng_ph") }))}
+      </div>
+      <div class="f2">
         ${field(tr("p_hrs_wk"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="36">`)}
-      </div>` +
-      field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, "bevestigd")}</select>`),
+        ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, "bevestigd")}</select>`)}
+        ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions("")}</select>`)}
+      </div>`,
     onSubmit: (f) => {
       const lo = f.from <= f.to ? f.from : f.to, hi = f.from <= f.to ? f.to : f.from;
       const hit = DB.planning.filter((p) => p.week >= lo && p.week <= hi);
-      hit.forEach((p) => Object.assign(p, { clientId: f.clientId || null, engagement: f.engagement,
+      const clientId = resolveClient(f.clientName);
+      const engagement = String(f.engagementName || "").trim() ? resolveEngagement(f.engagementName) : "";
+      hit.forEach((p) => Object.assign(p, { clientId, engagement, goalId: f.goalId || null,
         hours: Number(f.hours) || 0, status: f.status }));
       save();
       toast(tr("p_planned", hit.length));
