@@ -751,6 +751,14 @@ a.btn{text-decoration:none}
 .strip-ticks{display:flex;gap:3px;margin-top:7px}
 .strip-ticks span{flex:1 1 0;min-width:5px;font-size:9.5px;color:var(--ink-3);text-align:center;
   overflow:hidden;white-space:nowrap}
+/* Boven de balken, en dan wel te lezen: een balk zonder weeknummer is een
+   vlek zonder adres. */
+.strip-head{margin:0 0 7px}
+.strip-head span{font-size:11.5px;font-weight:600;color:var(--ink-2);letter-spacing:-.01em}
+.strip-head span.nu{color:var(--primary)}
+.legenda{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:12px}
+.lg-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-2)}
+.lg-item i{width:11px;height:11px;border-radius:3px;flex:0 0 auto;border:1px solid}
 @media (prefers-reduced-motion:reduce){.bar-fill{transition:none}}
 @media (max-width:560px){.wk{grid-template-columns:64px 1fr;row-gap:6px}
   .wk>:last-child{grid-column:1/-1}}
@@ -1040,6 +1048,9 @@ const STR = {
                 "Laat de klant leeg voor een week zonder klantwerk. Een klant of een soort werk dat nog niet bestaat, maak je aan door het te typen."],
   p_eng_ph:["Kind of work","Soort werk"],
   p_eng_none:["Not planned yet","Nog niet ingepland"],
+  p_wk_long:["Week","Week"],
+  p_show_past:["{0} weeks gone by","{0} weken geweest"],
+  p_hide_past:["Hide what is behind you","Verberg wat achter je ligt"],
   eng_types:["Engagement types","Opdrachttypes"],
   eng_types_d:["The kinds of work you plan a week or a day with. The colour is what makes the planning readable at a glance.",
                "Het soort werk waarmee je een week of een dag inplant. De kleur is wat je planning in één blik leesbaar maakt."],
@@ -3077,6 +3088,7 @@ const UI = {
   trFilter: "all",
   trOpen: {},            // welke verslagen uitgeklapt staan
   sugIgnored: false,     // toont de genegeerde voorstellen in plaats van de open
+  planPast: false,       // toont ook de weken die al voorbij zijn
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -7023,6 +7035,11 @@ function viewPlanning() {
   const now = mondayOf();
 
   let rows = all;
+  /* De lijst begint bij deze week. Weken die voorbij zijn blijven bestaan -
+     je uren hangen eraan - maar ze horen niet bovenaan te staan wachten tot
+     je eroverheen scrollt. */
+  const voorbij = all.filter((p) => p.week < now).length;
+  if (!UI.planPast) rows = rows.filter((p) => p.week >= now);
   if (f.scope === "upcoming") rows = rows.filter((p) => p.week >= now);
   if (f.scope === "assigned") rows = rows.filter((p) => p.clientId);
   /* Een week zonder klant waar je wél iets hebt ingevuld: intern werk, of een
@@ -7105,9 +7122,9 @@ function viewPlanning() {
 
   ${stripCard(all)}
 
-  <div style="margin:16px 0">
-    ${card(tr("p_perclient"), perClient.length
-      ? `<ul class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px">${perClient.map(({ c, n }) =>
+  ${!perClient.length ? "" : `<div style="margin:16px 0">
+    ${card(tr("p_perclient"),
+      `<ul class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px">${perClient.map(({ c, n }) =>
       `<li><button class="tsk-t" data-act="plan-client" data-v="${c.id}"
           aria-pressed="${f.client === c.id}" style="padding:5px 6px;border-radius:9px"
           title="${esc(c.name)}">
@@ -7115,9 +7132,8 @@ function viewPlanning() {
           <span class="sm2 trunc"><span class="wk-dot" style="background:${slotColor(c.slot)};display:inline-block;margin-right:7px"></span>${esc(c.name)}</span>
           <span class="xs tab mut">${n} ${esc(n === 1 ? tr("p_week") : tr("p_weeks"))} · ${esc(c.sector)}</span></span>
         <span style="display:block;margin-top:5px">${meterEl((n / maxN) * 100, slotColor(c.slot))}</span>
-      </button></li>`).join("")}</ul>`
-      : empty(tr("p_noclients")), tr("p_perclient_d"))}
-  </div>
+      </button></li>`).join("")}</ul>`, tr("p_perclient_d"))}
+  </div>`}
 
   <div class="row wrap" style="gap:8px;margin-bottom:6px">
     <div class="seg wrap">
@@ -7131,6 +7147,9 @@ function viewPlanning() {
       <option value="all">${esc(tr("p_allclients"))}</option>
       ${DB.clients.map((c) => `<option value="${c.id}" ${f.client === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
     </select>
+    ${voorbij ? `<button class="btn sm ghost" data-act="plan-past">
+      ${ico(UI.planPast ? "chevup" : "chevdown", "", 12)}
+      ${esc(UI.planPast ? tr("p_hide_past") : tr("p_show_past", voorbij))}</button>` : ""}
     <span class="xs mut" style="margin-left:auto">${rows.length} ${esc(tr("p_weeks"))}</span>
   </div>
 
@@ -7234,14 +7253,33 @@ function stripCard(all) {
   const first = parseD(slice[0].week), last = parseD(slice[slice.length - 1].week);
   const fmtMon = (d) => `${MONTHS[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
 
-  // Month ticks only where the month changes, and only when bars are wide.
+  /* Boven elke balk het weeknummer, want zonder dat is een balk een vlek
+     zonder adres. Passen ze niet meer - een half jaar of een jaar in beeld -
+     dan valt hij terug op de maand, en alleen waar die wisselt. */
+  const perWeek = weeks <= 13;
   let lastMonth = "";
-  const ticks = slice.map((p) => {
-    const d = parseD(p.week), key = `${d.getFullYear()}-${d.getMonth()}`;
+  const koppen = slice.map((p) => {
+    const d = parseD(p.week);
+    if (perWeek) {
+      return `<span class="${p.week === now ? "nu" : ""}">${esc(tr("p_wk_long"))} ${isoWeekNo(p.week)}</span>`;
+    }
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
     if (key === lastMonth) return `<span></span>`;
     lastMonth = key;
-    return `<span>${weeks <= 8 ? `${tr("p_wk")} ${isoWeekNo(p.week)}` : MONTHS[d.getMonth()].toLowerCase()}</span>`;
+    return `<span>${MONTHS[d.getMonth()].toLowerCase()}</span>`;
   }).join("");
+
+  /* Een legenda van wat er in dit venster staat, en niets meer: een kleur die
+     je hier niet ziet hoeft hier ook niet uitgelegd te worden. */
+  const gezien = new Map();
+  slice.forEach((p) => weekComposition(p).forEach((d) => {
+    if (d.type === "off") return;
+    const sleutel = d.type === "client" ? `c:${d.clientId}`
+      : d.type === "intern" ? `e:${d.eng || "intern"}` : `t:${d.type}`;
+    if (!gezien.has(sleutel)) gezien.set(sleutel, d);
+  }));
+  const legenda = [...gezien.values()].map((d) => `<span class="lg-item">
+    <i style="background:${dayColour(d)};border-color:${dayDot(d)}"></i>${esc(dayLabel(d))}</span>`).join("");
 
   const seg = (v, l) => `<button data-act="plan-range" data-v="${v}"
     aria-pressed="${f.range === v}">${esc(l)}</button>`;
@@ -7265,6 +7303,7 @@ function stripCard(all) {
       </div>
     </div>
 
+    <div class="strip-ticks strip-head">${koppen}</div>
     <div class="strip">${slice.map((p) => {
       const comp = weekComposition(p);
       const days = comp.map((d, i) => ({ d, i })).filter(({ d }) => d.type !== "off");
@@ -7284,7 +7323,7 @@ function stripCard(all) {
         </span>
       </button>`;
     }).join("")}</div>
-    <div class="strip-ticks">${ticks}</div>
+    ${legenda ? `<div class="legenda">${legenda}</div>` : ""}
     <p class="xs mut" style="margin-top:10px">${esc(tr("p_load_note"))}</p>
   </div></section>`;
 }
@@ -10810,6 +10849,7 @@ document.addEventListener("click", (e) => {
 
     case "edit-week": weekDialog(DB.planning.find((x) => x.id === id)); break;
     case "plan-bulk": bulkPlanDialog(); break;
+    case "plan-past": UI.planPast = !UI.planPast; render(); break;
     case "eng-types": engTypesDialog(); break;
     /* Het venster waar je vandaan komt wordt hier vastgelegd, vóór het
        typevenster het overneemt - daarna is het formulier er niet meer. */
