@@ -219,6 +219,15 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 .sug-d{font-size:11.5px;color:var(--ink-2);line-height:1.5;margin:15px 0 3px}
 .sug-txt{font-weight:600}
 
+/* Dagkiezer: bolletjes die meteen laten zien wat je hebt aangevinkt, zonder
+   dat het venster opnieuw getekend hoeft te worden. */
+.daypick input{position:absolute;opacity:0;pointer-events:none}
+.daypick span{display:block;min-width:40px;text-align:center;padding:7px 10px;border-radius:10px;
+  font-size:12px;cursor:pointer;background:var(--surface-2);color:var(--ink-2);
+  border:1px solid var(--border);transition:background .12s,color .12s,border-color .12s}
+.daypick input:checked+span{background:var(--ink);color:var(--surface);border-color:var(--ink);font-weight:500}
+.daypick input:focus-visible+span{outline:2px solid var(--primary);outline-offset:2px}
+
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;
   padding:0 13px;border-radius:9px;border:1px solid transparent;background:var(--primary);
   color:var(--primary-ink);font-size:13px;font-weight:500;cursor:pointer;letter-spacing:-.005em;
@@ -1030,6 +1039,10 @@ const STR = {
   p_leaveblank:["Leave the client empty for a week without client work. A client or a kind of work that does not exist yet is created the moment you type it.",
                 "Laat de klant leeg voor een week zonder klantwerk. Een klant of een soort werk dat nog niet bestaat, maak je aan door het te typen."],
   p_eng_ph:["Kind of work","Soort werk"],
+  p_days:["Which days?","Welke dagen?"],
+  p_days_d:["Leave everything unticked and the whole week is planned. Tick days and only those days change — every Friday your AI study day, for instance. The rest of the week keeps what it had, and so do the hours, the status and the goal.",
+            "Vink je niets aan, dan wordt de hele week ingepland. Vink je dagen aan, dan verandert alleen die dag — bijvoorbeeld elke vrijdag je AI-studiedag. De rest van de week blijft zoals hij was, en de uren, de status en het doel ook."],
+  p_planned_days:["{0} days changed across {1} weeks","{0} dagen aangepast in {1} weken"],
   p_open:["Not planned yet","Nog niet ingepland"],
   p_from:["From week","Van week"], p_to:["Through","Tot en met"],
   p_hrs_wk:["Hours per week","Uren per week"],
@@ -8794,16 +8807,43 @@ function bulkPlanDialog() {
         ${field(tr("p_hrs_wk"), `<input class="inp" type="number" name="hours" min="0" max="60" step="2" value="36">`)}
         ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTATUS, "bevestigd")}</select>`)}
         ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions("")}</select>`)}
+      </div>
+      <div class="field">
+        <span class="lbl">${esc(tr("p_days"))}</span>
+        <div class="row wrap" style="gap:6px">
+          ${DAY_KEYS.map((_, i) => `<label class="daypick">
+            <input type="checkbox" name="d${i}">
+            <span>${esc(dayName(i))}</span></label>`).join("")}
+        </div>
+        <p class="xs mut" style="margin-top:7px;line-height:1.6">${esc(tr("p_days_d"))}</p>
       </div>`,
     onSubmit: (f) => {
       const lo = f.from <= f.to ? f.from : f.to, hi = f.from <= f.to ? f.to : f.from;
       const hit = DB.planning.filter((p) => p.week >= lo && p.week <= hi);
       const clientId = resolveClient(f.clientName);
       const engagement = String(f.engagementName || "").trim() ? resolveEngagement(f.engagementName) : "";
-      hit.forEach((p) => Object.assign(p, { clientId, engagement, goalId: f.goalId || null,
-        hours: Number(f.hours) || 0, status: f.status }));
+      const dagen = DAY_KEYS.map((_, i) => i).filter((i) => f[`d${i}`]);
+
+      if (dagen.length) {
+        /* Dagen aangevinkt: dan gaat het over die dagen en niet over de week.
+           Elke vrijdag studie betekent niet dat maandag tot donderdag ook van
+           die opdracht zijn, dus klant, uren, status en doel blijven staan. */
+        const cel = clientId ? { type: "client", clientId }
+          : engagement === "vrij" ? { type: "leave" }
+          : engagement ? { type: "intern", eng: engagement }
+          : null;                                  // niets gekozen = terug naar de standaardweek
+        hit.forEach((p) => {
+          const rij = Array.isArray(p.days) && p.days.length === 7 ? [...p.days] : Array(7).fill(null);
+          dagen.forEach((i) => { rij[i] = cel; });
+          p.days = rij.some(Boolean) ? rij : null;
+        });
+      } else {
+        hit.forEach((p) => Object.assign(p, { clientId, engagement, goalId: f.goalId || null,
+          hours: Number(f.hours) || 0, status: f.status }));
+      }
       save();
-      toast(tr("p_planned", hit.length));
+      toast(dagen.length ? tr("p_planned_days", dagen.length * hit.length, hit.length)
+                         : tr("p_planned", hit.length));
       render();
     },
   });
