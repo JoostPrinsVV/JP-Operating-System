@@ -8191,6 +8191,19 @@ function setRailWide(wide) {
   renderRail();
 }
 
+/* Als los venster zet het systeem de naam van de app zelf al in de titelbalk;
+   hem er dan nog eens achter zetten leverde hem twee keer op. In een tabblad
+   is die naam juist nodig: daar is de titel het enige waaraan je de app
+   tussen tien andere tabbladen terugkent. */
+const APP_NAAM = "My Intelligent Workspace";
+const LOS_VENSTER = (() => {
+  try {
+    return ["standalone", "window-controls-overlay", "minimal-ui"]
+      .some((m) => window.matchMedia(`(display-mode: ${m})`).matches) ||
+      window.navigator.standalone === true;
+  } catch (e) { return false; }
+})();
+
 function render() {
   // Catches a tab switched off while it was the one last opened.
   if (!viewOn(UI.view)) UI.view = "dashboard";
@@ -8214,7 +8227,7 @@ function render() {
   else html = (VIEWS[UI.view] || viewDashboard)();
   RENAMABLE = null;
 
-  document.title = `${viewLabel(UI.view)} · My Intelligent Workspace`;
+  document.title = LOS_VENSTER ? viewLabel(UI.view) : `${viewLabel(UI.view)} · ${APP_NAAM}`;
   $("#view").innerHTML = html;
   paintTimerPill();
   wireView();
