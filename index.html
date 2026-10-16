@@ -10958,8 +10958,18 @@ dlg.addEventListener("click", (e) => {
   if (e.target === dlg && dlgVanAchtergrond) dlg.close();
   dlgVanAchtergrond = false;
 });
-/* A closing dialog must not leave stale handlers pointing at removed nodes. */
-dlg.addEventListener("close", () => { onSubmitFn = null; onDeleteFn = null; });
+/* A closing dialog must not leave stale handlers pointing at removed nodes.
+
+   Maar een venster dat bovenop een ander opent - een opdrachttype vanuit de
+   lijst, een bevestiging vanuit een bewerkvenster - sluit eerst het vorige, en
+   close() stuurt zijn gebeurtenis pas ná afloop van die hele aanroep. Die
+   kwam dus achter het nieuwe venster aan en wiste de afhandelaars die daar
+   net bij waren gezet: je klikte op opslaan, het venster ging dicht en er
+   gebeurde niets. Staat hij alweer open, dan was dit die inhaalslag. */
+dlg.addEventListener("close", () => {
+  if (dlg.open) return;
+  onSubmitFn = null; onDeleteFn = null;
+});
 $("#btn-theme").onclick = () => {
   const root = document.documentElement;
   const dark = root.getAttribute("data-theme") === "dark" ||
