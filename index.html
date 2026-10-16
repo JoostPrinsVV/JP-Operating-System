@@ -722,8 +722,11 @@ a.btn{text-decoration:none}
 .mon-r{flex:1;height:1px;background:var(--border)}
 /* Capacity strip: one bar per week across the horizon. Tall enough to read
    as the main thing on the page, and every bar is its own control. */
-.strip{position:relative;display:flex;gap:3px;height:168px;align-items:flex-end;
-  padding-top:30px;overflow:visible}
+/* Net genoeg lucht boven de balken voor het optillen bij zweven; de tooltip
+   zelf valt buiten de strook en heeft die ruimte niet nodig. Meer marge zet
+   de weeknummers los van de balken waar ze bij horen. */
+.strip{position:relative;display:flex;gap:3px;height:150px;align-items:flex-end;
+  padding-top:8px;overflow:visible}
 .bar{position:relative;flex:1 1 0;min-width:5px;height:100%;display:flex;align-items:flex-end;
   border:0;background:none;padding:0;cursor:pointer}
 /* The fill is the week; the bands inside it are its days, Monday at the top. */
@@ -753,7 +756,7 @@ a.btn{text-decoration:none}
   overflow:hidden;white-space:nowrap}
 /* Boven de balken, en dan wel te lezen: een balk zonder weeknummer is een
    vlek zonder adres. */
-.strip-head{margin:0 0 7px}
+.strip-head{margin:0 0 4px}
 .strip-head span{font-size:11.5px;font-weight:600;color:var(--ink-2);letter-spacing:-.01em}
 .strip-head span.nu{color:var(--primary)}
 .legenda{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:12px}
@@ -7135,7 +7138,7 @@ function viewPlanning() {
       </button></li>`).join("")}</ul>`, tr("p_perclient_d"))}
   </div>`}
 
-  <div class="row wrap" style="gap:8px;margin-bottom:6px">
+  <div class="row wrap" style="gap:8px;margin:20px 0 8px">
     <div class="seg wrap">
       ${[["all", tr("p_scope_all")], ["upcoming", tr("p_scope_up")], ["assigned", tr("p_scope_as")],
          ["free", tr("p_scope_free")], ["leave", tr("p_scope_leave")]]
