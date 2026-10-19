@@ -2599,12 +2599,23 @@ const tipPlan = () => {
 /* The next N sending days. With a fortnightly rhythm the week number decides
    which weeks count, so the pattern stays put instead of drifting whenever
    you happen to open the page. */
+/* Zes momenten vooruit, maar altijd minstens tot en met het verste moment
+   waar al iets voor klaarstaat. Een tip die je verder vooruit hebt ingepland
+   viel anders buiten de lijst, en dan lijkt hij verdwenen terwijl hij er
+   gewoon staat te wachten. Een half jaar is de grens: daarachter heeft een
+   rij lege vrijdagen geen waarde meer. */
+const TIP_SLOTS_MAX = 26;
 function tipSlots(n = 6) {
   const { everyWeeks, weekday } = tipPlan();
+  const gepland = DB.tips.filter((t) => t.status !== "sent" && t.plannedFor)
+    .map((t) => t.plannedFor).sort();
+  const tot = gepland.length ? gepland[gepland.length - 1] : "";
   const out = [];
   let monday = mondayOf();
   const parity = isoWeekNo(monday) % everyWeeks;
-  for (let i = 0; out.length < n && i < 60; i++) {
+  for (let i = 0; i < 60; i++) {
+    const genoeg = out.length >= n && (!tot || out[out.length - 1] >= tot);
+    if (genoeg || out.length >= TIP_SLOTS_MAX) break;
     const wk = addDays(i * 7, parseD(monday));
     if (everyWeeks === 2 && isoWeekNo(wk) % 2 !== parity) continue;
     const day = addDays(weekday, parseD(wk));
