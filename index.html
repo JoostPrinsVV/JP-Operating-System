@@ -9402,7 +9402,18 @@ function removeDeleted(events, from, to) {
   if (binnen.length < 3) return { removed, cancelled };
 
   const dagen = binnen.map((e) => e.start.day);
-  const vanaf = dagen.reduce((a, d) => (d < a ? d : a));
+  /* Nooit achteruit opruimen. De ondergrens kwam uit het bestand zelf, en één
+     ouder item - een meerdaagse hele-dag-afspraak, een reeks die eerder begon -
+     trok die ondergrens weken terug. Alles daartussen telde dan als verwijderd
+     terwijl de stroom die dagen niet eens exporteert, en zo liepen hele dagen
+     uit je verleden leeg.
+
+     Wat je in Outlook weggooit is bijna altijd iets dat nog moet komen. Wat uit
+     een bestand verdwijnt dat gisteren al voorbij was, is bijna altijd de
+     export die korter is geworden. Het verleden is je dossier; daar blijft de
+     app vanaf. */
+  const vroegste = dagen.reduce((a, d) => (d < a ? d : a));
+  const vanaf = vroegste < TODAY() ? TODAY() : vroegste;
   const tot = dagen.reduce((a, d) => (d > a ? d : a));
   const inBestand = new Set(binnen.map((e) => meetingKey(e.uid, e.start.iso)));
 
