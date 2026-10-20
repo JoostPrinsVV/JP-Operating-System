@@ -373,8 +373,20 @@ dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
 .chk[aria-checked="true"]{background:var(--success);border-color:var(--success);color:#fff}
 
 /* The tile itself is the click target, so it has to look like one. */
-.tsk{display:flex;align-items:flex-start;gap:10px;padding:8px 6px;border-radius:8px;cursor:pointer}
+/* Een taakregel draagt twee dingen: hoe zwaar hij weegt, en of hij al te laat
+   is. Het streepje links is de prioriteit - altijd dezelfde plek, dus je leest
+   een lijst in één veeg. Een vlak krijgt alleen wat te laat is, want als alles
+   oplicht licht er niets op. */
+.tsk{display:flex;align-items:flex-start;gap:10px;padding:8px 6px 8px 9px;border-radius:8px;
+  cursor:pointer;border-left:3px solid transparent;transition:background .12s,border-color .12s}
 .tsk:hover{background:var(--surface-2)}
+.tsk.p-high{border-left-color:color-mix(in srgb,var(--primary) 55%,transparent)}
+.tsk.p-medium{border-left-color:color-mix(in srgb,var(--warning) 50%,transparent)}
+.tsk.p-low{border-left-color:color-mix(in srgb,var(--success) 45%,transparent)}
+.tsk.od{border-left-color:var(--primary);background:color-mix(in srgb,var(--primary) 6%,transparent)}
+.tsk.od:hover{background:color-mix(in srgb,var(--primary) 11%,transparent)}
+.tsk.od .tsk-t{font-weight:500}
+.tsk.done{border-left-color:transparent !important;background:none}
 .tsk .chk,.tsk .badge{cursor:default}
 .tsk .chk{cursor:pointer}
 .tsk-t{font-size:13px;text-align:left;background:none;border:0;padding:0;cursor:pointer;
@@ -3281,7 +3293,11 @@ function taskRow(t, opts = {}) {
   /* The whole tile opens the task: clicks resolve to the nearest data-act, so
      the tick box still toggles rather than opening. The title stays a real
      button so there is something to tab to. */
-  return `<div class="tsk ${done ? "done" : ""}" data-act="edit-task" data-id="${t.id}">
+  // Kritiek deelt het streepje met hoog: beide zijn rood, en een vijfde kleur
+  // zou alleen maar een legenda vragen.
+  const prio = t.priority === "critical" ? "high" : t.priority;
+  return `<div class="tsk ${done ? "done" : `p-${prio}${od ? " od" : ""}`}"
+    data-act="edit-task" data-id="${t.id}">
     <button class="chk" role="checkbox" aria-checked="${done}" data-act="toggle-task" data-id="${t.id}"
       aria-label="${esc(t.title)}">${ico("check", "", 11)}</button>
     <div style="min-width:0;flex:1">
