@@ -1866,6 +1866,9 @@ const STR = {
   n_weekly:["Elke ronde","Elke ronde"],
   n_weekly_d:["De kern van je ronde — Nederlandse beroepspraktijk en de tooling die je zelf uitrolt. Zo'n 25 minuten.",
               "De kern van je ronde — Nederlandse beroepspraktijk en de tooling die je zelf uitrolt. Zo'n 25 minuten."],
+  n_ai:["AI-nieuws","AI-nieuws"],
+  n_ai_d:["Het AI-veld zelf, los van de accountancy. Deze bronnen vertellen je wat er kán; de vaktechnische hierboven wat er mág.",
+          "Het AI-veld zelf, los van de accountancy. Deze bronnen vertellen je wat er kán; de vaktechnische hierboven wat er mág."],
   n_days:["Leesdagen","Leesdagen"],
   n_days_d:["Op deze dagen begint een nieuwe ronde en staat je lijst weer open. Maandelijkse bronnen blijven afgevinkt tot de volgende maand.",
             "Op deze dagen begint een nieuwe ronde en staat je lijst weer open. Maandelijkse bronnen blijven afgevinkt tot de volgende maand."],
@@ -2652,6 +2655,7 @@ const SRC_KIND = [
   ["vak",  ["Practice","Vaktechniek"],  "var(--teal, var(--c3))"],
   ["tool", ["Tooling","Tooling"],       "var(--c1)"],
   ["wet",  ["Regulation","Regelgeving"],"var(--primary)"],
+  ["ai",   ["AI news","AI-nieuws"],     "var(--c5)"],
 ];
 const CADENCE = [["week", ["Weekly","Elke week"]], ["month", ["Monthly","Elke maand"]]];
 
@@ -2723,8 +2727,57 @@ const SOURCES = [
    "Tijdlijn per verplichting, gekoppeld aan de artikelen zelf.",
    "Waar je je AI-geletterdheidsverplichting en risicoclassificatie aan ophangt. Maandelijks checken of een datum is opgeschoven."],
 ];
-const seedSources = () => SOURCES.map(([name, url, cadence, kind, tag, what, why], i) =>
+
+/* Het AI-veld zelf, los van de accountancy. Deze bronnen vertellen je wat er
+   kán; de vaktechnische bronnen hierboven vertellen je wat er mág. Twee
+   verschillende vragen, dus twee verschillende lijstjes. */
+const AI_SOURCES = [
+  ["The Rundown AI", "https://www.therundown.ai/", "week", "ai", "Dagelijks",
+   "Dagelijkse samenvatting van modelreleases, tools en zakelijke toepassingen.",
+   "Het breedste net in de kortste tijd. Scan de koppen, lees hooguit één item door."],
+  ["Every", "https://every.to/", "week", "ai", "Essays",
+   "Essays over werken met AI, met vaste series als Chain of Thought.",
+   "Geen nieuws maar denkwerk. Hier haal je de formuleringen vandaan voor je eigen verhaal naar de teams."],
+  ["One Useful Thing", "https://www.oneusefulthing.org/", "week", "ai", "Onderzoek",
+   "Ethan Mollick (Wharton) over wat modellen in de praktijk werkelijk kunnen.",
+   "De beste bron voor onderbouwde uitspraken over adoptie en werkverdeling, met experimenten in plaats van meningen."],
+  ["The Batch", "https://www.deeplearning.ai/the-batch/", "week", "ai", "Wekelijks",
+   "Wekelijkse selectie van DeepLearning.AI met een redactionele brief van Andrew Ng.",
+   "Technischer dan de rest, maar de brief vooraan plaatst het nieuws in verband."],
+  ["Ben's Bites", "https://bensbites.com/", "week", "ai", "Dagelijks",
+   "Korte dagelijkse mail over nieuwe tools en releases.",
+   "Sneller te scannen dan The Rundown; handig als je er maar twee minuten voor hebt."],
+  ["Import AI", "https://importai.substack.com/", "week", "ai", "Beleid",
+   "Jack Clark over onderzoek, beleid en wat modellen maatschappelijk betekenen.",
+   "Analyse in plaats van aankondigingen. Waardevol voor de governance-kant van je rol."],
+  ["AI Snake Oil", "https://www.aisnakeoil.com/", "week", "ai", "Tegengeluid",
+   "Twee Princeton-onderzoekers die overdreven claims met cijfers onderuithalen.",
+   "Het tegengif voor de rest van deze lijst. Lees dit voordat je iets aan een auditteam belooft."],
+  ["Simon Willison", "https://simonwillison.net/", "week", "ai", "Techniek",
+   "Dagboek van een ontwikkelaar die elk nieuw model meteen uitprobeert.",
+   "Hier staat hoe iets zich werkelijk gedraagt, inclusief wat er misgaat."],
+  ["Last Week in AI", "https://lastweekin.ai/", "week", "ai", "Overzicht",
+   "Wekelijks overzicht van onderzoek, producten en beleid, ook als podcast.",
+   "Eén mail die de week dekt. Genoeg als je de dagelijkse bronnen overslaat."],
+  ["MIT Technology Review · AI", "https://www.technologyreview.com/tag/artificial-intelligence/", "month", "ai", "Journalistiek",
+   "Onderzoeksjournalistiek over AI, met aandacht voor wat er misgaat.",
+   "Langere stukken met bronvermelding — bruikbaar materiaal voor een presentatie."],
+];
+
+const seedSources = () => [...SOURCES, ...AI_SOURCES].map(([name, url, cadence, kind, tag, what, why], i) =>
   ({ id: uid(), name, url, cadence, kind, tag, what, why, order: i }));
+
+/* Voegt de AI-bronnen toe aan een werkruimte die ze nog niet had, zonder iets
+   aan te raken wat je zelf hebt aangepast of weggegooid: alleen een lijst die
+   nog geen enkele AI-bron kent krijgt ze. */
+function seedAiSources() {
+  DB.sources = DB.sources || [];
+  if (DB.sources.some((s) => s.kind === "ai")) return false;
+  AI_SOURCES.forEach(([name, url, cadence, kind, tag, what, why]) => {
+    DB.sources.push({ id: uid(), name, url, cadence, kind, tag, what, why, order: DB.sources.length });
+  });
+  return true;
+}
 
 /* The Thursday of the week decides the ISO year, so a week that straddles new
    year keeps one key instead of splitting into two. */
@@ -2945,6 +2998,7 @@ function migrate() {
   /* The sixteen sources are seeded once. Delete them and they stay deleted -
      an empty list is a choice, a missing one is an old workspace. */
   if (!Array.isArray(DB.sources)) { DB.sources = seedSources(); changed = true; }
+  if (seedAiSources()) changed = true;
   if (!Array.isArray(DB.folders)) { DB.folders = []; changed = true; }
   if (!Array.isArray(DB.articles)) { DB.articles = []; changed = true; }
   if (!Array.isArray(DB.tips)) { DB.tips = []; changed = true; }
@@ -7735,9 +7789,14 @@ function viewKnowledge() {
     const group = (title, hint, list) => list.length ? card(title,
       `<div>${list.map((s) => sourceRow(s, done)).join("")}</div>`, hint,
       `<span class="xs tab mut">${list.filter((s) => done.includes(s.id)).length}/${list.length}</span>`) : "";
+    /* AI-nieuws staat apart van de vaktechniek. De vraag is er een andere:
+       wat kán er, tegenover wat mág er. Door elkaar gezet lees je ze allebei
+       half. */
+    const isAi = (s) => s.kind === "ai";
     body = `<div class="grid" style="gap:14px">
-      ${group(tr("n_weekly"), tr("n_weekly_d"), week)}
-      ${group(tr("n_monthly"), tr("n_monthly_d"), month)}
+      ${group(tr("n_weekly"), tr("n_weekly_d"), week.filter((s) => !isAi(s)))}
+      ${group(tr("n_ai"), tr("n_ai_d"), [...week, ...month].filter(isAi))}
+      ${group(tr("n_monthly"), tr("n_monthly_d"), month.filter((s) => !isAi(s)))}
       ${card(tr("n_days"), `<div class="row wrap" style="gap:5px">
           ${DAY_KEYS.map((_, i) => `<button class="btn sm ${newsPlan().days.includes(i) ? "" : "outline"}"
             data-act="news-day" data-v="${i}" aria-pressed="${newsPlan().days.includes(i)}"
@@ -7785,7 +7844,8 @@ function viewKnowledge() {
   }
 
   return pageHead(tr("nav_knowledge"), tr("n_sub"),
-    `<button class="btn sm" data-act="new-article">${ico("plus")} ${esc(tr("n_addart"))}</button>`) +
+    `<button class="btn sm outline" data-act="new-source">${ico("news")} ${esc(tr("n_addsrc"))}</button>
+     <button class="btn sm" data-act="new-article">${ico("plus")} ${esc(tr("n_addart"))}</button>`) +
   `<div class="tiles" style="margin-bottom:14px">
     ${tile(tr("n_t_round"), `${weekDone}/${week.length}`, "", tr("n_t_round_h", fmtDate(roundStart())),
       "news", weekDone === week.length && week.length ? "var(--success)" : "var(--c1)")}
