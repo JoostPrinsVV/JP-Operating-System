@@ -393,6 +393,11 @@ dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
   color:inherit;width:100%}
 .tsk.done .tsk-t{color:var(--ink-2);text-decoration:line-through}
 .tsk-m{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px;font-size:11px;color:var(--ink-2)}
+/* De status staat vooraan in de regel eronder, met een stip ervoor. Geen
+   badge erbij rechts: die kant draagt al de prioriteit en de urgentie, en een
+   derde label maakt van een lijst een legenda. */
+.tsk-s{display:inline-flex;align-items:center;gap:5px;font-weight:500}
+.tsk-s i{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
 
 /* Receipt thumbnail: fixed square so a portrait phone photo and a landscape
    scan line up down the list. */
@@ -3339,6 +3344,22 @@ const card = (title, body, desc = "", actions = "") => `<section class="card">
 const empty = (title, desc = "", action = "") =>
   `<div class="empty"><b>${esc(title)}</b>${desc ? `<span class="xs">${esc(desc)}</span>` : ""}${action}</div>`;
 
+/* Een stip per status, als een verloop van nog-niets naar bezig. Niet de
+   kleuren van de badges: "Volgende" is daar rood, en rood betekent in een
+   taakregel al te laat. */
+const STATUS_DOT = {
+  inbox: "var(--ink-3)", planned: "var(--c1)", next: "var(--c4)",
+  in_progress: "var(--warning)", waiting: "var(--ink-3)", done: "var(--success)",
+};
+function statusHint(t) {
+  if (t.status === "done") return "";                 // de doorhaling zegt het al
+  // "Wacht op Henri" zegt meer dan "Wachten", dus dan niet allebei.
+  if (t.status === "waiting" && String(t.waitingOn || "").trim()) return "";
+  const m = meta(STATUSES, t.status);
+  if (!m) return "";
+  return `<span class="tsk-s"><i style="background:${STATUS_DOT[t.status] || "var(--ink-3)"}"></i>${esc(lbl(m[1]))}</span>`;
+}
+
 function taskRow(t, opts = {}) {
   const s = scoreTask(t), [bl, bt] = band(s), done = t.status === "done";
   const proj = t.projectId && DB.projects.find((p) => p.id === t.projectId);
@@ -3357,6 +3378,7 @@ function taskRow(t, opts = {}) {
     <div style="min-width:0;flex:1">
       <button class="tsk-t" data-act="edit-task" data-id="${t.id}">${esc(t.title)}</button>
       <div class="tsk-m">
+        ${statusHint(t)}
         ${t.dueDate ? `<span ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${od ? `${esc(tr("overdue_p"))} — ` : ""}${esc(fmtDate(t.dueDate))}</span>` : ""}
         ${opts.hideProject !== true && proj ? `<span class="trunc" style="max-width:150px">${esc(proj.name)}</span>` : ""}
         ${opts.hideGoal !== true && goal ? `<span>${esc(goal.code)}</span>` : ""}
