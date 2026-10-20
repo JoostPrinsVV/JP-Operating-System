@@ -396,6 +396,10 @@ dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
 /* De status staat vooraan in de regel eronder, met een stip ervoor. Geen
    badge erbij rechts: die kant draagt al de prioriteit en de urgentie, en een
    derde label maakt van een lijst een legenda. */
+/* De kop van een bronlijst is een knop, maar moet eruitzien als een kop. */
+.src-head{display:flex;align-items:flex-start;gap:9px;background:none;border:0;padding:0;
+  cursor:pointer;color:inherit;text-align:left}
+.src-head .ico{margin-top:2px;flex:0 0 auto}
 .tsk-s{display:inline-flex;align-items:center;gap:5px;font-weight:500}
 .tsk-s i{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
 
@@ -1871,6 +1875,10 @@ const STR = {
   n_weekly:["Elke ronde","Elke ronde"],
   n_weekly_d:["De kern van je ronde — Nederlandse beroepspraktijk en de tooling die je zelf uitrolt. Zo'n 25 minuten.",
               "De kern van je ronde — Nederlandse beroepspraktijk en de tooling die je zelf uitrolt. Zo'n 25 minuten."],
+  n_addsrc_here:["Bron toevoegen aan {0}","Bron toevoegen aan {0}"],
+  n_group_rename:["Naam van deze lijst","Naam van deze lijst"],
+  n_group_rename_d:["Alleen de kop verandert. Welke bron waar staat volgt uit zijn soort en frequentie, en dat blijft zo.",
+                    "Alleen de kop verandert. Welke bron waar staat volgt uit zijn soort en frequentie, en dat blijft zo."],
   n_ai:["AI-nieuws","AI-nieuws"],
   n_ai_d:["Het AI-veld zelf, los van de accountancy. Deze bronnen vertellen je wat er kán; de vaktechnische hierboven wat er mág.",
           "Het AI-veld zelf, los van de accountancy. Deze bronnen vertellen je wat er kán; de vaktechnische hierboven wat er mág."],
@@ -2831,8 +2839,8 @@ const monthKey = () => `m:${TODAY().slice(0, 7)}`;
 const bucketFor = (src) => (src && src.cadence === "month" ? monthKey() : roundKey());
 const roundDone = () => [...((DB.newsRound || {})[roundKey()] || []),
   ...((DB.newsRound || {})[monthKey()] || [])];
-const sourcesFor = (cadence) => DB.sources.filter((s) => s.cadence === cadence)
-  .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+const sortedSources = () => [...DB.sources].sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+const sourcesFor = (cadence) => sortedSources().filter((s) => s.cadence === cadence);
 
 /* ---- expense claims -----------------------------------------------------
    Three states and one direction: something you still have to hand in, then
@@ -3174,6 +3182,7 @@ const UI = {
   trOpen: {},            // welke verslagen uitgeklapt staan
   sugIgnored: false,     // toont de genegeerde voorstellen in plaats van de open
   planPast: false,       // toont ook de weken die al voorbij zijn
+  knowOpen: {},          // welke bronlijsten dichtgeklapt staan
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -7792,6 +7801,75 @@ function articleRow(a) {
     </div></div>`;
 }
 
+/* ---- de groepen in je ronde ---------------------------------------------
+   Drie lijstjes, elk met een eigen vraag. De vaktechniek vertelt je wat er
+   mág, AI-nieuws wat er kán, en de maandelijkse bronnen zijn te traag om elke
+   ronde langs te gaan. Welke bron waar hoort volgt uit zijn soort en zijn
+   frequentie; de groepen zelf zijn dus geen losse dingen om te beheren, maar
+   je mag ze wel een eigen naam geven.
+------------------------------------------------------------------------- */
+const SRC_GROUPS = [
+  ["week",  "n_weekly",  "n_weekly_d",  { cadence: "week",  kind: "vak" }],
+  ["ai",    "n_ai",      "n_ai_d",      { cadence: "week",  kind: "ai"  }],
+  ["month", "n_monthly", "n_monthly_d", { cadence: "month", kind: "vak" }],
+];
+const srcGroupOf = (s) => (s.kind === "ai" ? "ai" : s.cadence === "month" ? "month" : "week");
+const srcGroupName = (key) => {
+  const eigen = ((DB.profile && DB.profile.srcNames) || {})[key];
+  const vast = (SRC_GROUPS.find(([k]) => k === key) || [])[1];
+  return (eigen && eigen.trim()) || tr(vast || "n_weekly");
+};
+
+function srcGroupCard(key, done) {
+  const [, , hintKey, nieuw] = SRC_GROUPS.find(([k]) => k === key) || [];
+  const lijst = sortedSources().filter((s) => srcGroupOf(s) === key);
+  const open = (UI.knowOpen || {})[key] !== false;
+  const af = lijst.filter((s) => done.includes(s.id)).length;
+
+  return `<section class="card">
+    <div class="card-h" style="align-items:center">
+      <button class="src-head" data-act="know-group" data-v="${key}" aria-expanded="${open}"
+        style="min-width:0;flex:1">
+        ${ico(open ? "chevup" : "chevdown", "ico mut", 14)}
+        <span style="min-width:0">
+          <span class="card-t" style="display:block">${esc(srcGroupName(key))}</span>
+          ${open ? `<span class="card-d" style="display:block">${esc(tr(hintKey))}</span>` : ""}
+        </span>
+      </button>
+      <span class="row" style="gap:6px;flex:0 0 auto">
+        <span class="xs tab mut">${af}/${lijst.length}</span>
+        <button class="btn icon sm ghost" data-act="rename-group" data-v="${key}"
+          title="${esc(tr("n_group_rename"))}" aria-label="${esc(tr("n_group_rename"))}">${ico("pencil", "", 12)}</button>
+      </span>
+    </div>
+    ${open ? `<div class="card-b">
+      ${lijst.length ? `<div>${lijst.map((s) => sourceRow(s, done)).join("")}</div>` : ""}
+      <button class="btn sm ghost" data-act="new-source" data-v="${key}"
+        style="margin-top:${lijst.length ? "9" : "0"}px;padding-left:0">
+        ${ico("plus", "", 12)} ${esc(tr("n_addsrc_here", srcGroupName(key)))}</button>
+    </div>` : ""}
+  </section>`;
+}
+
+function renameGroupDialog(key) {
+  const namen = (DB.profile.srcNames = DB.profile.srcNames || {});
+  const vast = tr((SRC_GROUPS.find(([k]) => k === key) || [])[1] || "n_weekly");
+  openDialog({
+    title: tr("n_group_rename"),
+    desc: tr("n_group_rename_d"),
+    submit: tr("save"),
+    body: field(tr("v_name"), `<input class="inp" name="name" maxlength="40"
+      value="${esc(namen[key] || "")}" placeholder="${esc(vast)}">`) +
+      `<p class="xs mut">${esc(tr("v_rename_note", vast))}</p>`,
+    onSubmit: (f) => {
+      const val = (f.name || "").trim();
+      // Leegmaken zet de oorspronkelijke naam terug in plaats van niets.
+      if (val && val !== vast) namen[key] = val; else delete namen[key];
+      save(); render(); toast(val ? tr("v_renamed", val) : tr("v_renamed_back", vast));
+    },
+  });
+}
+
 function viewKnowledge() {
   const f = UI.knowFilter;
   const done = roundDone();
@@ -7808,17 +7886,8 @@ function viewKnowledge() {
 
   let body;
   if (f.view === "round") {
-    const group = (title, hint, list) => list.length ? card(title,
-      `<div>${list.map((s) => sourceRow(s, done)).join("")}</div>`, hint,
-      `<span class="xs tab mut">${list.filter((s) => done.includes(s.id)).length}/${list.length}</span>`) : "";
-    /* AI-nieuws staat apart van de vaktechniek. De vraag is er een andere:
-       wat kán er, tegenover wat mág er. Door elkaar gezet lees je ze allebei
-       half. */
-    const isAi = (s) => s.kind === "ai";
     body = `<div class="grid" style="gap:14px">
-      ${group(tr("n_weekly"), tr("n_weekly_d"), week.filter((s) => !isAi(s)))}
-      ${group(tr("n_ai"), tr("n_ai_d"), [...week, ...month].filter(isAi))}
-      ${group(tr("n_monthly"), tr("n_monthly_d"), month.filter((s) => !isAi(s)))}
+      ${SRC_GROUPS.map(([key]) => srcGroupCard(key, done)).join("")}
       ${card(tr("n_days"), `<div class="row wrap" style="gap:5px">
           ${DAY_KEYS.map((_, i) => `<button class="btn sm ${newsPlan().days.includes(i) ? "" : "outline"}"
             data-act="news-day" data-v="${i}" aria-pressed="${newsPlan().days.includes(i)}"
@@ -7827,10 +7896,9 @@ function viewKnowledge() {
         <p class="xs mut" style="margin-top:9px">${esc(roundNext()
           ? tr("n_days_next", fmtDate(roundNext())) : tr("n_days_none_d"))}</p>`,
         tr("n_days_d"))}
-      <div class="row wrap" style="gap:8px">
-        <button class="btn sm outline" data-act="new-source">${ico("plus", "", 13)} ${esc(tr("n_addsrc"))}</button>
-        ${done.length ? `<button class="btn sm ghost" data-act="round-reset">${esc(tr("n_reset"))}</button>` : ""}
-      </div>
+      ${done.length ? `<div class="row wrap" style="gap:8px">
+        <button class="btn sm ghost" data-act="round-reset">${esc(tr("n_reset"))}</button>
+      </div>` : ""}
       ${card(tr("n_filter"), `<ol class="grid xs" style="gap:8px;margin:0;padding-left:18px;list-style:decimal">
         ${PILLARS.filter(([k]) => k !== "overig").map(([k, l]) =>
           `<li><b>${esc(lbl(l))}</b> — ${esc(tr(`n_pillar_${k}`))}</li>`).join("")}
@@ -7900,9 +7968,12 @@ function newsCard() {
     `<button class="btn sm ghost" data-nav="knowledge">${esc(tr("n_card_all"))}</button>`);
 }
 
-function sourceDialog(src) {
+/* `groep` komt van de knop onderaan een lijst: dan staan de frequentie en de
+   soort al goed en belandt de bron waar je hem aanklikte. */
+function sourceDialog(src, groep) {
+  const vooraf = (SRC_GROUPS.find(([k]) => k === groep) || [])[3] || {};
   const s = src || { name: "", url: "", cadence: "week", kind: "vak", tag: "", what: "", why: "",
-    order: DB.sources.length };
+    ...vooraf, order: DB.sources.length };
   openDialog({
     title: src ? tr("n_edit_src") : tr("n_addsrc"),
     submit: src ? tr("save") : tr("add"),
@@ -11078,7 +11149,14 @@ document.addEventListener("click", (e) => {
       toast(p.days.length ? tr("n_days_set", p.days.map((x) => dayName(x, true)).join(", ")) : tr("n_days_none"));
       break;
     }
-    case "new-source": sourceDialog(null); break;
+    case "new-source": sourceDialog(null, el.dataset.v); break;
+    case "rename-group": renameGroupDialog(el.dataset.v); break;
+    case "know-group": {
+      UI.knowOpen = UI.knowOpen || {};
+      const k = el.dataset.v;
+      UI.knowOpen[k] = UI.knowOpen[k] === false;
+      render(); break;
+    }
     case "edit-source": sourceDialog(DB.sources.find((x) => x.id === id)); break;
     case "new-folder": folderDialog(null); break;
     case "edit-folder": folderDialog(DB.folders.find((x) => x.id === id)); break;
