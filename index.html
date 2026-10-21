@@ -1424,9 +1424,11 @@ const STR = {
   sy_nws:["{0} nieuwsitems","{0} nieuwsitems"],
   sy_nws_1:["1 nieuwsitem","1 nieuwsitem"],
   nws_sub:["AI-nieuws uit je nieuwsbrieven","AI-nieuws uit je nieuwsbrieven"],
-  nws_d:["Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of als gelezen afvinkt komt niet opnieuw langs.",
-         "Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of als gelezen afvinkt komt niet opnieuw langs."],
-  nws_show_open:["Terug naar het open nieuws ({0})","Terug naar het open nieuws ({0})"],
+  nws_d:["Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Elke maandag begint de lijst schoon; wat je bewaart blijft staan bij je artikelen.",
+         "Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Elke maandag begint de lijst schoon; wat je bewaart blijft staan bij je artikelen."],
+  nws_show_open:["Deze week ({0})","Deze week ({0})"],
+  nws_show_past:["Eerdere weken ({0})","Eerdere weken ({0})"],
+  nws_none_past:["Nog niets uit eerdere weken.","Nog niets uit eerdere weken."],
   nws_save:["Bewaren","Bewaren"],
   nws_read:["Gelezen","Gelezen"],
   nws_show_read:["{0} gelezen","{0} gelezen"],
@@ -3196,7 +3198,7 @@ const UI = {
   sugIgnored: false,     // toont de genegeerde voorstellen in plaats van de open
   planPast: false,       // toont ook de weken die al voorbij zijn
   knowOpen: {},          // welke bronlijsten dichtgeklapt staan
-  nwsIgnored: false,     // toont de genegeerde nieuwsitems in plaats van de open
+  nwsView: "open",       // "open" deze week, "read" afgevinkt, "past" eerdere weken
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -7918,12 +7920,23 @@ async function nwsRead(dir) {
   } catch (e) { return null; }
 }
 
+/* Nieuws heeft een houdbaarheidsdatum. Wat je op maandag niet las, lees je op
+   vrijdag ook niet meer - dus begint elke week met een schone lei. Weggooien
+   doen we het niet: het schuift een laag naar achteren, waar je het terug kunt
+   zoeken en alsnog kunt bewaren. */
+const nwsDezeWeek = (n) => mondayOf(parseD(n.firstSeen || TODAY())) === mondayOf();
+
 function newsAnalysisCard() {
   const alle = DB.news || [];
   if (!alle.length) return "";
-  const open = alle.filter((n) => n.status === "open");
-  const genegeerd = alle.filter((n) => n.status === "ignored");
-  const toon = UI.nwsIgnored ? genegeerd : open;
+  const nu = alle.filter(nwsDezeWeek);
+  const open = nu.filter((n) => n.status === "open");
+  const genegeerd = nu.filter((n) => n.status === "ignored");
+  const eerder = alle.filter((n) => !nwsDezeWeek(n))
+    .sort((a, b) => String(b.firstSeen).localeCompare(String(a.firstSeen)));
+  const view = UI.nwsView || "open";
+  const toon = view === "read" ? genegeerd : view === "past" ? eerder : open;
+  const leeg = view === "read" ? tr("nws_none_read") : view === "past" ? tr("nws_none_past") : tr("nws_none");
 
   const rij = (n) => `<li style="padding:11px 2px">
     <div class="row wrap spread" style="gap:10px;align-items:flex-start">
@@ -7958,10 +7971,15 @@ function newsAnalysisCard() {
     </div>
     <div class="card-b"><p class="sug-d">${esc(tr("nws_d"))}</p>
       ${toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
-        : `<p class="xs mut">${esc(UI.nwsIgnored ? tr("nws_none_read") : tr("nws_none"))}</p>`}
-      ${genegeerd.length || UI.nwsIgnored ? `<button class="btn sm ghost" data-act="nws-toggle" style="margin-top:9px;padding-left:0">
-        ${ico(UI.nwsIgnored ? "chevup" : "chevdown", "", 12)} ${esc(UI.nwsIgnored
-          ? tr("nws_show_open", open.length) : tr("nws_show_read", genegeerd.length))}</button>` : ""}
+        : `<p class="xs mut">${esc(leeg)}</p>`}
+      <div class="row wrap" style="gap:4px 14px;margin-top:9px">
+        ${view !== "open" ? `<button class="btn sm ghost" data-act="nws-view" data-v="open" style="padding-left:0">
+          ${ico("chevup", "", 12)} ${esc(tr("nws_show_open", open.length))}</button>` : ""}
+        ${view !== "read" && genegeerd.length ? `<button class="btn sm ghost" data-act="nws-view" data-v="read" style="padding-left:0">
+          ${ico("chevdown", "", 12)} ${esc(tr("nws_show_read", genegeerd.length))}</button>` : ""}
+        ${view !== "past" && eerder.length ? `<button class="btn sm ghost" data-act="nws-view" data-v="past" style="padding-left:0">
+          ${ico("chevdown", "", 12)} ${esc(tr("nws_show_past", eerder.length))}</button>` : ""}
+      </div>
     </div></section>`;
 }
 
@@ -11008,7 +11026,7 @@ document.addEventListener("click", (e) => {
       if (n) { n.status = "open"; n.articleId = null; save(); render(); }
       break;
     }
-    case "nws-toggle": UI.nwsIgnored = !UI.nwsIgnored; render(); break;
+    case "nws-view": UI.nwsView = el.dataset.v; render(); break;
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
