@@ -1421,6 +1421,14 @@ const STR = {
   sy_trbij_1:["1 verslag aangevuld","1 verslag aangevuld"],
   sy_sug:["{0} voorstellen van Copilot","{0} voorstellen van Copilot"],
   sy_sug_1:["1 voorstel van Copilot","1 voorstel van Copilot"],
+  sy_nws:["{0} nieuwsitems","{0} nieuwsitems"],
+  sy_nws_1:["1 nieuwsitem","1 nieuwsitem"],
+  nws_sub:["AI-nieuws uit je nieuwsbrieven","AI-nieuws uit je nieuwsbrieven"],
+  nws_d:["Copilot leest je map met nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of negeert komt niet opnieuw langs.",
+         "Copilot leest je map met nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of negeert komt niet opnieuw langs."],
+  nws_save:["Bewaren","Bewaren"],
+  nws_none:["Niets meer open. Bij de volgende ronde staat er weer wat.",
+            "Niets meer open. Bij de volgende ronde staat er weer wat."],
   ag_n_links:["{0} vergaderlinks aangevuld","{0} vergaderlinks aangevuld"],
   ag_n_removed:["{0} verwijderd uit Outlook","{0} verwijderd uit Outlook"],
   ag_n_cancelled:["{0} doorgestreept","{0} doorgestreept"],
@@ -3060,6 +3068,7 @@ function migrate() {
   DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
   if (!Array.isArray(DB.suggestions)) { DB.suggestions = []; changed = true; }
+  if (!Array.isArray(DB.news)) { DB.news = []; changed = true; }
   /* De ingebouwde opdrachttypes komen in de lijst te staan, zodat ze te
      hernoemen en te kleuren zijn zoals elk ander type. Hun id blijft wat hij
      was, dus bestaande weken en urenregels houden hun opdracht. */
@@ -3183,6 +3192,7 @@ const UI = {
   sugIgnored: false,     // toont de genegeerde voorstellen in plaats van de open
   planPast: false,       // toont ook de weken die al voorbij zijn
   knowOpen: {},          // welke bronlijsten dichtgeklapt staan
+  nwsIgnored: false,     // toont de genegeerde nieuwsitems in plaats van de open
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -7801,6 +7811,153 @@ function articleRow(a) {
     </div></div>`;
 }
 
+/* ---- de nieuwsronde van Copilot -----------------------------------------
+   Je nieuwsbrieven komen binnen in een map in Outlook. Copilot leest die map
+   en schrijft er een verslag van: wat er staat, wat het voor een controleteam
+   betekent, en uit welke brief van welke dag het komt.
+
+   De waarde zit niet in het samenvatten - The Rundown is zelf al een
+   samenvatting - maar in de filter. Per item één pijler en één zin over wat
+   het hier betekent; de rest mag ongelezen voorbijgaan.
+------------------------------------------------------------------------- */
+const NWS_SECTIES = [
+  ["wat",    ["What","Wat"],      ["wat", "what", "samenvatting", "inhoud"]],
+  ["waarom", ["Why","Waarom"],    ["waarom", "why", "betekenis", "impact", "relevantie"]],
+  ["pijler", ["Pillar","Pijler"], ["pijler", "pillar", "thema"]],
+  ["bron",   ["Source","Bron"],   ["bron", "source", "nieuwsbrief"]],
+  ["link",   ["Link","Link"],     ["link", "url"]],
+];
+/* Copilot schrijft de pijler als woord; hier wordt het de sleutel die de app
+   al gebruikt, zodat een bewaard artikel meteen goed staat. */
+function nwsPijler(tekst) {
+  const n = briefNorm(tekst || "");
+  const hit = PILLARS.find(([k, l]) => n.includes(k) || n.includes(briefNorm(lbl(l))));
+  return hit ? hit[0] : "overig";
+}
+
+function nwsParse(tekst) {
+  const regels = String(tekst || "").replace(/\r/g, "").split("\n");
+  const titel = [];
+  let i = 0;
+  while (i < regels.length && !regels[i].trim()) i++;
+  while (i < regels.length) {
+    const r = regels[i].trim();
+    if (!r) { i++; break; }
+    if (KOP_RE.test(r) && kopSleutel((KOP_RE.exec(r)[1] || "").toLowerCase(), NWS_SECTIES)) break;
+    titel.push(r); i++;
+  }
+  const title = titel.join(" ").replace(/\s+/g, " ").replace(/\*\*/g, "").trim();
+  if (!title) return null;
+
+  const secties = {};
+  let huidig = null;
+  regels.slice(i).forEach((regel) => {
+    const kop = KOP_RE.exec(regel);
+    const sleutel = kop && kopSleutel(kop[1].trim().toLowerCase(), NWS_SECTIES);
+    if (sleutel) { huidig = sleutel; secties[huidig] = (kop[2] || "").trim(); return; }
+    if (huidig && regel.trim()) secties[huidig] = `${secties[huidig]} ${regel.trim()}`.trim();
+  });
+  Object.keys(secties).forEach((k) => {
+    secties[k] = secties[k].replace(/\*\*/g, "").trim();
+    if (!secties[k]) delete secties[k];
+  });
+  /* Een link mag overal in het blok staan; hem apart opvissen scheelt een
+     kopje dat Copilot soms vergeet. */
+  const losseUrl = /(https?:\/\/[^\s<>"')]+)/.exec(tekst);
+  return {
+    title, what: secties.wat || "", why: secties.waarom || "",
+    pillar: nwsPijler(secties.pijler), source: secties.bron || "",
+    url: (secties.link || (losseUrl ? losseUrl[1] : "")).replace(/[.,;]+$/, ""),
+  };
+}
+
+function nwsImport(raw) {
+  const items = (raw && (raw.items || raw.news)) || [];
+  DB.news = DB.news || [];
+  let nieuw = 0, bekend = 0;
+  items.forEach((i) => {
+    const p = nwsParse(String(i.text || i.body || ""));
+    if (!p) return;
+    const key = sugKey(p.title);
+    const bestaand = DB.news.find((n) => n.key === key || sugLijkt(p.title, n.title));
+    if (bestaand) {
+      bestaand.lastSeen = TODAY();
+      if (!bestaand.url && p.url) bestaand.url = p.url;
+      bekend++;
+      return;
+    }
+    DB.news.push({ id: uid(), key, ...p, status: "open", articleId: null,
+      firstSeen: TODAY(), lastSeen: TODAY() });
+    nieuw++;
+  });
+  /* Beoordeelde items van ouder dan drie maanden mogen weg; ze houden alleen
+     nog dubbelen tegen die niemand meer herkent. Nieuws veroudert sneller dan
+     een vergeten taak, dus korter dan daar. */
+  const grens = addDays(-92);
+  DB.news = DB.news.filter((n) => n.status === "open" || (n.lastSeen || "9999") >= grens);
+  if (nieuw || bekend) save();
+  return { nieuw, bekend };
+}
+
+async function nwsRead(dir) {
+  try {
+    let nieuw = 0, bekend = 0;
+    const bestanden = await agendaFiles(dir, /^nieuws-.*\.json$/i, 7);
+    for (const file of bestanden.reverse()) {
+      try {
+        const r = nwsImport(JSON.parse(await file.text()));
+        nieuw += r.nieuw; bekend += r.bekend;
+      } catch (e) { /* een stuk bestand houdt de rest niet tegen */ }
+    }
+    return { nieuw, bekend };
+  } catch (e) { return null; }
+}
+
+function newsAnalysisCard() {
+  const alle = DB.news || [];
+  if (!alle.length) return "";
+  const open = alle.filter((n) => n.status === "open");
+  const genegeerd = alle.filter((n) => n.status === "ignored");
+  const toon = UI.nwsIgnored ? genegeerd : open;
+
+  const rij = (n) => `<li style="padding:11px 2px">
+    <div class="row wrap spread" style="gap:10px;align-items:flex-start">
+      <span style="flex:1;min-width:0">
+        <span class="row wrap" style="gap:7px;align-items:baseline">
+          ${n.url
+            ? `<a class="src-n" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>`
+            : `<span class="src-n">${esc(n.title)}</span>`}
+          ${badge(PILLARS, n.pillar)}
+        </span>
+        ${n.what ? `<span class="xs" style="display:block;margin-top:3px;line-height:1.55">${esc(n.what)}</span>` : ""}
+        ${n.why ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.55">${esc(n.why)}</span>` : ""}
+        ${n.source ? `<span class="xs mut" style="display:block;margin-top:2px;font-style:italic">${esc(n.source)}</span>` : ""}
+      </span>
+      ${n.status === "ignored"
+        ? `<button class="btn sm ghost" data-act="nws-open" data-id="${n.id}" style="flex:0 0 auto">
+            ${ico("back", "", 11)} ${esc(tr("sg_back"))}</button>`
+        : `<span class="row" style="gap:4px;flex:0 0 auto">
+            <button class="btn sm outline" data-act="nws-save" data-id="${n.id}">
+              ${ico("plus", "", 11)} ${esc(tr("nws_save"))}</button>
+            <button class="btn sm ghost" data-act="nws-ignore" data-id="${n.id}">${esc(tr("sg_ignore"))}</button>
+          </span>`}
+    </div></li>`;
+
+  return `<section class="card sug-card">
+    <div class="sug-h">${ico("sparkle", "ico", 15)}
+      <h2 class="sug-t">${esc(tr("sg_head"))}</h2>
+      <span class="sug-bar"></span>
+      <span class="sug-sub">${esc(tr("nws_sub"))}</span>
+    </div>
+    <div class="card-b"><p class="sug-d">${esc(tr("nws_d"))}</p>
+      ${toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
+        : `<p class="xs mut">${esc(UI.nwsIgnored ? tr("sg_none_ignored") : tr("nws_none"))}</p>`}
+      ${genegeerd.length || UI.nwsIgnored ? `<button class="btn sm ghost" data-act="nws-toggle" style="margin-top:9px;padding-left:0">
+        ${ico(UI.nwsIgnored ? "chevup" : "chevdown", "", 12)} ${esc(UI.nwsIgnored
+          ? tr("sg_show_open", open.length) : tr("sg_show_ignored", genegeerd.length))}</button>` : ""}
+    </div></section>`;
+}
+
 /* ---- de groepen in je ronde ---------------------------------------------
    Drie lijstjes, elk met een eigen vraag. De vaktechniek vertelt je wat er
    mág, AI-nieuws wat er kán, en de maandelijkse bronnen zijn te traag om elke
@@ -7887,6 +8044,7 @@ function viewKnowledge() {
   let body;
   if (f.view === "round") {
     body = `<div class="grid" style="gap:14px">
+      ${newsAnalysisCard()}
       ${SRC_GROUPS.map(([key]) => srcGroupCard(key, done)).join("")}
       ${card(tr("n_days"), `<div class="row wrap" style="gap:5px">
           ${DAY_KEYS.map((_, i) => `<button class="btn sm ${newsPlan().days.includes(i) ? "" : "outline"}"
@@ -8044,8 +8202,10 @@ function folderDialog(folder) {
 }
 
 function articleDialog(art, defaults) {
+  // onSaved hoort niet in het artikel zelf terecht te komen.
+  const { onSaved, ...voor } = defaults || {};
   const a = art || { title: "", url: "", sourceId: "", folderId: "", pillar: "overig",
-    status: "toread", takeaway: "", note: "", addedAt: TODAY(), ...(defaults || {}) };
+    status: "toread", takeaway: "", note: "", addedAt: TODAY(), ...voor };
 
   openDialog({
     title: art ? tr("n_editart") : tr("n_addart"),
@@ -8080,7 +8240,11 @@ function articleDialog(art, defaults) {
         folderId: f.folderId || null, sourceId: f.sourceId || null,
         pillar: f.pillar, status: f.status, takeaway: (f.takeaway || "").trim(), note: f.note || "" };
       if (art) Object.assign(art, patch);
-      else DB.articles.push({ id: uid(), addedAt: a.addedAt || TODAY(), ...patch });
+      else {
+        const nieuw = { id: uid(), addedAt: a.addedAt || TODAY(), ...patch };
+        DB.articles.push(nieuw);
+        if (onSaved) onSaved(nieuw);
+      }
       save(); render(); toast(art ? tr("n_art_saved") : tr("n_art_added"));
     },
   });
@@ -9925,6 +10089,7 @@ async function agendaRead(loud) {
     await briefRead(AGENDA_DIR);
     const trR = await trRead(AGENDA_DIR);
     const sgR = await sugRead(AGENDA_DIR);
+    const nwR = await nwsRead(AGENDA_DIR);
 
     /* Uit dezelfde map komt meer dan je agenda. Wat erbij kwam hoort in
        dezelfde melding te staan, anders lijkt een ronde zonder nieuwe
@@ -9933,6 +10098,7 @@ async function agendaRead(loud) {
       trR && trR.nieuw ? tr(trR.nieuw === 1 ? "sy_tr_1" : "sy_tr", trR.nieuw) : "",
       trR && trR.bij ? tr(trR.bij === 1 ? "sy_trbij_1" : "sy_trbij", trR.bij) : "",
       sgR && sgR.nieuw ? tr(sgR.nieuw === 1 ? "sy_sug_1" : "sy_sug", sgR.nieuw) : "",
+      nwR && nwR.nieuw ? tr(nwR.nieuw === 1 ? "sy_nws_1" : "sy_nws", nwR.nieuw) : "",
     ].filter(Boolean);
     /* Zonder .ics is er nog steeds nieuws te melden, dus die melding gaat voor
        op de klacht dat het agendabestand ontbreekt. */
@@ -10812,6 +10978,30 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "sug-toggle": UI.sugIgnored = !UI.sugIgnored; render(); break;
+    /* Een nieuwsitem wordt pas een artikel als jij het bewaart; het venster
+       gaat open met wat Copilot ervan maakte, en pas na opslaan telt het. */
+    case "nws-save": {
+      const n = (DB.news || []).find((x) => x.id === id);
+      if (!n) break;
+      articleDialog(null, {
+        title: n.title, url: n.url || "", pillar: n.pillar,
+        takeaway: n.why || n.what || "",
+        note: [n.what, n.why, n.source].filter(Boolean).join("\n\n"),
+        onSaved: (art) => { n.status = "saved"; n.articleId = art.id; save(); render(); },
+      });
+      break;
+    }
+    case "nws-ignore": {
+      const n = (DB.news || []).find((x) => x.id === id);
+      if (n) { n.status = "ignored"; save(); render(); }
+      break;
+    }
+    case "nws-open": {
+      const n = (DB.news || []).find((x) => x.id === id);
+      if (n) { n.status = "open"; n.articleId = null; save(); render(); }
+      break;
+    }
+    case "nws-toggle": UI.nwsIgnored = !UI.nwsIgnored; render(); break;
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
