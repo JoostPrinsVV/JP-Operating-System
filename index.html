@@ -1424,9 +1424,13 @@ const STR = {
   sy_nws:["{0} nieuwsitems","{0} nieuwsitems"],
   sy_nws_1:["1 nieuwsitem","1 nieuwsitem"],
   nws_sub:["AI-nieuws uit je nieuwsbrieven","AI-nieuws uit je nieuwsbrieven"],
-  nws_d:["Copilot leest je map met nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of negeert komt niet opnieuw langs.",
-         "Copilot leest je map met nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of negeert komt niet opnieuw langs."],
+  nws_d:["Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of als gelezen afvinkt komt niet opnieuw langs.",
+         "Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Wat je bewaart of als gelezen afvinkt komt niet opnieuw langs."],
+  nws_show_open:["Terug naar het open nieuws ({0})","Terug naar het open nieuws ({0})"],
   nws_save:["Bewaren","Bewaren"],
+  nws_read:["Gelezen","Gelezen"],
+  nws_show_read:["{0} gelezen","{0} gelezen"],
+  nws_none_read:["Je hebt nog niets als gelezen gemarkeerd.","Je hebt nog niets als gelezen gemarkeerd."],
   nws_none:["Niets meer open. Bij de volgende ronde staat er weer wat.",
             "Niets meer open. Bij de volgende ronde staat er weer wat."],
   ag_n_links:["{0} vergaderlinks aangevuld","{0} vergaderlinks aangevuld"],
@@ -7825,6 +7829,7 @@ const NWS_SECTIES = [
   ["waarom", ["Why","Waarom"],    ["waarom", "why", "betekenis", "impact", "relevantie"]],
   ["pijler", ["Pillar","Pijler"], ["pijler", "pillar", "thema"]],
   ["bron",   ["Source","Bron"],   ["bron", "source", "nieuwsbrief"]],
+  ["mail",   ["Email","Mail"],    ["mail", "onderwerp", "subject"]],
   ["link",   ["Link","Link"],     ["link", "url"]],
 ];
 /* Copilot schrijft de pijler als woord; hier wordt het de sleutel die de app
@@ -7866,7 +7871,7 @@ function nwsParse(tekst) {
   const losseUrl = /(https?:\/\/[^\s<>"')]+)/.exec(tekst);
   return {
     title, what: secties.wat || "", why: secties.waarom || "",
-    pillar: nwsPijler(secties.pijler), source: secties.bron || "",
+    pillar: nwsPijler(secties.pijler), source: secties.bron || "", mail: secties.mail || "",
     url: (secties.link || (losseUrl ? losseUrl[1] : "")).replace(/[.,;]+$/, ""),
   };
 }
@@ -7931,7 +7936,8 @@ function newsAnalysisCard() {
         </span>
         ${n.what ? `<span class="xs" style="display:block;margin-top:3px;line-height:1.55">${esc(n.what)}</span>` : ""}
         ${n.why ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.55">${esc(n.why)}</span>` : ""}
-        ${n.source ? `<span class="xs mut" style="display:block;margin-top:2px;font-style:italic">${esc(n.source)}</span>` : ""}
+        ${n.source || n.mail ? `<span class="xs mut" style="display:block;margin-top:2px;font-style:italic">
+          ${esc([n.source, n.mail].filter(Boolean).join(" · "))}</span>` : ""}
       </span>
       ${n.status === "ignored"
         ? `<button class="btn sm ghost" data-act="nws-open" data-id="${n.id}" style="flex:0 0 auto">
@@ -7939,7 +7945,8 @@ function newsAnalysisCard() {
         : `<span class="row" style="gap:4px;flex:0 0 auto">
             <button class="btn sm outline" data-act="nws-save" data-id="${n.id}">
               ${ico("plus", "", 11)} ${esc(tr("nws_save"))}</button>
-            <button class="btn sm ghost" data-act="nws-ignore" data-id="${n.id}">${esc(tr("sg_ignore"))}</button>
+            <button class="btn sm ghost" data-act="nws-ignore" data-id="${n.id}">
+              ${ico("check", "", 11)} ${esc(tr("nws_read"))}</button>
           </span>`}
     </div></li>`;
 
@@ -7951,10 +7958,10 @@ function newsAnalysisCard() {
     </div>
     <div class="card-b"><p class="sug-d">${esc(tr("nws_d"))}</p>
       ${toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
-        : `<p class="xs mut">${esc(UI.nwsIgnored ? tr("sg_none_ignored") : tr("nws_none"))}</p>`}
+        : `<p class="xs mut">${esc(UI.nwsIgnored ? tr("nws_none_read") : tr("nws_none"))}</p>`}
       ${genegeerd.length || UI.nwsIgnored ? `<button class="btn sm ghost" data-act="nws-toggle" style="margin-top:9px;padding-left:0">
         ${ico(UI.nwsIgnored ? "chevup" : "chevdown", "", 12)} ${esc(UI.nwsIgnored
-          ? tr("sg_show_open", open.length) : tr("sg_show_ignored", genegeerd.length))}</button>` : ""}
+          ? tr("nws_show_open", open.length) : tr("nws_show_read", genegeerd.length))}</button>` : ""}
     </div></section>`;
 }
 
@@ -10986,7 +10993,7 @@ document.addEventListener("click", (e) => {
       articleDialog(null, {
         title: n.title, url: n.url || "", pillar: n.pillar,
         takeaway: n.why || n.what || "",
-        note: [n.what, n.why, n.source].filter(Boolean).join("\n\n"),
+        note: [n.what, n.why, [n.source, n.mail].filter(Boolean).join(" · ")].filter(Boolean).join("\n\n"),
         onSaved: (art) => { n.status = "saved"; n.articleId = art.id; save(); render(); },
       });
       break;
