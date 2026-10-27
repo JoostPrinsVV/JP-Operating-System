@@ -910,15 +910,16 @@ const STR = {
   tr_untitled:["Zonder titel","Zonder titel"],
   sg_head:["Copilot-analyse","Copilot-analyse"],
   sg_sub:["Mogelijk nog op te pakken taken","Mogelijk nog op te pakken taken"],
-  sg_d:["Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je aanmaakt of negeert komt niet opnieuw langs.",
-        "Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je aanmaakt of negeert komt niet opnieuw langs."],
+  sg_d:["Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je hier beoordeelt — aanmaken, al gedaan of niet voor jou — komt niet opnieuw langs.",
+        "Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je hier beoordeelt — aanmaken, al gedaan of niet voor jou — komt niet opnieuw langs."],
   sg_make:["Taak maken","Taak maken"],
-  sg_ignore:["Negeren","Negeren"],
+  sg_done:["Al gedaan","Al gedaan"],
+  sg_ignore:["Niet voor mij","Niet voor mij"],
+  sg_show_done:["{0} afgehandeld","{0} afgehandeld"],
   sg_back:["Terugzetten","Terugzetten"],
   sg_none:["Niets meer open. Maandagochtend staat er weer een nieuwe ronde.",
            "Niets meer open. Maandagochtend staat er weer een nieuwe ronde."],
-  sg_none_ignored:["Je hebt nog niets genegeerd.","Je hebt nog niets genegeerd."],
-  sg_show_ignored:["{0} genegeerd","{0} genegeerd"],
+  sg_none_ignored:["Je hebt nog niets afgehandeld.","Je hebt nog niets afgehandeld."],
   sg_show_open:["Terug naar de open voorstellen ({0})","Terug naar de open voorstellen ({0})"],
   tr_none:["Nog geen verslagen","Nog geen verslagen"],
   tr_none_open:["Alle acties staan op een lijst","Alle acties staan op een lijst"],
@@ -4013,12 +4014,22 @@ async function sugRead(dir) {
 
 /* De sectie onder je taken. Open voorstellen staan er; wat je hebt genegeerd
    is op te vragen, zodat een misklik niet definitief is. */
+/* Drie uitkomsten, want ze betekenen niet hetzelfde. "Al gedaan" zegt dat het
+   voorstel klopte en je voorlag; "niet voor mij" zegt dat het niet klopte. Voor
+   de lijst maakt het niets uit - allebei weg, allebei niet terug - maar samen
+   vertellen ze of deze analyse je iets oplevert of vooral ruis. */
+const SUG_AF = [
+  ["task",    ["Task made","Taak gemaakt"], "info"],
+  ["done",    ["Already done","Al gedaan"], "success"],
+  ["ignored", ["Not mine","Niet voor mij"], "neutral"],
+];
+
 function suggestionCard() {
   const alle = DB.suggestions || [];
   const open = alle.filter((s) => s.status === "open");
-  const genegeerd = alle.filter((s) => s.status === "ignored");
+  const af = alle.filter((s) => s.status !== "open");
   if (!alle.length) return "";
-  const toon = UI.sugIgnored ? genegeerd : open;
+  const toon = UI.sugIgnored ? af : open;
 
   const rij = (s) => `<li class="row" style="gap:10px;padding:9px 2px;align-items:flex-start">
     <span style="flex:1;min-width:0">
@@ -4026,12 +4037,17 @@ function suggestionCard() {
       ${s.why ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(s.why)}</span>` : ""}
       ${s.source ? `<span class="xs mut" style="display:block;margin-top:1px;font-style:italic">${esc(s.source)}</span>` : ""}
     </span>
-    ${s.status === "ignored"
-      ? `<button class="btn sm ghost" data-act="sug-open" data-id="${s.id}" style="flex:0 0 auto">
-          ${ico("back", "", 11)} ${esc(tr("sg_back"))}</button>`
+    ${s.status !== "open"
+      ? `<span class="row" style="gap:6px;flex:0 0 auto">
+          ${badge(SUG_AF, s.status)}
+          <button class="btn sm ghost" data-act="sug-open" data-id="${s.id}">
+            ${ico("back", "", 11)} ${esc(tr("sg_back"))}</button>
+        </span>`
       : `<span class="row" style="gap:4px;flex:0 0 auto">
           <button class="btn sm outline" data-act="sug-task" data-id="${s.id}">
             ${ico("plus", "", 11)} ${esc(tr("sg_make"))}</button>
+          <button class="btn sm ghost" data-act="sug-done" data-id="${s.id}">
+            ${ico("check", "", 11)} ${esc(tr("sg_done"))}</button>
           <button class="btn sm ghost" data-act="sug-ignore" data-id="${s.id}">${esc(tr("sg_ignore"))}</button>
         </span>`}
   </li>`;
@@ -4047,9 +4063,9 @@ function suggestionCard() {
       : `<p class="xs mut">${esc(UI.sugIgnored ? tr("sg_none_ignored") : tr("sg_none"))}</p>`) +
     /* De knop blijft ook staan als de genegeerde lijst leeg raakt doordat je
        het laatste voorstel terugzet; anders is er geen weg terug. */
-    (genegeerd.length || UI.sugIgnored ? `<button class="btn sm ghost" data-act="sug-toggle" style="margin-top:9px;padding-left:0">
+    (af.length || UI.sugIgnored ? `<button class="btn sm ghost" data-act="sug-toggle" style="margin-top:9px;padding-left:0">
       ${ico(UI.sugIgnored ? "chevup" : "chevdown", "", 12)} ${esc(UI.sugIgnored
-        ? tr("sg_show_open", open.length) : tr("sg_show_ignored", genegeerd.length))}</button>` : "") +
+        ? tr("sg_show_open", open.length) : tr("sg_show_done", af.length))}</button>` : "") +
     `</div></section>`;
 }
 
@@ -10990,10 +11006,12 @@ document.addEventListener("click", (e) => {
       } });
       break;
     }
+    case "sug-done":
     case "sug-ignore": {
       const s = (DB.suggestions || []).find((x) => x.id === id);
       if (!s) break;
-      s.status = "ignored"; save(); render();
+      s.status = act === "sug-done" ? "done" : "ignored";
+      save(); render();
       break;
     }
     case "sug-open": {
