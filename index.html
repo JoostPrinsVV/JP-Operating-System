@@ -51,6 +51,18 @@
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace;
   --rail:232px;
+
+  /* ---- beweging --------------------------------------------------------
+     Eén set tijden en één curve voor de hele app. Die curve begint snel en
+     landt zacht: een knop reageert meteen, maar niets komt met een klap tot
+     stilstand. Alles wat je aanraakt gebruikt --t-fast, alles wat vanzelf
+     gebeurt --t-base, en alleen wat binnenkomt of weggaat --t-slow.
+  --------------------------------------------------------------------- */
+  --ease:cubic-bezier(.22,1,.36,1);
+  --ease-soft:cubic-bezier(.4,0,.2,1);
+  --t-fast:.13s; --t-base:.2s; --t-slow:.3s;
+  /* De halo om wat focus heeft. Crimson, want dat is de kleur van het huis. */
+  --ring:color-mix(in srgb,var(--primary) 32%,transparent);
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
@@ -93,14 +105,27 @@ button,input,select,textarea{font:inherit;color:inherit}
 a{color:var(--info)}
 .tab{font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
-:focus-visible{outline:2px solid var(--info);outline-offset:2px;border-radius:4px}
+/* Toetsenbordfocus is geen bijzaak: dezelfde ring overal, in de huiskleur,
+   en nooit op een muisklik. */
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Wat binnenkomt, komt van onderen en net iets te klein - zo leest een
+   verandering als beweging in plaats van als een sprong. */
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
 
 /* ---- shell --------------------------------------------------------------
    The rail stays vertical at every width: full labels on desktop, an
    icon-only rail on medium screens, and a slide-over drawer on phones.
 ------------------------------------------------------------------------- */
-.app{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100%}
+.app{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100%;
+  transition:grid-template-columns var(--t-base) var(--ease)}
+/* Een tabblad wisselen is een overgang, geen omwisseling: de nieuwe pagina
+   komt van onderen op. Alleen bij een echte wisseling - binnen een pagina
+   tekent de app tientallen keren opnieuw en dan is beweging juist hinderlijk. */
+.v-in{animation:rise var(--t-slow) var(--ease)}
 .rail{position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;gap:4px;
   padding:14px 10px calc(14px + env(safe-area-inset-bottom,0px));overflow:hidden auto;
   background:linear-gradient(180deg,var(--navy) 0%,var(--navy-2) 100%);
@@ -161,7 +186,7 @@ a{color:var(--info)}
    the rail footer widens it to show each tab's name. The choice is stored.
 ------------------------------------------------------------------------- */
 :root{--rail:68px}
-.rail{padding-inline:9px;align-items:stretch;transition:none}
+.rail{padding-inline:9px;align-items:stretch;transition:padding var(--t-base) var(--ease)}
 .brand{justify-content:center;padding:7px 0}
 .brand-text,.nav-label,.who-t,.nav-txt,.rail-cap{display:none}
 .nav-btn{justify-content:center;padding:10px 0}
@@ -228,18 +253,28 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 .daypick input:checked+span{background:var(--ink);color:var(--surface);border-color:var(--ink);font-weight:500}
 .daypick input:focus-visible+span{outline:2px solid var(--primary);outline-offset:2px}
 
+/* Een knop moet aanvoelen als iets dat je indrukt: hij komt een haar omhoog
+   als je erboven hangt en zakt onder je vinger weg, met een schaduw die
+   meebeweegt. Het indrukken gaat sneller dan het loslaten - zo voelt het
+   mechanisch in plaats van traag. */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:34px;
   padding:0 13px;border-radius:9px;border:1px solid transparent;background:var(--primary);
   color:var(--primary-ink);font-size:13px;font-weight:500;cursor:pointer;letter-spacing:-.005em;
-  transition:filter .14s,background .14s,border-color .14s,transform .08s;white-space:nowrap;
-  box-shadow:0 1px 2px rgba(16,29,79,.14)}
-.btn:hover{filter:brightness(1.07)}
-.btn:active{transform:translateY(.5px)}
-.btn:disabled{opacity:.5;cursor:not-allowed;filter:none}
+  white-space:nowrap;box-shadow:0 1px 2px rgba(16,29,79,.14);
+  transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease),
+    filter var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.btn:hover{filter:brightness(1.06);transform:translateY(-1px);
+  box-shadow:0 4px 12px color-mix(in srgb,var(--primary) 28%,transparent)}
+.btn:active{transform:translateY(1px) scale(.985);box-shadow:0 1px 2px rgba(16,29,79,.14);
+  transition-duration:.06s}
+.btn:focus-visible{outline:none;box-shadow:0 0 0 3px var(--ring),0 1px 2px rgba(16,29,79,.14)}
+.btn:disabled{opacity:.5;cursor:not-allowed;filter:none;transform:none;box-shadow:none}
 .btn.ghost{background:none;color:var(--ink);border-color:transparent;box-shadow:none}
-.btn.ghost:hover{background:var(--surface-2);filter:none}
+.btn.ghost:hover{background:var(--surface-2);filter:none;transform:none;box-shadow:none}
 .btn.outline{background:var(--surface);color:var(--ink);border-color:var(--border);box-shadow:var(--shadow-xs)}
-.btn.outline:hover{background:var(--surface-2);filter:none;border-color:var(--ink-3)}
+.btn.outline:hover{background:var(--surface-2);filter:none;border-color:var(--ink-3);
+  transform:translateY(-1px);box-shadow:var(--shadow-sm)}
 .btn.navy{background:var(--navy);color:var(--navy-ink)}
 .btn.sm{height:29px;padding:0 10px;font-size:12px;border-radius:8px}
 .btn.icon{width:34px;padding:0}
@@ -258,9 +293,15 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 
 .field{display:flex;flex-direction:column;gap:5px}
 .lbl{font-size:11px;font-weight:500;color:var(--ink-2)}
-.inp{height:34px;padding:0 10px;border-radius:8px;border:1px solid var(--border);
-  background:var(--surface);color:var(--ink);font-size:13px;width:100%}
-.inp:focus{outline:2px solid var(--info);outline-offset:-1px;border-color:transparent}
+/* Geen harde omlijning bij focus maar een zachte halo: het veld zelf kleurt
+   mee en de rest van het venster blijft rustig. */
+.inp{height:34px;padding:0 10px;border-radius:9px;border:1px solid var(--border);
+  background:var(--surface);color:var(--ink);font-size:13px;width:100%;
+  transition:border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease)}
+.inp:hover:not(:focus){border-color:var(--ink-3)}
+.inp:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+.inp::placeholder{color:var(--ink-3)}
 textarea.inp{height:auto;padding:8px 10px;resize:vertical;line-height:1.5}
 select.inp{cursor:pointer;-webkit-appearance:none;appearance:none;
   background-image:linear-gradient(45deg,transparent 50%,var(--ink-3) 50%),linear-gradient(135deg,var(--ink-3) 50%,transparent 50%);
@@ -348,13 +389,17 @@ tbody tr:hover{background:var(--surface-2)}
 th button{background:none;border:0;cursor:pointer;color:inherit;font:inherit;display:inline-flex;
   align-items:center;gap:4px;text-transform:inherit;letter-spacing:inherit}
 
-dialog{border:0;padding:0;border-radius:14px;background:var(--surface);color:var(--ink);
+dialog{border:0;padding:0;border-radius:16px;background:var(--surface);color:var(--ink);
   box-shadow:var(--shadow-lg);width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 64px)}
+/* Een venster komt op, het verschijnt niet. De achtergrond vervaagt mee, zodat
+   de pagina eronder wegzakt in plaats van af te snijden. */
+dialog[open]{animation:pop var(--t-slow) var(--ease)}
+dialog[open]::backdrop{animation:fade var(--t-slow) var(--ease-soft)}
 dialog.wide{width:min(760px,calc(100vw - 32px))}
 /* In een venster staan de kaarten tegen elkaar aan; daar hoort geen tweede
    rand omheen, de kaart zelf is al een vlak. */
 dialog.wide .card{box-shadow:none}
-dialog::backdrop{background:rgba(16,29,79,.45);backdrop-filter:blur(2px)}
+dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturate(.9)}
 .dlg-h{padding:16px 52px 10px 16px;border-bottom:1px solid var(--border);position:relative}
 .dlg-t{font-size:15px;font-weight:600;letter-spacing:-.01em}
 /* Every dialog gets a visible way out - Escape does not exist on a touchscreen. */
@@ -814,8 +859,11 @@ a.btn{text-decoration:none}
 
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:100;
   display:flex;align-items:center;gap:12px;
-  background:var(--navy);color:var(--navy-ink);padding:9px 14px;border-radius:9px;
-  font-size:13px;box-shadow:var(--shadow-md);max-width:calc(100vw - 32px)}
+  background:var(--navy);color:var(--navy-ink);padding:10px 15px;border-radius:11px;
+  font-size:13px;box-shadow:var(--shadow-md);max-width:calc(100vw - 32px);
+  animation:toast-in var(--t-slow) var(--ease)}
+@keyframes toast-in{from{opacity:0;transform:translateX(-50%) translateY(14px)}
+  to{opacity:1;transform:translateX(-50%)}}
 .toast-undo{background:none;border:0;color:inherit;font:inherit;font-weight:600;
   cursor:pointer;padding:3px 8px;border-radius:6px;text-decoration:underline;
   text-underline-offset:2px;white-space:nowrap}
@@ -8581,6 +8629,7 @@ function setRailWide(wide) {
    is die naam juist nodig: daar is de titel het enige waaraan je de app
    tussen tien andere tabbladen terugkent. */
 const APP_NAAM = "My Intelligent Workspace";
+let LAST_VIEW = "";
 const LOS_VENSTER = (() => {
   try {
     return ["standalone", "window-controls-overlay", "minimal-ui"]
@@ -8613,7 +8662,15 @@ function render() {
   RENAMABLE = null;
 
   document.title = LOS_VENSTER ? viewLabel(UI.view) : `${viewLabel(UI.view)} · ${APP_NAAM}`;
-  $("#view").innerHTML = html;
+  const view = $("#view");
+  /* De animatie hoort bij het wisselen van pagina, niet bij elk hertekenen.
+     De klas moet er eerst af en de browser moet dat gezien hebben, anders
+     speelt dezelfde animatie niet opnieuw af. */
+  const gewisseld = `${UI.view}|${UI.detail ? UI.detail.id : ""}` !== LAST_VIEW;
+  LAST_VIEW = `${UI.view}|${UI.detail ? UI.detail.id : ""}`;
+  view.classList.remove("v-in");
+  view.innerHTML = html;
+  if (gewisseld) { void view.offsetWidth; view.classList.add("v-in"); }
   paintTimerPill();
   wireView();
 }
