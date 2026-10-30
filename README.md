@@ -20,6 +20,7 @@ gegevens blijven in de browser van de gebruiker en gaan nergens heen.
 | `icon-192.png`, `icon-512.png` | App-icoon |
 | `icon-maskable-512.png` | Icoon met marge, voor ronde/afgeronde maskers |
 | `apple-touch-icon.png`, `favicon-32.png` | iOS-startscherm en browsertabblad |
+| `fonts/` | IBM Plex Sans, de huisstijlletter — uit deze map, niet van een CDN |
 | `.nojekyll` | Zegt GitHub Pages de bestanden ongemoeid te laten |
 
 ---

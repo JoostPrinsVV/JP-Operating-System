@@ -11,13 +11,16 @@
    never leaves the browser; this file only caches the program.
    ========================================================================= */
 
-/* Verhoogd toen het logo veranderde: iconen worden cache-eerst geserveerd, dus
-   zonder nieuwe versie blijft de oude tegel in het startmenu staan. */
-const VERSION = "joost-os-v2";
+/* Verhoogd toen het logo veranderde, en opnieuw toen de huisstijlletter erbij
+   kwam: iconen en lettertypen worden cache-eerst geserveerd, dus zonder nieuwe
+   versie blijft de oude versie staan. */
+const VERSION = "joost-os-v3";
 const SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
+  "./fonts/IBMPlexSans-Regular.woff2",
+  "./fonts/IBMPlexSans-Bold.woff2",
   "./icon-192.png",
   "./icon-512.png",
   "./icon-maskable-512.png",
