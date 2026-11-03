@@ -365,19 +365,41 @@ select.inp{cursor:pointer;-webkit-appearance:none;appearance:none;
 .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .divide>*+*{border-top:1px solid var(--border)}
 
+/* ---- de taal van de cockpit ---------------------------------------------
+   Vier elementen die in de pitch terugkomen en die deze app dezelfde familie
+   geven: een mono-kopje in hoofdletters boven een titel, een kort pilaartje
+   als kaartmarkering, een gekleurd icoonvlak, en een stippentextuur op lege
+   vlakken. Samen maken ze het verschil tussen "netjes" en "van ons".
+------------------------------------------------------------------------- */
+.eyebrow-mono{display:block;font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--signal-text);margin-bottom:7px}
+/* Het pilaartje: altijd even dik, alleen in lengte, uiteinden rond. */
+.pilaar{display:block;width:34px;height:4px;border-radius:var(--r-pill);
+  background:var(--pil,var(--accent));margin-bottom:9px}
+.ico-tile{width:34px;height:34px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;
+  background:var(--it,var(--accent));color:#fff}
+.dots{background-image:radial-gradient(var(--border) 1px,transparent 1px);
+  background-size:18px 18px;background-position:-1px -1px}
+
 .page-h{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
-  flex-wrap:wrap;margin-bottom:20px}
-.page-t{font-size:24px;font-weight:600;letter-spacing:-.03em;text-wrap:balance;line-height:1.2}
-.page-d{font-size:12.5px;color:var(--ink-2);margin-top:5px;max-width:70ch;line-height:1.55}
+  flex-wrap:wrap;margin-bottom:22px;padding-bottom:16px;position:relative}
+/* De navy band met turquoise lijn eronder, zoals boven elke slide. */
+.page-h::after{content:"";position:absolute;inset:auto 0 0 0;height:3px;
+  background:linear-gradient(90deg,var(--navy) 0 64px,var(--accent) 64px 104px,var(--border) 104px)}
+.page-t{font-size:26px;font-weight:700;letter-spacing:-.03em;text-wrap:balance;line-height:1.18}
+.page-d{font-size:12.5px;color:var(--ink-2);margin-top:6px;max-width:70ch;line-height:1.55}
 
 .meter{height:7px;border-radius:999px;background:var(--surface-3);overflow:hidden;position:relative}
 .meter>i{display:block;height:100%;border-radius:999px;transition:width .55s cubic-bezier(0,0,.2,1)}
 .meter-mark{position:absolute;top:-3px;width:2px;height:13px;border-radius:2px;
   background:var(--ink);opacity:.45}
 
+/* Een leeg vlak is niet stuk, het is nog niet gevuld. De stippentextuur zegt
+   dat zonder woorden - dezelfde achtergrond als in de pitch. */
 .empty{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center;
-  padding:32px 18px;border:1px dashed var(--border);border-radius:var(--r-block);color:var(--ink-2);
-  background:color-mix(in srgb,var(--surface-2) 45%,transparent)}
+  padding:34px 18px;border:1px dashed var(--border);border-radius:var(--r-block);color:var(--ink-2);
+  background-image:radial-gradient(var(--border) 1px,transparent 1px);
+  background-size:18px 18px;background-position:-1px -1px}
 .empty b{color:var(--ink);font-weight:600;font-size:13px}
 
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:13px}
@@ -1568,6 +1590,8 @@ const STR = {
   nws_none_past:["Nog niets uit eerdere weken.","Nog niets uit eerdere weken."],
   nws_save:["Bewaren","Bewaren"],
   nws_read:["Gelezen","Gelezen"],
+  nws_tip:["Tip","Tip"],
+  nws_tip_d:["Hier een AI-tip van maken voor de auditteams","Hier een AI-tip van maken voor de auditteams"],
   nws_show_read:["{0} gelezen","{0} gelezen"],
   nws_none_read:["Je hebt nog niets als gelezen gemarkeerd.","Je hebt nog niets als gelezen gemarkeerd."],
   nws_none:["Niets meer open. Bij de volgende ronde staat er weer wat.",
@@ -3488,7 +3512,11 @@ function pageHead(title, desc, actions = "") {
   /* A name you chose wins over the one the page gives itself, so renaming the
      dashboard replaces the greeting rather than hiding under it. */
   const own = key ? String(((DB.profile || {}).viewNames || {})[key] || "").trim() : "";
+  /* Het mono-kopje zegt waar je bent, de titel zegt wat je ziet. Op een
+     detailpagina staat er geen tabblad achter, dus dan ook geen kopje. */
+  const plek = key ? viewLabel(key) : "";
   return `<div class="page-h"><div style="min-width:0">
+    ${plek && plek !== (own || title) ? `<span class="eyebrow-mono">${esc(plek)}</span>` : ""}
     <h1 class="page-t${key ? " page-t-edit" : ""}">${esc(own || title)}${key
       ? `<button class="page-pen" data-act="rename-view" data-v="${key}"
           title="${esc(tr("v_rename"))}" aria-label="${esc(tr("v_rename"))}">${ico("pencil", "", 13)}</button>` : ""}</h1>
@@ -3514,10 +3542,19 @@ function renameViewDialog(v) {
     },
   });
 }
-const card = (title, body, desc = "", actions = "") => `<section class="card">
-  <div class="card-h"><div><h2 class="card-t">${esc(title)}</h2>
+/* Elke kaart draagt een pilaartje in de kleur van zijn onderwerp. Niet één
+   kleur voor alles: zo leest een pagina met zes kaarten als zes dingen in
+   plaats van als zes blokken. */
+let CARD_PIL = 0;
+const PIL_KLEUREN = ["var(--accent)", "var(--c1)", "var(--vv-petrolblauw)", "var(--signal)"];
+const card = (title, body, desc = "", actions = "") => {
+  const kleur = PIL_KLEUREN[CARD_PIL++ % PIL_KLEUREN.length];
+  return `<section class="card">
+  <div class="card-h"><div><span class="pilaar" style="--pil:${kleur}"></span>
+  <h2 class="card-t">${esc(title)}</h2>
   ${desc ? `<p class="card-d">${esc(desc)}</p>` : ""}</div>${actions}</div>
   <div class="card-b">${body}</div></section>`;
+};
 const empty = (title, desc = "", action = "") =>
   `<div class="empty"><b>${esc(title)}</b>${desc ? `<span class="xs">${esc(desc)}</span>` : ""}${action}</div>`;
 
@@ -3991,8 +4028,12 @@ function planningCard() {
  *   filter = { act, v, on }
  */
 function tile(label, value, unit, hint, icon, accent, filter) {
+  /* Het icoon zit in een gekleurd vlak, zoals in de cockpit: dat maakt van een
+     rij getallen een rij herkenbare dingen. */
   const inner = `
-    <div class="row spread"><span class="tile-l">${esc(label)}</span><span class="mut">${ico(icon, "", 14)}</span></div>
+    <div class="row spread" style="align-items:flex-start;gap:10px">
+      <span class="tile-l">${esc(label)}</span>
+      <span class="ico-tile" style="--it:${accent || "var(--ink-3)"}">${ico(icon, "", 16)}</span></div>
     <div class="row" style="align-items:baseline;gap:4px"><span class="tile-v tab">${esc(value)}</span>
     ${unit ? `<span class="tile-u">${esc(unit)}</span>` : ""}</div>
     ${filter
@@ -7978,9 +8019,10 @@ function tipsCard() {
 }
 
 function tipDialog(tip, defaults) {
+  const { onSaved, ...voor } = defaults || {};
   const t = tip || { title: "", tool: "Copilot", kind: "tip", body: "", why: "",
     status: "draft", plannedFor: "", sentAt: "", channel: "teams", audience: "", notes: "",
-    ...(defaults || {}) };
+    ...voor };
   const tools = [...new Set([...TIP_TOOLS, ...DB.tips.map((x) => x.tool).filter(Boolean)])];
 
   openDialog({
@@ -8019,7 +8061,11 @@ function tipDialog(tip, defaults) {
       const wasSent = tip && tip.status === "sent";
       patch.status = wasSent ? "sent" : planned ? "planned" : "draft";
       if (tip) Object.assign(tip, patch);
-      else DB.tips.push({ id: uid(), createdAt: new Date().toISOString(), sentAt: "", ...patch });
+      else {
+        const nieuw = { id: uid(), createdAt: new Date().toISOString(), sentAt: "", ...patch };
+        DB.tips.push(nieuw);
+        if (onSaved) onSaved(nieuw);
+      }
       save(); render(); toast(tip ? tr("ti_saved") : tr("ti_added"));
     },
   });
@@ -8219,6 +8265,8 @@ function newsAnalysisCard() {
         : `<span class="row" style="gap:4px;flex:0 0 auto">
             <button class="btn sm outline" data-act="nws-save" data-id="${n.id}">
               ${ico("plus", "", 11)} ${esc(tr("nws_save"))}</button>
+            <button class="btn sm ghost" data-act="nws-tip" data-id="${n.id}"
+              title="${esc(tr("nws_tip_d"))}">${ico("bulb", "", 11)} ${esc(tr("nws_tip"))}</button>
             <button class="btn sm ghost" data-act="nws-ignore" data-id="${n.id}">
               ${ico("check", "", 11)} ${esc(tr("nws_read"))}</button>
           </span>`}
@@ -8838,6 +8886,9 @@ const LOS_VENSTER = (() => {
 function render() {
   // Catches a tab switched off while it was the one last opened.
   if (!viewOn(UI.view)) UI.view = "dashboard";
+  // Elke pagina begint de kleurvolgorde van de pilaartjes opnieuw, zodat
+  // dezelfde pagina er elke keer hetzelfde uitziet.
+  CARD_PIL = 0;
   renderRail();
   const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
     (!document.documentElement.getAttribute("data-theme") &&
@@ -11307,6 +11358,20 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "nws-view": UI.nwsView = el.dataset.v; render(); break;
+    /* Van nieuws naar tip: jouw ronde langs het nieuws en je tip van de week
+       stonden los van elkaar, terwijl het ene meestal het andere oplevert.
+       De eerstvolgende lege leesdag staat alvast ingevuld. */
+    case "nws-tip": {
+      const n = (DB.news || []).find((x) => x.id === id);
+      if (!n) break;
+      const vrij = tipSlots(8).find((d) => !tipsOn(d).length) || "";
+      tipDialog(null, {
+        title: n.title, why: n.why || n.what || "", plannedFor: vrij,
+        notes: [n.what, n.source, n.url].filter(Boolean).join("\n"),
+        onSaved: () => { n.status = "saved"; save(); render(); },
+      });
+      break;
+    }
     case "copy-link": {
       const mt = DB.meetings.find((x) => x.id === id);
       if (!mt || !mt.onlineUrl) break;
