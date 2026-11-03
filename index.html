@@ -497,6 +497,23 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
 .prj-f .ico{opacity:.75}
 .prj-dot{width:10px;height:10px;border-radius:var(--r-pill);flex:0 0 auto}
 
+/* Tijdlijn: één lijn met stippen eraan. De lijn loopt door, de stippen zijn
+   de momenten - zo lees je een project als een verhaal in plaats van als vier
+   losse lijstjes. */
+.tl{position:relative;padding-left:24px}
+.tl::before{content:"";position:absolute;left:5px;top:10px;bottom:10px;width:1px;background:var(--border)}
+.tl-i{position:relative;display:block;width:100%;text-align:left;border:0;background:none;
+  color:inherit;font:inherit;padding:9px 6px 9px 0;cursor:pointer;border-radius:var(--r-input);
+  transition:background var(--t-fast) var(--ease)}
+.tl-i:hover{background:var(--surface-2)}
+.tl-i::before{content:"";position:absolute;left:-24px;top:13px;width:11px;height:11px;
+  border-radius:var(--r-pill);background:var(--surface);border:2px solid var(--tl,var(--ink-3))}
+.tl-i.vol::before{background:var(--tl,var(--ink-3))}
+.tl-d{font-size:10.5px;color:var(--ink-3);letter-spacing:.02em;text-transform:uppercase;font-weight:700}
+.tl-t{display:block;font-size:12.5px;line-height:1.45;margin-top:1px}
+.tl-n{display:block;font-size:11px;color:var(--ink-2);line-height:1.5;margin-top:3px;
+  white-space:pre-wrap}
+
 /* De kop van een bronlijst is een knop, maar moet eruitzien als een kop. */
 .src-head{display:flex;align-items:flex-start;gap:9px;background:none;border:0;padding:0;
   cursor:pointer;color:inherit;text-align:left}
@@ -1317,8 +1334,12 @@ const STR = {
   pr_hours_total:["Samen {0} op dit project","Samen {0} op dit project"],
   pr_addhours:["Uren boeken","Uren boeken"],
   pr_addmeeting:["Overleg toevoegen","Overleg toevoegen"],
-  pr_meetings_d:["Alles wat hierover is besproken, met het verslag als dat er is.",
-                 "Alles wat hierover is besproken, met het verslag als dat er is."],
+  pr_timeline:["Tijdlijn","Tijdlijn"],
+  pr_timeline_d:["Wat er gebeurde, op volgorde. Overleg en besluiten, taken die af kwamen, ideeën die eruit voortkwamen.",
+                 "Wat er gebeurde, op volgorde. Overleg en besluiten, taken die af kwamen, ideeën die eruit voortkwamen."],
+  pr_deadline_tl:["Deadline van dit project","Deadline van dit project"],
+  pr_tl_done:["Afgerond: {0}","Afgerond: {0}"],
+  pr_tl_idea:["Idee: {0}","Idee: {0}"],
   pr_new:["New project","Nieuw project"], pr_none:["No projects yet","Nog geen projecten"],
   pr_none_d:["Create one directly, or promote an idea from the brain dump.",
              "Maak er direct een, of promoveer een idee vanuit Ideeën."],
@@ -7708,6 +7729,50 @@ function viewGoalDetail(id) {
 }
 
 /* ---- project detail ---------------------------------------------------- */
+/* De tijdlijn van een project: wat er gebeurde, op volgorde. Bewust niet elk
+   uur dat je boekte - dat staat al in zijn eigen kaart en het zou het verhaal
+   verdrinken. Wel de momenten die iets veranderden: een overleg, een besluit,
+   een taak die af kwam, een idee dat eruit voortkwam. */
+const TL_SOORT = {
+  deadline: { kleur: "var(--signal)", act: "edit-project" },
+  meeting:  { kleur: "var(--c1)",     act: "open-meeting" },
+  task:     { kleur: "var(--success)",act: "edit-task" },
+  idea:     { kleur: "var(--c3)",     act: "" },
+};
+function projectTimeline(p) {
+  const items = [];
+  if (p.deadline && p.status !== "done" && p.deadline >= TODAY()) {
+    items.push({ at: p.deadline, kind: "deadline", id: p.id, title: tr("pr_deadline_tl"), toekomst: true });
+  }
+  DB.meetings.filter((m) => m.projectId === p.id).forEach((m) => items.push({
+    at: String(m.startsAt).slice(0, 10), kind: "meeting", id: m.id, title: m.title,
+    note: String(m.decisions || "").trim(),
+    merk: trForMeeting(m) ? tr("tr_card") : "",
+    toekomst: String(m.startsAt).slice(0, 10) > TODAY(),
+  }));
+  DB.tasks.filter((t) => t.projectId === p.id && t.status === "done" && t.completedAt)
+    .forEach((t) => items.push({ at: String(t.completedAt).slice(0, 10), kind: "task", id: t.id,
+      title: tr("pr_tl_done", t.title) }));
+  DB.ideas.filter((i) => i.projectId === p.id && i.createdAt)
+    .forEach((i) => items.push({ at: String(i.createdAt).slice(0, 10), kind: "idea", id: i.id,
+      title: tr("pr_tl_idea", i.title) }));
+
+  if (!items.length) return "";
+  items.sort((a, b) => b.at.localeCompare(a.at));
+
+  const rij = (x) => {
+    const s = TL_SOORT[x.kind] || {};
+    const klik = s.act ? `data-act="${s.act}" data-id="${esc(x.id)}"` : "";
+    return `<${s.act ? "button" : "span"} class="tl-i ${x.toekomst ? "" : "vol"}"
+      style="--tl:${s.kleur}" ${klik}>
+      <span class="tl-d">${esc(fmtDate(x.at))}${x.merk ? ` · ${esc(x.merk)}` : ""}</span>
+      <span class="tl-t">${esc(x.title)}</span>
+      ${x.note ? `<span class="tl-n">${esc(truncate(x.note, 220))}</span>` : ""}
+    </${s.act ? "button" : "span"}>`;
+  };
+  return card(tr("pr_timeline"), `<div class="tl">${items.map(rij).join("")}</div>`, tr("pr_timeline_d"));
+}
+
 function viewProjectDetail(id) {
   const p = DB.projects.find((x) => x.id === id);
   if (!p) return empty(tr("not_found"));
@@ -7746,6 +7811,7 @@ function viewProjectDetail(id) {
         ? `<div>${open.map((t) => taskRow(t, { hideProject: true })).join("")}</div>`
         : empty(tr("pr_notasks"), tr("pr_notasks_d")),
         "", `<button class="btn sm ghost" data-act="new-task" data-project="${p.id}">${ico("plus", "", 13)} ${esc(tr("pr_addtask"))}</button>`)}
+      ${projectTimeline(p)}
       ${done.length ? card(`${tr("pr_completed")} (${done.length})`,
         `<div>${done.slice(0, 15).map((t) => taskRow(t, { hideProject: true })).join("")}</div>`) : ""}
     </div>
@@ -7757,16 +7823,6 @@ function viewProjectDetail(id) {
         <p class="eyebrow">${esc(tr("pr_dep"))}</p>
         <p class="xs mut" style="white-space:pre-wrap;line-height:1.6;margin:3px 0 0">${esc(p.dependencies) || tr("pr_none_rec")}</p>
         ${p.owner ? `<p class="eyebrow" style="margin-top:10px">${esc(tr("pr_owner"))}</p><p class="xs">${esc(p.owner)}</p>` : ""}`)}
-      ${meetings.length ? card(tr("pr_meetings"), `<ul class="divide">${meetings.map((m) => {
-        const verslag = trForMeeting(m);
-        return `<li><button class="tsk-t" data-act="open-meeting" data-id="${m.id}" style="padding:8px 0">
-          <span class="sm2 trunc" style="display:block">${esc(m.title)}</span>
-          <span class="row wrap xs mut" style="gap:4px 9px;margin-top:2px">
-            <span class="tab">${esc(fmtDateTime(m.startsAt))}</span>
-            ${verslag ? `<span class="row" style="gap:4px;color:var(--accent-text)">${ico("mic", "ico", 11)}${esc(tr("tr_card"))}</span>` : ""}
-            ${(m.attendees || []).length ? `<span class="row" style="gap:4px">${ico("users", "ico", 11)}${m.attendees.length}</span>` : ""}
-          </span></button></li>`;
-      }).join("")}</ul>`, tr("pr_meetings_d")) : ""}
       ${uren.length ? card(tr("pr_hours"), `<ul class="divide">${uren
         .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((e) =>
         `<li class="row spread" style="gap:10px;padding:7px 0">
