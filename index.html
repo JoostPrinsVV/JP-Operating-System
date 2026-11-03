@@ -1312,6 +1312,13 @@ const STR = {
   pr_nodomain:["Not sorted yet","Nog niet ingedeeld"],
   pr_count:["projects","projecten"],
   pr_f_open:["Lopend","Lopend"], pr_f_done:["Afgerond","Afgerond"],
+  pr_hours:["Uren erin","Uren erin"],
+  pr_hours_h:["over {0} regels","over {0} regels"],
+  pr_hours_total:["Samen {0} op dit project","Samen {0} op dit project"],
+  pr_addhours:["Uren boeken","Uren boeken"],
+  pr_addmeeting:["Overleg toevoegen","Overleg toevoegen"],
+  pr_meetings_d:["Alles wat hierover is besproken, met het verslag als dat er is.",
+                 "Alles wat hierover is besproken, met het verslag als dat er is."],
   pr_new:["New project","Nieuw project"], pr_none:["No projects yet","Nog geen projecten"],
   pr_none_d:["Create one directly, or promote an idea from the brain dump.",
              "Maak er direct een, of promoveer een idee vanuit Ideeën."],
@@ -7708,20 +7715,30 @@ function viewProjectDetail(id) {
   const tasks = DB.tasks.filter((t) => t.projectId === id);
   const open = tasks.filter((t) => t.status !== "done").sort((a, b) => scoreTask(b) - scoreTask(a));
   const done = tasks.filter((t) => t.status === "done");
-  const meetings = DB.meetings.filter((m) => m.projectId === id);
+  const meetings = DB.meetings.filter((m) => m.projectId === id)
+    .sort((a, b) => String(b.startsAt).localeCompare(String(a.startsAt)));
   const ideas = DB.ideas.filter((i) => i.projectId === id);
+  const uren = DB.timeEntries.filter((e) => e.projectId === id);
+  const minuten = uren.reduce((s, e) => s + (e.minutes || 0), 0);
   const health = meta(HEALTH, p.health);
   const od = p.status !== "done" && overdue(p.deadline);
+  const dom = PDOMAINS.find(([k]) => k === pDomain(p));
 
   return `<button class="btn sm ghost" data-nav="projects" style="margin-bottom:8px;padding-left:0">${ico("back", "", 13)} ${esc(tr("pr_back"))}</button>` +
   pageHead(p.name, p.objective,
-    `${badge(PSTAT, p.status)}<span class="badge ${health[2]}">${esc(lbl(health[1]))}</span>
+    `${dom ? `<span class="badge neutral"><i class="prj-dot" style="background:${dom[2]};width:7px;height:7px"></i>${esc(lbl(dom[1]))}</span>` : ""}
+     ${badge(PSTAT, p.status)}<span class="badge ${health[2]}">${esc(lbl(health[1]))}</span>
      <button class="btn sm outline" data-act="edit-project" data-id="${p.id}">${ico("pencil")} ${esc(tr("edit"))}</button>`) +
   `<div class="tiles" style="margin-bottom:14px">
-    ${tile(tr("s_w_str"), `${p.strategicValue}/5`, "", "", "goals")}
-    ${tile(tr("dl_due"), p.deadline ? fmtDate(p.deadline) : "—", "", od ? tr("overdue_p") : "", "clock")}
     ${tile(tr("g_opentasks"), open.length, "", tr("pr_ndone", done.length), "tasks")}
-    ${tile(tr("dl_goal"), g ? g.code : "—", "", g ? g.title.slice(0, 28) : tr("pr_notlinked"), "goals")}
+    ${tile(tr("pr_hours"), minuten ? fmtH(minuten) : "—", "", tr("pr_hours_h", uren.length), "timer")}
+    ${tile(tr("dl_due"), p.deadline ? fmtDate(p.deadline) : "—", "", od ? tr("overdue_p") : "", "clock")}
+    ${tile(tr("dl_goal"), g ? g.code : "—", "", g ? truncate(g.title, 28) : tr("pr_notlinked"), "goals")}
+  </div>
+  <div class="row wrap" style="gap:8px;margin-bottom:16px">
+    <button class="btn sm outline" data-act="new-task" data-project="${p.id}">${ico("plus", "", 13)} ${esc(tr("pr_addtask"))}</button>
+    <button class="btn sm outline" data-act="proj-hours" data-id="${p.id}">${ico("timer", "", 13)} ${esc(tr("pr_addhours"))}</button>
+    <button class="btn sm outline" data-act="proj-meeting" data-id="${p.id}">${ico("meetings", "", 13)} ${esc(tr("pr_addmeeting"))}</button>
   </div>
   <div class="grid split">
     <div class="grid">
@@ -7740,10 +7757,25 @@ function viewProjectDetail(id) {
         <p class="eyebrow">${esc(tr("pr_dep"))}</p>
         <p class="xs mut" style="white-space:pre-wrap;line-height:1.6;margin:3px 0 0">${esc(p.dependencies) || tr("pr_none_rec")}</p>
         ${p.owner ? `<p class="eyebrow" style="margin-top:10px">${esc(tr("pr_owner"))}</p><p class="xs">${esc(p.owner)}</p>` : ""}`)}
-      ${meetings.length ? card(tr("pr_meetings"), `<ul class="divide">${meetings.map((m) =>
-        `<li><button class="tsk-t" data-act="open-meeting" data-id="${m.id}" style="padding:7px 0">
-          <span class="xs trunc" style="display:block">${esc(m.title)}</span>
-          <span class="xs mut">${esc(fmtDateTime(m.startsAt))}</span></button></li>`).join("")}</ul>`) : ""}
+      ${meetings.length ? card(tr("pr_meetings"), `<ul class="divide">${meetings.map((m) => {
+        const verslag = trForMeeting(m);
+        return `<li><button class="tsk-t" data-act="open-meeting" data-id="${m.id}" style="padding:8px 0">
+          <span class="sm2 trunc" style="display:block">${esc(m.title)}</span>
+          <span class="row wrap xs mut" style="gap:4px 9px;margin-top:2px">
+            <span class="tab">${esc(fmtDateTime(m.startsAt))}</span>
+            ${verslag ? `<span class="row" style="gap:4px;color:var(--accent-text)">${ico("mic", "ico", 11)}${esc(tr("tr_card"))}</span>` : ""}
+            ${(m.attendees || []).length ? `<span class="row" style="gap:4px">${ico("users", "ico", 11)}${m.attendees.length}</span>` : ""}
+          </span></button></li>`;
+      }).join("")}</ul>`, tr("pr_meetings_d")) : ""}
+      ${uren.length ? card(tr("pr_hours"), `<ul class="divide">${uren
+        .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((e) =>
+        `<li class="row spread" style="gap:10px;padding:7px 0">
+          <span class="xs" style="flex:1;min-width:0">
+            <span class="tab mut">${esc(fmtDate(e.date))}</span>
+            ${e.description ? ` · ${esc(truncate(e.description, 48))}` : ""}</span>
+          <span class="xs tab" style="flex:0 0 auto">${esc(fmtH(e.minutes))}</span>
+        </li>`).join("")}</ul>
+        <p class="xs mut" style="margin-top:9px">${esc(tr("pr_hours_total", fmtH(minuten)))}</p>`) : ""}
       ${ideas.length ? card(tr("pr_ideas"), `<ul class="grid" style="gap:5px">${ideas.map((i) =>
         `<li class="xs">${esc(i.title)}</li>`).join("")}</ul>`) : ""}
     </div></div>`;
@@ -8994,9 +9026,10 @@ function projectDialog(project) {
   });
 }
 
-function meetingDialog(meeting) {
+function meetingDialog(meeting, defaults) {
   const m = meeting || { title: "", kind: "other", startsAt: new Date().toISOString().slice(0, 16),
-    endsAt: "", location: "", attendees: [], agenda: "", notes: "", decisions: "", projectId: "" };
+    endsAt: "", location: "", attendees: [], agenda: "", notes: "", decisions: "", projectId: "",
+    ...(defaults || {}) };
   openDialog({
     title: meeting ? tr("dl_meet_edit") : tr("dl_meet_new"),
     desc: tr("dl_meet_d"),
@@ -9616,7 +9649,7 @@ function bulkPlanDialog(pre = {}) {
 
 /* Manual entry: you forget the timer, and the week still has to be right. */
 function entryDialog(entry, defaults) {
-  const e = entry || { date: TODAY(), clientId: "", engagement: "intern",
+  const e = entry || { date: TODAY(), clientId: "", engagement: "intern", projectId: "",
     description: "", minutes: 60, billable: false, ...(defaults || {}) };
   const h = Math.floor(e.minutes / 60), m = e.minutes % 60;
   const pause = Number(e.pauseMinutes) || 0;
@@ -9648,6 +9681,7 @@ function entryDialog(entry, defaults) {
           list: DB.clients.map((c) => c.name), placeholder: tr("h_noclient") }))}
         ${field(tr("p_engagement"), combo({ id: "e-eng", name: "engagementName",
           value: engLabel(e.engagement), list: allEngagements().map(([, l]) => l) }))}
+        ${field(tr("th_project"), `<select class="inp" name="projectId">${projOptions(e.projectId || "")}</select>`)}
       </div>
       <p class="xs mut" id="e-span">${esc(tr("h_span_hint"))}</p>` +
       `<label class="row" style="gap:8px">
@@ -9663,6 +9697,8 @@ function entryDialog(entry, defaults) {
       const startedAt = stampAt(f.date, f.startTime);
       const patch = { date: f.date, clientId: resolveClient(f.clientName),
         engagement: resolveEngagement(f.engagementName),
+        // Intern werk hangt aan een project, niet aan een klant.
+        projectId: f.projectId || null,
         description: f.description, minutes: mins, billable: f.billable === "on",
         startedAt, endedAt: startedAt ? stampAt(f.date, f.startTime, mins + pauseMin) : "",
         pauseMinutes: startedAt ? pauseMin : 0 };
@@ -11460,6 +11496,10 @@ document.addEventListener("click", (e) => {
     case "edit-week": weekDialog(DB.planning.find((x) => x.id === id)); break;
     case "plan-bulk": bulkPlanDialog(); break;
     case "proj-filter": (UI.projFilter = UI.projFilter || {}).status = el.dataset.v; render(); break;
+    /* Uren en overleg vanaf de projectpagina: dan staat het project er al in
+       en hoef je het niet opnieuw te kiezen. */
+    case "proj-hours": entryDialog(null, { projectId: id, engagement: "intern" }); break;
+    case "proj-meeting": meetingDialog(null, { projectId: id }); break;
     case "plan-past": UI.planPast = !UI.planPast; render(); break;
     case "eng-types": engTypesDialog(); break;
     /* Het venster waar je vandaan komt wordt hier vastgelegd, vóór het
