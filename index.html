@@ -483,6 +483,20 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
 /* De status staat vooraan in de regel eronder, met een stip ervoor. Geen
    badge erbij rechts: die kant draagt al de prioriteit en de urgentie, en een
    derde label maakt van een lijst een legenda. */
+/* Een projecttegel: de hele kaart is de knop, met een kleurstreep bovenaan
+   die zegt in welk domein hij hoort. */
+.prj{position:relative;overflow:hidden;transition:border-color var(--t-fast) var(--ease)}
+.prj::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--prj)}
+.prj:hover{border-color:var(--prj)}
+.prj-b{display:flex;flex-direction:column;gap:9px;width:100%;height:100%;text-align:left;
+  padding:16px 15px 13px;border:0;background:none;color:inherit;cursor:pointer;font:inherit}
+.prj-n{font-size:13.5px;font-weight:700;line-height:1.35;letter-spacing:-.01em}
+.prj-f{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  border-top:1px solid var(--border);padding-top:10px;margin-top:2px;
+  font-size:11px;color:var(--ink-2)}
+.prj-f .ico{opacity:.75}
+.prj-dot{width:10px;height:10px;border-radius:var(--r-pill);flex:0 0 auto}
+
 /* De kop van een bronlijst is een knop, maar moet eruitzien als een kop. */
 .src-head{display:flex;align-items:flex-start;gap:9px;background:none;border:0;padding:0;
   cursor:pointer;color:inherit;text-align:left}
@@ -1293,7 +1307,11 @@ const STR = {
   g_notasks:["No open tasks for this goal","Geen open taken voor dit doel"],
   g_notasks_d:["A goal with no tasks against it will not move on its own.",
                "Een doel zonder taken beweegt niet vanzelf."],
-  pr_sub:["{0} open · grouped by status","{0} lopend · gegroepeerd op status"],
+  pr_sub:["{0} running · grouped by domain","{0} lopend · gegroepeerd op domein"],
+  pr_domain:["Domain","Domein"],
+  pr_nodomain:["Not sorted yet","Nog niet ingedeeld"],
+  pr_count:["projects","projecten"],
+  pr_f_open:["Lopend","Lopend"], pr_f_done:["Afgerond","Afgerond"],
   pr_new:["New project","Nieuw project"], pr_none:["No projects yet","Nog geen projecten"],
   pr_none_d:["Create one directly, or promote an idea from the brain dump.",
              "Maak er direct een, of promoveer een idee vanuit Ideeën."],
@@ -2347,6 +2365,20 @@ const STATUSES = [
    zijn naam - een nog feller rood bestaat niet en zou ook niets toevoegen. */
 const PRIOS = [["low",["Low","Laag"],"success"],["medium",["Medium","Normaal"],"warning"],
   ["high",["High","Hoog"],"danger"],["critical",["Critical","Kritiek"],"danger"]];
+/* ---- waar een project thuishoort ----------------------------------------
+   Je werkt niet meer voor klanten maar binnen het huis, en dan is de vraag
+   niet "van wie is dit" maar "waar hoort dit". Drie domeinen, elk met een
+   merkkleur, zodat je projectenpagina in één blik leest. Wat nog niet is
+   ingedeeld valt onderaan, en wordt niet stilletjes ergens bij gezet.
+------------------------------------------------------------------------- */
+const PDOMAINS = [
+  ["audit",            ["Audit","Audit"],                         "var(--vv-petrolblauw)"],
+  ["interdisciplinair",["Interdisciplinary","Interdisciplinair"], "var(--vv-turquoise)"],
+  ["intern",           ["Internal","Intern & vakgroep"],          "var(--vv-donkerblauw)"],
+];
+const pDomain = (p) => (PDOMAINS.find(([k]) => k === p.domain) ? p.domain : "");
+const pDomainColor = (k) => (PDOMAINS.find(([v]) => v === k) || [])[2] || "var(--ink-3)";
+
 const PSTAT = [["idea",["Idea","Idee"],"neutral"],["planning",["Planning","In voorbereiding"],"info"],
   ["active",["Active","Actief"],"success"],["blocked",["Blocked","Geblokkeerd"],"danger"],
   ["done",["Done","Klaar"],"neutral"]];
@@ -3290,6 +3322,7 @@ const UI = {
   planPast: false,       // toont ook de weken die al voorbij zijn
   knowOpen: {},          // welke bronlijsten dichtgeklapt staan
   nwsView: "open",       // "open" deze week, "read" afgevinkt, "past" eerdere weken
+  projFilter: { status: "open" },
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -4408,39 +4441,73 @@ function milestoneList(goalId) {
 }
 
 /* ---- projects ---------------------------------------------------------- */
+/* Eén tegel. Hij draagt alles wat je nodig hebt om te besluiten of je hem
+   opent: waar hij staat, hoe hij ervoor staat, hoeveel er nog ligt, en wanneer
+   hij af moet. De kleurstreep bovenaan is het domein. */
+function projectTile(p) {
+  const g = DB.goals.find((x) => x.id === p.goalId);
+  const risky = p.health === 2 || p.status === "blocked";
+  const od = p.status !== "done" && overdue(p.deadline);
+  const taken = DB.tasks.filter((t) => t.projectId === p.id);
+  const open = taken.filter((t) => t.status !== "done").length;
+  const overleg = DB.meetings.filter((m) => m.projectId === p.id).length;
+  const uren = DB.timeEntries.filter((e) => e.projectId === p.id)
+    .reduce((s, e) => s + (e.minutes || 0), 0);
+
+  return `<article class="card prj" style="--prj:${pDomainColor(pDomain(p))}">
+    <button class="prj-b" data-act="open-project" data-id="${p.id}">
+      <span class="row spread" style="align-items:flex-start;gap:8px">
+        <span class="prj-n">${esc(p.name)}</span>
+        ${risky ? `<span style="color:var(--warning);flex:0 0 auto" title="${esc(lbl(meta(HEALTH, p.health)[1]))}">${ico("alert", "", 15)}</span>` : ""}
+      </span>
+      ${p.objective ? `<span class="xs mut" style="display:block;line-height:1.55">${esc(truncate(p.objective, 120))}</span>` : ""}
+      <span class="row wrap" style="gap:5px;margin-top:auto">
+        ${badge(PSTAT, p.status)}
+        ${g ? `<span class="badge" style="color:${slotColor(g.slot)};border-color:color-mix(in srgb,${slotColor(g.slot)} 30%,transparent);background:none">
+          <i style="width:6px;height:6px;border-radius:2px;background:${slotColor(g.slot)};display:inline-block"></i>${esc(g.code)}</span>` : ""}
+      </span>
+      <span class="prj-f">
+        <span class="row" style="gap:12px">
+          ${open ? `<span class="row" style="gap:4px">${ico("tasks", "ico", 12)}${open}</span>` : ""}
+          ${overleg ? `<span class="row" style="gap:4px">${ico("meetings", "ico", 12)}${overleg}</span>` : ""}
+          ${uren ? `<span class="row" style="gap:4px">${ico("timer", "ico", 12)}${esc(fmtH(uren))}</span>` : ""}
+        </span>
+        <span ${od ? 'style="color:var(--signal-text);font-weight:700"' : ""}>${p.deadline
+          ? `${esc(tr("th_due"))} ${esc(fmtDate(p.deadline))}` : tr("pr_nodl")}</span>
+      </span>
+    </button></article>`;
+}
+
 function viewProjects() {
   const open = DB.projects.filter((p) => p.status !== "done").length;
+  const f = UI.projFilter || (UI.projFilter = { status: "open" });
+  const zichtbaar = DB.projects.filter((p) =>
+    f.status === "all" ? true : f.status === "done" ? p.status === "done" : p.status !== "done");
+
+  /* Gegroepeerd op domein, en niet op status: je werkt binnen een domein, en
+     de status staat al op de tegel. Wat niet is ingedeeld komt onderaan. */
+  const groepen = [...PDOMAINS.map(([k, l]) => [k, lbl(l)]), ["", tr("pr_nodomain")]]
+    .map(([k, naam]) => ({ k, naam, items: zichtbaar.filter((p) => pDomain(p) === k) }))
+    .filter((grp) => grp.items.length);
+
   return pageHead(tr("nav_projects"), tr("pr_sub", open),
     `<button class="btn sm" data-act="new-project">${ico("plus")} ${esc(tr("pr_new"))}</button>`) +
-  (DB.projects.length ? PSTAT.map(([sv, sl, st]) => {
-    const items = DB.projects.filter((p) => p.status === sv);
-    if (!items.length) return "";
-    return `<section style="margin-bottom:22px">
-      <div class="row" style="gap:8px;margin-bottom:9px"><span class="badge ${st}">${esc(lbl(sl))}</span>
-        <span class="xs mut tab">${items.length}</span></div>
-      <div class="grid cards">${items.map((p) => {
-        const g = DB.goals.find((x) => x.id === p.goalId);
-        const risky = p.health === 2 || p.status === "blocked";
-        const od = p.status !== "done" && overdue(p.deadline);
-        return `<article class="card" style="display:flex;flex-direction:column">
-          <div class="card-b" style="padding:14px;display:flex;flex-direction:column;gap:9px;flex:1">
-            <div class="row spread" style="align-items:flex-start;gap:8px">
-              <button class="tsk-t" data-act="open-project" data-id="${p.id}"
-                style="font-size:13px;font-weight:600;line-height:1.35">${esc(p.name)}</button>
-              ${risky ? `<span style="color:var(--warning);flex:0 0 auto" title="At risk">${ico("alert", "", 15)}</span>` : ""}
-            </div>
-            ${p.objective ? `<p class="xs mut" style="line-height:1.5">${esc(p.objective.slice(0, 120))}${p.objective.length > 120 ? "…" : ""}</p>` : ""}
-            <div class="row wrap" style="gap:5px;margin-top:auto">
-              ${badge(PSTAT, p.status)}<span class="badge neutral">${esc(tr("pr_value"))} ${p.strategicValue}/5</span>
-              ${g ? `<span class="badge" style="color:${slotColor(g.slot)};border-color:color-mix(in srgb,${slotColor(g.slot)} 30%,transparent);background:none">
-                <i style="width:6px;height:6px;border-radius:2px;background:${slotColor(g.slot)};display:inline-block"></i>${esc(g.code)}</span>` : ""}
-            </div>
-            <div class="row spread xs mut" style="border-top:1px solid var(--border);padding-top:9px">
-              <span ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${p.deadline ? `${esc(tr("th_due"))} ${esc(fmtDate(p.deadline))}` : tr("pr_nodl")}</span>
-              <button class="tsk-t xs" style="width:auto" data-act="edit-project" data-id="${p.id}">${esc(tr("edit"))}</button>
-            </div></div></article>`;
-      }).join("")}</div></section>`;
-  }).join("") : empty(tr("pr_none"), tr("pr_none_d")));
+  `<div class="row wrap" style="gap:8px;margin-bottom:16px">
+    <div class="seg">${[["open", tr("pr_f_open")], ["done", tr("pr_f_done")], ["all", tr("t_all")]]
+      .map(([v, l]) => `<button data-act="proj-filter" data-v="${v}"
+        aria-pressed="${f.status === v}">${esc(l)}</button>`).join("")}</div>
+    <span class="xs mut" style="margin-left:auto">${zichtbaar.length} ${esc(tr("pr_count"))}</span>
+  </div>` +
+  (groepen.length ? groepen.map((grp) => `<section style="margin-bottom:26px">
+      <div class="row" style="gap:9px;margin-bottom:11px;align-items:center">
+        <span class="prj-dot" style="background:${pDomainColor(grp.k)}"></span>
+        <h2 class="card-t">${esc(grp.naam)}</h2>
+        <span class="xs mut tab">${grp.items.length}</span>
+      </div>
+      <div class="grid cards">${grp.items.map(projectTile).join("")}</div>
+    </section>`).join("")
+    : empty(tr("pr_none"), tr("pr_none_d"),
+        `<button class="btn sm" data-act="new-project" style="margin-top:10px">${ico("plus")} ${esc(tr("pr_new"))}</button>`));
 }
 
 /* ---- KPIs -------------------------------------------------------------- */
@@ -8878,7 +8945,7 @@ function taskDialog(task, defaults = {}) {
 
 function projectDialog(project) {
   const p = project || { name: "", objective: "", description: "", status: "idea", strategicValue: 3,
-    health: 0, owner: "", deadline: "", risks: "", dependencies: "", goalId: "" };
+    health: 0, owner: "", deadline: "", risks: "", dependencies: "", goalId: "", domain: "" };
   openDialog({
     title: project ? tr("dl_proj_edit") : tr("dl_proj_new"),
     desc: tr("dl_proj_d"),
@@ -8896,6 +8963,10 @@ function projectDialog(project) {
       field(tr("dl_objective"), `<input class="inp" name="objective" value="${esc(p.objective)}"
         placeholder="One sentence: what does success look like?">`) +
       `<div class="f2">
+        ${field(tr("pr_domain"), `<select class="inp" name="domain">
+          <option value="">${esc(tr("pr_nodomain"))}</option>
+          ${PDOMAINS.map(([k, l]) => `<option value="${k}" ${pDomain(p) === k ? "selected" : ""}>${esc(lbl(l))}</option>`).join("")}
+        </select>`)}
         ${field(tr("th_status"), `<select class="inp" name="status">${opts(PSTAT, p.status)}</select>`)}
         ${field(tr("dl_health"), `<select class="inp" name="health">${opts(HEALTH, p.health)}</select>`)}
         ${field(tr("s_w_str"), `<select class="inp" name="strategicValue">${opts([
@@ -8915,7 +8986,7 @@ function projectDialog(project) {
       const patch = { name: f.name.trim(), objective: f.objective, description: f.description,
         status: f.status, health: Number(f.health), strategicValue: Number(f.strategicValue),
         owner: f.owner, deadline: f.deadline || null, risks: f.risks, dependencies: f.dependencies,
-        goalId: f.goalId || null };
+        goalId: f.goalId || null, domain: f.domain || "" };
       if (project) Object.assign(project, patch);
       else DB.projects.unshift({ id: uid(), ...patch });
       save(); toast(project ? tr("dl_proj_updated") : tr("dl_proj_created")); render();
@@ -11388,6 +11459,7 @@ document.addEventListener("click", (e) => {
 
     case "edit-week": weekDialog(DB.planning.find((x) => x.id === id)); break;
     case "plan-bulk": bulkPlanDialog(); break;
+    case "proj-filter": (UI.projFilter = UI.projFilter || {}).status = el.dataset.v; render(); break;
     case "plan-past": UI.planPast = !UI.planPast; render(); break;
     case "eng-types": engTypesDialog(); break;
     /* Het venster waar je vandaan komt wordt hier vastgelegd, vóór het
