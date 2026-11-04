@@ -11255,9 +11255,12 @@ document.addEventListener("click", (e) => {
     /* Vandaag brengt je naar de dag zelf: de lijst met de hele dag en de
        streep waar je staat. Ook de week springt terug, zodat je na het
        terugklikken naar Week niet in november blijkt te staan. */
+    /* Zet de agenda op vandaag én gaat erheen. Zonder dat tweede deed de knop
+       op het dashboard niets zichtbaars: de weergave klopte, maar je bleef
+       staan waar je stond. */
     case "meet-today": {
       UI.meetView = "list"; UI.meetFilter.days = "today"; UI.meetWeek = 0;
-      UI.detail = null; saveUI(); render(); window.scrollTo(0, 0); break;
+      go("meetings"); break;
     }
     /* Vanuit de instellingen én vanuit de agenda zelf; in het tweede geval
        springt de weergave meteen naar het weekrooster, anders zie je niets
