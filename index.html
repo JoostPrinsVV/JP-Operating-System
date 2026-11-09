@@ -2090,6 +2090,16 @@ const STR = {
               "{0} op {1}. Pas het aan en de data hieronder volgen."],
   ti_weekly:["Every week","Elke week"], ti_biweekly:["Every other week","Om de week"],
   ti_plan_set:["Rhythm updated","Ritme aangepast"],
+  ti_teams:["Naar Teams","Naar Teams"],
+  ti_teams_d:["Zet de tip op je klembord en opent het kanaal","Zet de tip op je klembord en opent het kanaal"],
+  ti_teams_ok:["Tip staat op je klembord — plak hem in het kanaal","Tip staat op je klembord — plak hem in het kanaal"],
+  ti_teams_set:["Het kanaal instellen","Het kanaal instellen"],
+  ti_teams_set_d:["Eén keer invullen, daarna onthoudt de app hem.","Eén keer invullen, daarna onthoudt de app hem."],
+  ti_teams_url:["Link naar het kanaal","Link naar het kanaal"],
+  ti_teams_how:["In Teams: rechtsklik op het kanaal → Link naar kanaal ophalen. Leeg laten wist hem weer.",
+                "In Teams: rechtsklik op het kanaal → Link naar kanaal ophalen. Leeg laten wist hem weer."],
+  ti_teams_saved:["Kanaal ingesteld","Kanaal ingesteld"],
+  ti_teams_cleared:["Kanaal gewist","Kanaal gewist"],
   ti_missed:["Gemist","Gemist"],
   ti_missed_d:["De dag is voorbij en hij staat nog niet op verzonden.",
                "De dag is voorbij en hij staat nog niet op verzonden."],
@@ -8084,6 +8094,8 @@ function tipRow(t, opts = {}) {
       ${opts.hideStatus === true ? "" : `<span class="badge ${st[2]}">${esc(lbl(st[1]))}</span>`}
       ${t.body ? `<button class="btn icon sm outline" data-act="copy-tip" data-id="${t.id}"
         title="${esc(tr("ti_copy"))}" aria-label="${esc(tr("ti_copy"))}">${ico("copy", "", 12)}</button>` : ""}
+      ${t.status !== "sent" && t.body ? `<button class="btn sm outline" data-act="tip-teams" data-id="${t.id}"
+        title="${esc(tr("ti_teams_d"))}">${ico("send", "", 12)} ${esc(tr("ti_teams"))}</button>` : ""}
       ${t.status !== "sent" ? `<button class="btn sm outline" data-act="tip-sent" data-id="${t.id}"
         style="white-space:nowrap">${esc(tr("ti_mark_sent"))}</button>` : ""}
     </div></div>`;
@@ -8092,14 +8104,17 @@ function tipRow(t, opts = {}) {
 function viewTips() {
   const { everyWeeks, weekday } = tipPlan();
   /* Een tip met een datum staat op "gepland", dus hij valt buiten je
-     concepten; en een dag die voorbij is komt niet in de lijst. Een tip die je
-     op zijn dag niet hebt verstuurd was daardoor nergens meer te zien. Die
-     dagen worden er nu vooraan bij gezet, zodat een gemist moment je opvalt
-     in plaats van te verdwijnen. */
-  const gemist = [...new Set(DB.tips
-    .filter((t) => t.status !== "sent" && t.plannedFor && t.plannedFor < TODAY())
-    .map((t) => t.plannedFor))].sort();
-  const slots = [...gemist, ...tipSlots(6)];
+     concepten. Stond die datum niet in de lijst met momenten - omdat hij
+     voorbij is, of omdat je hem op een dag zette die geen leesdag is - dan was
+     de tip nergens meer te zien.
+
+     Daarom is de lijst de vereniging van twee dingen: de momenten die het
+     ritme oplevert, en elke dag waar nog een onverzonden tip op staat. Zo kan
+     een geplande tip niet meer uit beeld vallen, waar je hem ook zet. */
+  const metTips = DB.tips
+    .filter((t) => t.status !== "sent" && t.plannedFor)
+    .map((t) => t.plannedFor);
+  const slots = [...new Set([...metTips, ...tipSlots(6)])].sort();
   const drafts = DB.tips.filter((t) => t.status === "draft")
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   const sent = DB.tips.filter((t) => t.status === "sent")
@@ -8118,7 +8133,8 @@ function viewTips() {
   });
 
   return pageHead(tr("nav_tips"), tr("ti_sub"),
-    `<button class="btn sm" data-act="new-tip">${ico("plus")} ${esc(tr("ti_new"))}</button>`) +
+    `<button class="btn sm outline" data-act="tip-teams-link">${ico("send")} ${esc(tr("ti_teams_set"))}</button>
+     <button class="btn sm" data-act="new-tip">${ico("plus")} ${esc(tr("ti_new"))}</button>`) +
 
   `<div class="tiles" style="margin-bottom:14px">
     ${tile(tr("ti_t_next"), next ? fmtDate(next.plannedFor) : "—", "",
@@ -8142,17 +8158,24 @@ function viewTips() {
           ? tr("ti_missed") : dayName((parseD(d).getDay() + 6) % 7))}</span>
       </span>
       <div style="min-width:0;flex:1">
-        ${here.length
-          ? here.map((t) => `<button class="tsk-t" data-act="edit-tip" data-id="${t.id}"
-              style="display:block;font-weight:500">${esc(t.title)}${t.tool ? ` <span class="mut" style="font-weight:400">· ${esc(t.tool)}</span>` : ""}</button>`).join("")
+        ${/* Staan er twee tips op één dag, dan moeten de knoppen bij hun eigen
+             tip staan: op één regel naast elkaar weet je niet meer welke
+             "Verzonden" bij welke titel hoort. Vandaar per tip een regel. */
+          here.length
+          ? here.map((t) => `<div class="row" style="gap:6px;align-items:center">
+              <button class="tsk-t trunc" data-act="edit-tip" data-id="${t.id}"
+                style="flex:1;min-width:0;font-weight:500;text-align:left">${esc(t.title)}${t.tool ? ` <span class="mut" style="font-weight:400">· ${esc(t.tool)}</span>` : ""}</button>
+              ${t.body ? `<button class="btn sm outline" data-act="tip-teams" data-id="${t.id}"
+                  style="flex:0 0 auto" title="${esc(tr("ti_teams_d"))}">${ico("send", "", 12)} ${esc(tr("ti_teams"))}</button>` : ""}
+              <button class="btn sm ghost" data-act="tip-sent" data-id="${t.id}"
+                style="flex:0 0 auto;white-space:nowrap">${esc(tr("ti_mark_sent"))}</button>
+            </div>`).join("")
           : `<span class="xs mut">${esc(soon !== null && soon <= 7 ? tr("ti_slot_soon") : tr("ti_slot_free"))}</span>`}
         ${te_laat ? `<span class="xs" style="display:block;margin-top:2px;color:var(--signal-text)">${esc(tr("ti_missed_d"))}</span>` : ""}
       </div>
-      <div class="row" style="gap:6px;flex:0 0 auto">
-        ${here.length
-          ? here.map((t) => `<button class="btn sm outline" data-act="tip-sent" data-id="${t.id}">${esc(tr("ti_mark_sent"))}</button>`).join("")
-          : `<button class="btn sm ghost" data-act="new-tip" data-on="${d}">${ico("plus", "", 13)} ${esc(tr("ti_fill"))}</button>`}
-      </div>
+      ${here.length ? "" : `<div class="row" style="gap:6px;flex:0 0 auto">
+        <button class="btn sm ghost" data-act="new-tip" data-on="${d}">${ico("plus", "", 13)} ${esc(tr("ti_fill"))}</button>
+      </div>`}
     </div></li>`;
   }).join("")}</ul>`,
     tr("ti_slots_d", lbl(everyWeeks === 2 ? ["every other week","om de week"] : ["every week","elke week"]),
@@ -8212,6 +8235,31 @@ function tipsCard() {
 
   return card(tr("ti_card"), body, tr("ti_card_d"),
     `<button class="btn sm ghost" data-nav="tips">${esc(viewLabel("tips"))}</button>`);
+}
+
+/* Eén keer de kanaallink plakken en de app onthoudt hem. `daarna` is de tip
+   die je wilde posten, zodat je na het instellen niet opnieuw hoeft te zoeken. */
+function teamsLinkDialog(daarna) {
+  openDialog({
+    title: tr("ti_teams_set"),
+    desc: tr("ti_teams_set_d"),
+    submit: tr("save"),
+    body: field(tr("ti_teams_url"), `<input class="inp" type="url" name="url"
+        value="${esc((DB.profile || {}).teamsUrl || "")}"
+        placeholder="https://teams.microsoft.com/l/channel/...">`) +
+      `<p class="xs mut">${esc(tr("ti_teams_how"))}</p>`,
+    onSubmit: (f) => {
+      DB.profile.teamsUrl = String(f.url || "").trim();
+      save(); render();
+      toast(DB.profile.teamsUrl ? tr("ti_teams_saved") : tr("ti_teams_cleared"));
+      // Meteen doorgaan met de tip waar je mee bezig was.
+      if (daarna && DB.profile.teamsUrl) setTimeout(() => {
+        const knop = document.createElement("button");
+        knop.dataset.act = "tip-teams"; knop.dataset.id = daarna;
+        document.body.appendChild(knop); knop.click(); knop.remove();
+      }, 0);
+    },
+  });
 }
 
 function tipDialog(tip, defaults) {
@@ -11925,6 +11973,26 @@ document.addEventListener("click", (e) => {
       } catch (e) { toast(tr("dl_copy_manual")); }
       break;
     }
+
+    /* De app post niets zelf - er gaat geen enkel verzoek naar buiten, en dat
+       houden we zo. Hij legt de tip op je klembord en zet het kanaal open;
+       plakken en verzenden doe jij. Bij een bericht aan je hele afdeling is
+       dat eerder een voordeel dan een omweg. */
+    case "tip-teams": {
+      const t = DB.tips.find((x) => x.id === id);
+      if (!t) break;
+      const url = String((DB.profile || {}).teamsUrl || "").trim();
+      if (!url) { teamsLinkDialog(id); break; }
+      const text = [t.title, t.body].filter(Boolean).join("\n\n");
+      try {
+        const p = navigator.clipboard && navigator.clipboard.writeText(text);
+        if (p && typeof p.then === "function") p.then(() => toast(tr("ti_teams_ok"))).catch(() => toast(tr("dl_copy_manual")));
+        else toast(tr("ti_teams_ok"));
+      } catch (e) { toast(tr("dl_copy_manual")); }
+      try { window.open(url, "_blank", "noopener"); } catch (e) { /* dan handmatig */ }
+      break;
+    }
+    case "tip-teams-link": teamsLinkDialog(""); break;
 
     /* knowledge */
     case "know-view": UI.knowFilter.view = el.dataset.v; render(); break;
