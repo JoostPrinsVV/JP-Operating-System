@@ -1364,6 +1364,33 @@ const STR = {
   pr_hours_total:["Samen {0} op dit project","Samen {0} op dit project"],
   pr_addhours:["Uren boeken","Uren boeken"],
   pr_addmeeting:["Overleg toevoegen","Overleg toevoegen"],
+  sp_title:["Subprojecten","Subprojecten"],
+  sp_one:["Subproject","Subproject"],
+  sp_d:["De brokken werk binnen dit project, elk met zijn eigen taken. Klap er een open om te zien wat er ligt.",
+        "De brokken werk binnen dit project, elk met zijn eigen taken. Klap er een open om te zien wat er ligt."],
+  sp_new:["Subproject","Subproject"],
+  sp_edit:["Subproject bewerken","Subproject bewerken"],
+  sp_edit_d:["Een stuk werk dat op zichzelf staat maar bij dit project hoort — een agent, een module, een deelresultaat.",
+             "Een stuk werk dat op zichzelf staat maar bij dit project hoort — een agent, een module, een deelresultaat."],
+  sp_name:["Naam","Naam"],
+  sp_name_ph:["Bijvoorbeeld: Factuurcontrole-agent","Bijvoorbeeld: Factuurcontrole-agent"],
+  sp_note:["Waar het over gaat","Waar het over gaat"],
+  sp_note_ph:["Eén of twee zinnen","Eén of twee zinnen"],
+  sp_nosub:["Geen subproject","Geen subproject"],
+  sp_none:["Nog geen subprojecten. Splits dit project op zodra het meer dan één ding wordt.",
+           "Nog geen subprojecten. Splits dit project op zodra het meer dan één ding wordt."],
+  sp_notasks:["Nog geen taken","Nog geen taken"],
+  sp_empty:["Nog niets open hieronder.","Nog niets open hieronder."],
+  sp_progress:["{0} van {1} taken af","{0} van {1} taken af"],
+  sp_loose:["{0} taken hangen aan het project zelf, niet aan een subproject.",
+            "{0} taken hangen aan het project zelf, niet aan een subproject."],
+  sp_addtask:["Taak hieronder toevoegen","Taak hieronder toevoegen"],
+  sp_added:["Subproject toegevoegd","Subproject toegevoegd"],
+  sp_saved:["Subproject opgeslagen","Subproject opgeslagen"],
+  sp_del_t:["Dit subproject verwijderen?","Dit subproject verwijderen?"],
+  sp_deleted:["Subproject verwijderd — de taken blijven bij het project",
+              "Subproject verwijderd — de taken blijven bij het project"],
+  sp_u:["subproject","subproject"],
   pr_timeline:["Tijdlijn","Tijdlijn"],
   pr_timeline_d:["Wat er gebeurde, op volgorde. Overleg en besluiten, taken die af kwamen, ideeën die eruit voortkwamen.",
                  "Wat er gebeurde, op volgorde. Overleg en besluiten, taken die af kwamen, ideeën die eruit voortkwamen."],
@@ -2439,6 +2466,22 @@ const PDOMAINS = [
   ["interdisciplinair",["Interdisciplinary","Interdisciplinair"], "var(--vv-turquoise)"],
   ["intern",           ["Internal","Intern & vakgroep"],          "var(--vv-donkerblauw)"],
 ];
+/* ---- subprojecten --------------------------------------------------------
+   Tussen een project en een taak zit vaak een laag die geen van beide is.
+   "Copilot agents ontwikkelen" is het project; elke agent is een ding op zich
+   waar weer taken onder hangen. Zonder die laag worden het twintig losse
+   taken en zie je niet meer waar je aan werkt.
+------------------------------------------------------------------------- */
+const SUBSTAT = [
+  ["idee",  ["Idea","Idee"],       "neutral"],
+  ["loopt", ["Running","Loopt"],   "info"],
+  ["klaar", ["Done","Klaar"],      "success"],
+];
+const subsOf = (projectId) => (DB.subprojects || [])
+  .filter((s) => s.projectId === projectId)
+  .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+const subOf = (id) => (DB.subprojects || []).find((s) => s.id === id);
+
 const pDomain = (p) => (PDOMAINS.find(([k]) => k === p.domain) ? p.domain : "");
 const pDomainColor = (k) => (PDOMAINS.find(([v]) => v === k) || [])[2] || "var(--ink-3)";
 
@@ -3261,6 +3304,7 @@ function migrate() {
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
   if (!Array.isArray(DB.suggestions)) { DB.suggestions = []; changed = true; }
   if (!Array.isArray(DB.news)) { DB.news = []; changed = true; }
+  if (!Array.isArray(DB.subprojects)) { DB.subprojects = []; changed = true; }
   /* De ingebouwde opdrachttypes komen in de lijst te staan, zodat ze te
      hernoemen en te kleuren zijn zoals elk ander type. Hun id blijft wat hij
      was, dus bestaande weken en urenregels houden hun opdracht. */
@@ -3386,6 +3430,7 @@ const UI = {
   knowOpen: {},          // welke bronlijsten dichtgeklapt staan
   nwsView: "open",       // "open" deze week, "read" afgevinkt, "past" eerdere weken
   projFilter: { status: "open" },
+  subOpen: {},           // welke subprojecten hun taken tonen
   kpiOpen: {},           // welke KPI's hun metingen tonen
   meetView: "list",      // "list" of "week"
   meetWeek: 0,           // 0 = deze week, -1 = vorige, 1 = volgende
@@ -3618,6 +3663,14 @@ function taskRow(t, opts = {}) {
 
 const projOptions = (sel) => `<option value="">${esc(tr("dl_noproject"))}</option>` + DB.projects
   .map((p) => `<option value="${p.id}" ${sel === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+/* Alle onderdelen in één lijst, met hun project ervoor. Kies je er een, dan
+   volgt het project vanzelf - twee velden die elkaar kunnen tegenspreken is
+   een fout die je pas later ziet. */
+const subOptions = (sel) => `<option value="">${esc(tr("sp_nosub"))}</option>` +
+  (DB.subprojects || []).map((s) => {
+    const p = DB.projects.find((x) => x.id === s.projectId);
+    return `<option value="${s.id}" ${sel === s.id ? "selected" : ""}>${esc(p ? `${p.name} · ${s.name}` : s.name)}</option>`;
+  }).join("");
 const goalOptions = (sel) => `<option value="">${esc(tr("dl_nogoal"))}</option>` + DB.goals
   .map((g) => `<option value="${g.id}" ${sel === g.id ? "selected" : ""}>${esc(g.code)} · ${esc(g.title)}</option>`).join("");
 const opts = (list, sel) => list.map(([v, l]) =>
@@ -7825,6 +7878,93 @@ function projectTimeline(p) {
   return card(tr("pr_timeline"), `<div class="tl">${items.map(rij).join("")}</div>`, tr("pr_timeline_d"));
 }
 
+/* De onderdelen van een project, elk met zijn eigen taken eronder. Dichtgeklapt
+   zie je de voortgang, opengeklapt het werk zelf - want twintig taken onder
+   elkaar is precies waar deze laag je vanaf helpt. */
+function subprojectCard(p) {
+  const subs = subsOf(p.id);
+  const los = DB.tasks.filter((t) => t.projectId === p.id && !t.subId && t.status !== "done");
+
+  const rij = (s) => {
+    const taken = DB.tasks.filter((t) => t.subId === s.id);
+    const af = taken.filter((t) => t.status === "done").length;
+    const open = taken.filter((t) => t.status !== "done")
+      .sort((a, b) => scoreTask(b) - scoreTask(a));
+    const uit = (UI.subOpen || {})[s.id];
+    const pct = taken.length ? Math.round((af / taken.length) * 100) : 0;
+
+    return `<li>
+      <div class="row spread" style="gap:10px;padding:10px 2px;align-items:flex-start">
+        <button class="src-head" data-act="sub-toggle" data-id="${s.id}" aria-expanded="${Boolean(uit)}"
+          style="flex:1;min-width:0">
+          ${ico(uit ? "chevup" : "chevdown", "ico mut", 13)}
+          <span style="min-width:0">
+            <span class="row wrap" style="gap:7px;align-items:baseline">
+              <span class="sm2" style="font-weight:600">${esc(s.name)}</span>
+              ${badge(SUBSTAT, s.status)}
+            </span>
+            ${s.note ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(s.note)}</span>` : ""}
+            <span class="xs mut" style="display:block;margin-top:4px">${esc(taken.length
+              ? tr("sp_progress", af, taken.length) : tr("sp_notasks"))}</span>
+            ${taken.length ? `<span style="display:block;max-width:220px;margin-top:5px">
+              ${meterEl(pct, af === taken.length ? "var(--success)" : "var(--accent)")}</span>` : ""}
+          </span>
+        </button>
+        <span class="row" style="gap:4px;flex:0 0 auto">
+          <button class="btn icon sm ghost" data-act="sub-task" data-id="${s.id}"
+            title="${esc(tr("sp_addtask"))}" aria-label="${esc(tr("sp_addtask"))}">${ico("plus", "", 13)}</button>
+          <button class="btn icon sm ghost" data-act="edit-sub" data-id="${s.id}"
+            title="${esc(tr("edit"))}" aria-label="${esc(tr("edit"))}">${ico("pencil", "", 12)}</button>
+        </span>
+      </div>
+      ${uit ? `<div style="padding:0 0 9px 22px">${open.length
+        ? open.map((t) => taskRow(t, { hideProject: true })).join("")
+        : `<p class="xs mut" style="padding:4px 0">${esc(tr("sp_empty"))}</p>`}</div>` : ""}
+    </li>`;
+  };
+
+  return card(tr("sp_title"),
+    (subs.length ? `<ul class="divide">${subs.map(rij).join("")}</ul>`
+      : `<p class="xs mut">${esc(tr("sp_none"))}</p>`) +
+    (los.length ? `<p class="xs mut" style="margin-top:11px;padding-top:9px;border-top:1px solid var(--border)">
+      ${esc(tr("sp_loose", los.length))}</p>` : ""),
+    tr("sp_d"),
+    `<button class="btn sm ghost" data-act="new-sub" data-id="${p.id}">${ico("plus", "", 13)} ${esc(tr("sp_new"))}</button>`);
+}
+
+function subDialog(sub, projectId) {
+  const s = sub || { name: "", note: "", status: "idee", projectId,
+    order: subsOf(projectId).length };
+  openDialog({
+    title: sub ? tr("sp_edit") : tr("sp_new"),
+    desc: tr("sp_edit_d"),
+    submit: sub ? tr("dl_save_changes") : tr("add"),
+    delLabel: sub ? tr("sp_del_t") : "",
+    /* Verwijderen laat de taken staan: ze horen nog steeds bij het project,
+       alleen niet meer bij dit onderdeel. Werk weggooien doe je bij de taak
+       zelf, niet als bijvangst hier. */
+    del: sub ? () => {
+      checkpoint(tr("sp_u"));
+      DB.subprojects = DB.subprojects.filter((x) => x.id !== sub.id);
+      DB.tasks.forEach((t) => { if (t.subId === sub.id) t.subId = null; });
+      save(); render(); toast(tr("sp_deleted"), true);
+    } : null,
+    body: field(tr("sp_name"), `<input class="inp" name="name" required maxlength="90"
+        value="${esc(s.name)}" placeholder="${esc(tr("sp_name_ph"))}">`) +
+      field(tr("th_status"), `<select class="inp" name="status">${opts(SUBSTAT, s.status)}</select>`) +
+      field(tr("sp_note"), `<textarea class="inp" name="note" rows="2"
+        placeholder="${esc(tr("sp_note_ph"))}">${esc(s.note || "")}</textarea>`),
+    onSubmit: (f) => {
+      if (!f.name.trim()) return false;
+      const patch = { name: f.name.trim(), status: f.status, note: f.note || "" };
+      if (sub) Object.assign(sub, patch);
+      else DB.subprojects.push({ id: uid(), projectId: s.projectId, order: s.order,
+        createdAt: TODAY(), ...patch });
+      save(); render(); toast(sub ? tr("sp_saved") : tr("sp_added"));
+    },
+  });
+}
+
 function viewProjectDetail(id) {
   const p = DB.projects.find((x) => x.id === id);
   if (!p) return empty(tr("not_found"));
@@ -7863,6 +8003,7 @@ function viewProjectDetail(id) {
         ? `<div>${open.map((t) => taskRow(t, { hideProject: true })).join("")}</div>`
         : empty(tr("pr_notasks"), tr("pr_notasks_d")),
         "", `<button class="btn sm ghost" data-act="new-task" data-project="${p.id}">${ico("plus", "", 13)} ${esc(tr("pr_addtask"))}</button>`)}
+      ${subprojectCard(p)}
       ${projectTimeline(p)}
       ${done.length ? card(`${tr("pr_completed")} (${done.length})`,
         `<div>${done.slice(0, 15).map((t) => taskRow(t, { hideProject: true })).join("")}</div>`) : ""}
@@ -9057,7 +9198,7 @@ function taskDialog(task, defaults = {}) {
     // Een voorgestelde taak komt met zijn tekst al ingevuld binnen.
     title: defaults.title || "", notes: "", status: defaults.status || "inbox", priority: "medium", energy: "shallow",
     dueDate: "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "",
-    waitingOn: defaults.waitingOn || "",
+    subId: defaults.subId || "", waitingOn: defaults.waitingOn || "",
   };
   openDialog({
     title: task ? tr("dl_task_edit") : tr("dl_task_new"),
@@ -9077,6 +9218,7 @@ function taskDialog(task, defaults = {}) {
         ${field(tr("dl_due"), `<input class="inp" type="date" name="dueDate" value="${esc(t.dueDate || "")}">`)}
         ${field(tr("dl_est"), `<input class="inp" type="number" name="estimate" min="0" max="10000" step="15" value="${t.estimate ?? ""}" placeholder="60">`)}
         ${field(tr("th_project"), `<select class="inp" name="projectId">${projOptions(t.projectId)}</select>`)}
+        ${field(tr("sp_one"), `<select class="inp" name="subId">${subOptions(t.subId)}</select>`)}
         ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions(t.goalId)}</select>`)}
         ${field(tr("dl_energy"), `<select class="inp" name="energy">${opts([["deep", "Deep work"], ["shallow", "Shallow"]], t.energy)}</select>`)}
         ${field(tr("dl_waiting"), `<input class="inp" name="waitingOn" value="${esc(t.waitingOn || "")}" placeholder="Who or what">`)}
@@ -9088,7 +9230,11 @@ function taskDialog(task, defaults = {}) {
         title: f.title.trim(), notes: f.notes, status: f.status, priority: f.priority, energy: f.energy,
         dueDate: f.dueDate || null, estimate: f.estimate === "" ? null : Number(f.estimate),
         projectId: f.projectId || null, goalId: f.goalId || null, waitingOn: f.waitingOn || "",
+        subId: f.subId || null,
       };
+      // Een onderdeel bepaalt bij welk project de taak hoort; anders kunnen de
+      // twee uit elkaar lopen en staat een taak op twee plekken tegelijk.
+      if (patch.subId) { const s = subOf(patch.subId); if (s) patch.projectId = s.projectId; }
       if (task) {
         Object.assign(task, patch);
         if (task.status === "done" && !task.completedAt) task.completedAt = TODAY();
@@ -9115,7 +9261,8 @@ function projectDialog(project) {
     del: project ? () => {
       checkpoint(tr("u_project"));
       DB.projects = DB.projects.filter((x) => x.id !== project.id);
-      DB.tasks.forEach((t) => { if (t.projectId === project.id) t.projectId = null; });
+      DB.tasks.forEach((t) => { if (t.projectId === project.id) { t.projectId = null; t.subId = null; } });
+      DB.subprojects = (DB.subprojects || []).filter((s) => s.projectId !== project.id);
       UI.detail = null;
       save(); render(); toast(tr("dl_proj_deleted"), true);
     } : null,
@@ -11645,6 +11792,18 @@ document.addEventListener("click", (e) => {
     /* Uren en overleg vanaf de projectpagina: dan staat het project er al in
        en hoef je het niet opnieuw te kiezen. */
     case "proj-hours": entryDialog(null, { projectId: id, engagement: "intern" }); break;
+    case "new-sub": subDialog(null, id); break;
+    case "edit-sub": subDialog(subOf(id)); break;
+    case "sub-task": {
+      const s = subOf(id);
+      if (s) taskDialog(null, { projectId: s.projectId, subId: s.id });
+      break;
+    }
+    case "sub-toggle": {
+      UI.subOpen = UI.subOpen || {};
+      if (UI.subOpen[id]) delete UI.subOpen[id]; else UI.subOpen[id] = true;
+      render(); break;
+    }
     case "proj-meeting": meetingDialog(null, { projectId: id }); break;
     case "plan-past": UI.planPast = !UI.planPast; render(); break;
     case "eng-types": engTypesDialog(); break;
