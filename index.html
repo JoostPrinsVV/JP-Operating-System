@@ -540,6 +540,11 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
   white-space:pre-wrap}
 
 /* De kop van een bronlijst is een knop, maar moet eruitzien als een kop. */
+/* Een moment dat voorbij is en nog niet verstuurd: rood omlijnd, want dit is
+   het enige in deze lijst waar je iets mee moet. */
+.src-laat{border:1px solid var(--signal);border-radius:var(--r-input);
+  background:color-mix(in srgb,var(--signal) 6%,transparent);
+  padding-left:8px;padding-right:8px;margin-bottom:3px}
 .src-head{display:flex;align-items:flex-start;gap:9px;background:none;border:0;padding:0;
   cursor:pointer;color:inherit;text-align:left}
 .src-head .ico{margin-top:2px;flex:0 0 auto}
@@ -2025,6 +2030,9 @@ const STR = {
               "{0} op {1}. Pas het aan en de data hieronder volgen."],
   ti_weekly:["Every week","Elke week"], ti_biweekly:["Every other week","Om de week"],
   ti_plan_set:["Rhythm updated","Ritme aangepast"],
+  ti_missed:["Gemist","Gemist"],
+  ti_missed_d:["De dag is voorbij en hij staat nog niet op verzonden.",
+               "De dag is voorbij en hij staat nog niet op verzonden."],
   ti_slot_free:["Still free","Nog vrij"],
   ti_slot_soon:["Still empty — and it is close","Nog leeg — en het is dichtbij"],
   ti_fill:["Fill this slot","Dit moment vullen"],
@@ -7909,7 +7917,15 @@ function tipRow(t, opts = {}) {
 
 function viewTips() {
   const { everyWeeks, weekday } = tipPlan();
-  const slots = tipSlots(6);
+  /* Een tip met een datum staat op "gepland", dus hij valt buiten je
+     concepten; en een dag die voorbij is komt niet in de lijst. Een tip die je
+     op zijn dag niet hebt verstuurd was daardoor nergens meer te zien. Die
+     dagen worden er nu vooraan bij gezet, zodat een gemist moment je opvalt
+     in plaats van te verdwijnen. */
+  const gemist = [...new Set(DB.tips
+    .filter((t) => t.status !== "sent" && t.plannedFor && t.plannedFor < TODAY())
+    .map((t) => t.plannedFor))].sort();
+  const slots = [...gemist, ...tipSlots(6)];
   const drafts = DB.tips.filter((t) => t.status === "draft")
     .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
   const sent = DB.tips.filter((t) => t.status === "sent")
@@ -7944,16 +7960,19 @@ function viewTips() {
   ${card(tr("ti_slots"), `<ul class="grid" style="gap:3px">${slots.map((d, i) => {
     const here = tipsOn(d);
     const soon = daysUntil(d);
-    return `<li><div class="src" style="border-bottom:${i === slots.length - 1 ? "0" : "1px solid var(--border)"}">
+    const te_laat = d < TODAY() && here.length > 0;
+    return `<li><div class="src ${te_laat ? "src-laat" : ""}" style="border-bottom:${i === slots.length - 1 ? "0" : "1px solid var(--border)"}">
       <span class="slot-d ${here.length ? "full" : ""}">
         <span class="tab" style="font-weight:600">${esc(fmtDate(d))}</span>
-        <span class="xs mut">${esc(dayName((parseD(d).getDay() + 6) % 7))}</span>
+        <span class="xs ${te_laat ? "" : "mut"}" ${te_laat ? 'style="color:var(--signal-text);font-weight:700"' : ""}>${esc(te_laat
+          ? tr("ti_missed") : dayName((parseD(d).getDay() + 6) % 7))}</span>
       </span>
       <div style="min-width:0;flex:1">
         ${here.length
           ? here.map((t) => `<button class="tsk-t" data-act="edit-tip" data-id="${t.id}"
               style="display:block;font-weight:500">${esc(t.title)}${t.tool ? ` <span class="mut" style="font-weight:400">· ${esc(t.tool)}</span>` : ""}</button>`).join("")
           : `<span class="xs mut">${esc(soon !== null && soon <= 7 ? tr("ti_slot_soon") : tr("ti_slot_free"))}</span>`}
+        ${te_laat ? `<span class="xs" style="display:block;margin-top:2px;color:var(--signal-text)">${esc(tr("ti_missed_d"))}</span>` : ""}
       </div>
       <div class="row" style="gap:6px;flex:0 0 auto">
         ${here.length
