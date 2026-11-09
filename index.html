@@ -542,10 +542,13 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
 
 /* Een projecttegel: de hele kaart is de knop, met een kleurstreep bovenaan
    die zegt in welk domein hij hoort. */
-.prj{position:relative;overflow:hidden;transition:border-color var(--t-fast) var(--ease)}
+.prj{position:relative;overflow:hidden;display:flex;flex-direction:column;
+  transition:border-color var(--t-fast) var(--ease)}
 .prj::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--prj)}
 .prj:hover{border-color:var(--prj)}
-.prj-b{display:flex;flex-direction:column;gap:9px;width:100%;height:100%;text-align:left;
+/* flex:1, zodat de tegel zijn volle hoogte houdt als er een strook met
+   onderdelen onder hangt - de kaarten in een rij blijven zo even hoog. */
+.prj-b{display:flex;flex-direction:column;gap:9px;width:100%;flex:1 1 auto;text-align:left;
   padding:16px 15px 13px;border:0;background:none;color:inherit;cursor:pointer;font:inherit}
 .prj-n{font-size:13.5px;font-weight:700;line-height:1.35;letter-spacing:-.01em}
 .prj-f{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
@@ -553,6 +556,24 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
   font-size:11px;color:var(--ink-2)}
 .prj-f .ico{opacity:.75}
 .prj-dot{width:10px;height:10px;border-radius:var(--r-pill);flex:0 0 auto}
+
+/* De onderdelen onder een projecttegel. De strook hoort visueel bij de voet
+   van de kaart, niet bij de kaart zelf: eigen vlak, eigen lijn erboven. Hij
+   staat buiten de grote knop, want een knop in een knop bestaat niet. */
+.prj-s{display:flex;align-items:center;gap:7px;width:100%;text-align:left;flex:0 0 auto;
+  padding:9px 15px;border:0;border-top:1px solid var(--border);background:var(--surface-2);
+  color:var(--ink-2);font:inherit;font-size:11px;font-weight:500;cursor:pointer;
+  transition:background var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.prj-s:hover{background:color-mix(in srgb,var(--prj) 10%,var(--surface-2));color:var(--ink)}
+.prj-s .ico{opacity:.8}
+.prj-l{flex:0 0 auto;padding:2px 9px 9px;background:var(--surface-2);
+  animation:fade .2s var(--ease)}
+.prj-sr{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:6px 6px;border:0;border-radius:var(--r-input);background:none;color:inherit;
+  font:inherit;font-size:11.5px;cursor:pointer;
+  transition:background var(--t-fast) var(--ease)}
+.prj-sr:hover{background:var(--surface)}
+.prj-sd{width:7px;height:7px;border-radius:var(--r-pill);flex:0 0 auto}
 
 /* Tijdlijn: één lijn met stippen eraan. De lijn loopt door, de stippen zijn
    de momenten - zo lees je een project als een verhaal in plaats van als vier
@@ -1424,6 +1445,9 @@ const STR = {
   sp_deleted:["Subproject verwijderd — de taken blijven bij het project",
               "Subproject verwijderd — de taken blijven bij het project"],
   sp_u:["subproject","subproject"],
+  pr_subs_1:["1 onderdeel","1 onderdeel"],
+  pr_subs_n:["{0} onderdelen","{0} onderdelen"],
+  pr_sub_open:["{0} openen in het project","{0} openen in het project"],
   pr_timeline:["Tijdlijn","Tijdlijn"],
   pr_timeline_d:["Wat er gebeurde, op volgorde. Overleg en besluiten, taken die af kwamen, ideeën die eruit voortkwamen.",
                  "Wat er gebeurde, op volgorde. Overleg en besluiten, taken die af kwamen, ideeën die eruit voortkwamen."],
@@ -4617,9 +4641,20 @@ function milestoneList(goalId) {
 }
 
 /* ---- projects ---------------------------------------------------------- */
+/* De kleur van een subproject in het klein: een stip is genoeg om te zien of
+   iets nog een idee is, loopt of klaar is, en hij vraagt geen regel voor
+   zichzelf zoals een label dat doet. */
+const SUBTONE = { neutral: "var(--ink-3)", info: "var(--info)", success: "var(--success)" };
+const subColor = (s) => SUBTONE[meta(SUBSTAT, s.status)[2]] || "var(--ink-3)";
+
 /* Eén tegel. Hij draagt alles wat je nodig hebt om te besluiten of je hem
    opent: waar hij staat, hoe hij ervoor staat, hoeveel er nog ligt, en wanneer
-   hij af moet. De kleurstreep bovenaan is het domein. */
+   hij af moet. De kleurstreep bovenaan is het domein.
+
+   Heeft het project onderdelen, dan hangt er een strook onder waarmee je ze
+   uitklapt zonder de tegel te verlaten. Zo zie je vanaf het overzicht waar een
+   groot project uit bestaat, en hoe ver elk stuk is - en pas als je er echt in
+   wilt open je het project. */
 function projectTile(p) {
   const g = DB.goals.find((x) => x.id === p.goalId);
   const risky = p.health === 2 || p.status === "blocked";
@@ -4651,7 +4686,33 @@ function projectTile(p) {
         <span ${od ? 'style="color:var(--signal-text);font-weight:700"' : ""}>${p.deadline
           ? `${esc(tr("th_due"))} ${esc(fmtDate(p.deadline))}` : tr("pr_nodl")}</span>
       </span>
-    </button></article>`;
+    </button>
+    ${subStrip(p)}</article>`;
+}
+
+/* De uitklapstrook onder een tegel. Hij bestaat alleen als er onderdelen zijn:
+   een strook die "0 onderdelen" meldt is ruimte die niets zegt. */
+function subStrip(p) {
+  const subs = subsOf(p.id);
+  if (!subs.length) return "";
+  const uit = (UI.prjSubs || {})[p.id];
+
+  return `<button class="prj-s" data-act="prj-subs" data-id="${p.id}" aria-expanded="${Boolean(uit)}">
+      ${ico(uit ? "chevup" : "chevdown", "ico", 13)}
+      <span style="flex:1;min-width:0">${esc(subs.length === 1
+        ? tr("pr_subs_1") : tr("pr_subs_n", subs.length))}</span>
+    </button>
+    ${!uit ? "" : `<div class="prj-l">${subs.map((s) => {
+      const taken = DB.tasks.filter((t) => t.subId === s.id);
+      const af = taken.filter((t) => t.status === "done").length;
+      return `<button class="prj-sr" data-act="open-sub" data-id="${s.id}"
+        title="${esc(tr("pr_sub_open", s.name))}">
+        <span class="prj-sd" style="background:${subColor(s)}"></span>
+        <span class="trunc" style="flex:1;min-width:0">${esc(s.name)}</span>
+        <span class="xs mut tab" style="flex:0 0 auto">${taken.length
+          ? `${af}/${taken.length}` : "—"}</span>
+      </button>`;
+    }).join("")}</div>`}`;
 }
 
 function viewProjects() {
@@ -11907,6 +11968,22 @@ document.addEventListener("click", (e) => {
       UI.subOpen = UI.subOpen || {};
       if (UI.subOpen[id]) delete UI.subOpen[id]; else UI.subOpen[id] = true;
       render(); break;
+    }
+    case "prj-subs": {
+      UI.prjSubs = UI.prjSubs || {};
+      if (UI.prjSubs[id]) delete UI.prjSubs[id]; else UI.prjSubs[id] = true;
+      render(); break;
+    }
+    /* Vanaf de tegel doorklikken naar een onderdeel opent het project met dat
+       onderdeel al uitgeklapt: je komt uit op het werk dat je aanwees, niet op
+       een pagina waar je het opnieuw moet zoeken. */
+    case "open-sub": {
+      const s = subOf(id);
+      if (!s) break;
+      UI.subOpen = UI.subOpen || {};
+      UI.subOpen[s.id] = true;
+      open_("project", s.projectId);
+      break;
     }
     case "proj-meeting": meetingDialog(null, { projectId: id }); break;
     case "plan-past": UI.planPast = !UI.planPast; render(); break;
