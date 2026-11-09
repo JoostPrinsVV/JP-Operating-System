@@ -508,6 +508,38 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
 /* De status staat vooraan in de regel eronder, met een stip ervoor. Geen
    badge erbij rechts: die kant draagt al de prioriteit en de urgentie, en een
    derde label maakt van een lijst een legenda. */
+/* ---- springen ------------------------------------------------------------
+   Eén veld om overal te komen. Het is geen venster met een formulier erin maar
+   een zoekbalk met een lijst eronder, dus hij heeft zijn eigen opmaak: geen
+   kaderlijnen, geen knoppen in de voet, alleen de toetsen die werken.
+------------------------------------------------------------------------- */
+.jmp-h{display:flex;align-items:center;gap:11px;padding:13px 14px;
+  border-bottom:1px solid var(--border)}
+.jmp-h input{flex:1;min-width:0;border:0;background:none;color:inherit;font-size:15px;
+  outline:none;padding:0}
+.jmp-h input::placeholder{color:var(--ink-3)}
+.jmp-b{max-height:380px;overflow-y:auto;overflow-x:hidden;padding:7px}
+.jmp-b ul{display:flex;flex-direction:column;gap:1px}
+.jmp-g{font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--ink-3);padding:11px 9px 5px}
+.jmp-g:first-child{padding-top:3px}
+.jmp-i{display:flex;align-items:center;gap:10px;width:100%;min-width:0;padding:7px 9px;
+  border:0;border-radius:9px;cursor:pointer;text-align:left;background:none;color:inherit;
+  font:inherit;transition:background var(--t-fast) var(--ease)}
+.jmp-i:hover{background:var(--surface-2)}
+/* De regel waar je staat krijgt de kleur van een actie: donkerblauw in licht,
+   turquoise in donker. Met het toetsenbord moet je zonder zoeken zien waar
+   Enter je heen brengt, en in het donker is donkerblauw-op-donkerblauw te
+   stil om dat te doen. */
+.jmp-i.on{background:var(--primary);color:var(--primary-ink)}
+.jmp-i.on .jmp-n{color:inherit;opacity:.72}
+.jmp-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.jmp-n{flex:0 0 auto;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:11px;color:var(--ink-2)}
+.jmp-leeg{padding:26px 14px;text-align:center;font-size:12px;color:var(--ink-2)}
+.jmp-f{display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 14px;
+  border-top:1px solid var(--border);font-size:11px;color:var(--ink-2)}
+
 /* Een projecttegel: de hele kaart is de knop, met een kleurstreep bovenaan
    die zegt in welk domein hij hoort. */
 .prj{position:relative;overflow:hidden;transition:border-color var(--t-fast) var(--ease)}
@@ -1089,6 +1121,7 @@ const STR = {
   add:["Add","Toevoegen"], delete_:["Delete","Verwijderen"], edit:["Edit","Bewerken"],
   new_task:["New task","Nieuwe taak"], nothing_matches:["Nothing matches that.","Niets gevonden."],
   jump_keys:["↑↓ select · Enter open · Esc close","↑↓ kiezen · Enter openen · Esc sluiten"],
+  jmp_pick:["kiezen","kiezen"], jmp_open:["openen","openen"], jmp_close:["sluiten","sluiten"],
   k_goto:["Go to","Ga naar"], k_action:["Action","Actie"], k_task:["Task","Taak"],
   k_project:["Project","Project"], k_goal:["Goal","Doel"], k_client:["Client","Klant"],
   offline_note:["Runs offline. Data stays in this browser.","Werkt offline. Data blijft in deze browser."],
@@ -11180,44 +11213,67 @@ function jumpDialog() {
   /* Search only reaches what the rail reaches, otherwise switching a tab off
      leaves a back door straight into it. */
   const on = (v, list) => viewOn(v) ? list : [];
+  /* Elke regel draagt zijn eigen icoon en kleur, zodat je in een lijst van
+     veertig dingen ziet wát je kiest voordat je het leest. */
   const rows = [
     ...NAV.flatMap((s) => s.items.filter(([v]) => viewOn(v))
-      .map(([v]) => ({ label: viewLabel(v), kind: tr("k_goto"), act: () => go(v) }))),
-    { label: viewLabel("settings"), kind: tr("k_goto"), act: () => go("settings") },
-    ...on("tasks", [{ label: tr("new_task"), kind: tr("k_action"), act: () => taskDialog(null) }]),
-    ...on("projects", DB.projects.map((p) => ({ label: p.name, kind: tr("k_project"), act: () => open_("project", p.id) }))),
-    ...on("planning", DB.clients.map((c) => ({ label: c.name, kind: tr("k_client"), act: () => {
-      UI.planFilter = { client: c.id, scope: "all" }; go("planning");
-    } }))),
-    ...on("goals", DB.goals.map((g) => ({ label: `${g.code} ${g.title}`, kind: tr("k_goal"), act: () => open_("goal", g.id) }))),
+      .map(([v, , icoon]) => ({ label: viewLabel(v), kind: tr("k_goto"), icon: icoon,
+        kleur: "var(--c1)", act: () => go(v) }))),
+    { label: viewLabel("settings"), kind: tr("k_goto"), icon: "settings",
+      kleur: "var(--c1)", act: () => go("settings") },
+    ...on("tasks", [{ label: tr("new_task"), kind: tr("k_action"), icon: "plus",
+      kleur: "var(--signal)", act: () => taskDialog(null) }]),
+    ...on("projects", DB.projects.map((p) => ({ label: p.name, kind: tr("k_project"),
+      icon: "projects", kleur: pDomainColor(pDomain(p)), hint: lbl((meta(PSTAT, p.status) || [])[1] || ["", ""]),
+      act: () => open_("project", p.id) }))),
+    ...on("goals", DB.goals.map((g) => ({ label: `${g.code} ${g.title}`, kind: tr("k_goal"),
+      icon: "goals", kleur: slotColor(g.slot), act: () => open_("goal", g.id) }))),
+    ...on("planning", DB.clients.map((c) => ({ label: c.name, kind: tr("k_client"),
+      icon: "building", kleur: slotColor(c.slot), act: () => {
+        UI.planFilter = { client: c.id, scope: "all" }; go("planning");
+      } }))),
     ...on("tasks", DB.tasks.filter((x) => x.status !== "done").slice(0, 40)
-      .map((x) => ({ label: x.title, kind: tr("k_task"), act: () => taskDialog(x) }))),
+      .map((x) => {
+        const p = x.projectId && DB.projects.find((y) => y.id === x.projectId);
+        return { label: x.title, kind: tr("k_task"), icon: "tasks", kleur: "var(--accent)",
+          hint: p ? p.name : "", act: () => taskDialog(x) };
+      })),
   ];
   onSubmitFn = null; onDeleteFn = null;
   if (dlg.open) dlg.close();
-  dlg.innerHTML = `<div class="dlg-h" style="padding:0 44px 0 0">
-      <input class="inp" id="jq" placeholder="${esc(tr("search_ph"))}" autocomplete="off"
-        style="border:0;height:46px;font-size:14px;background:none">
+  dlg.innerHTML = `<div class="jmp-h">
+      ${ico("search", "ico mut", 17)}
+      <input id="jq" placeholder="${esc(tr("search_ph"))}" autocomplete="off" spellcheck="false">
       <button type="button" class="dlg-x" id="jx" aria-label="${esc(tr("search_close"))}"
-        style="top:8px;right:8px">${ico("close", "", 16)}</button>
+        style="position:static;width:28px;height:28px">${ico("close", "", 15)}</button>
     </div>
-    <div class="dlg-b" style="padding:6px;max-height:340px"><ul id="jl" class="grid" style="gap:1px"></ul></div>
-    <div class="dlg-f" style="justify-content:space-between;padding:9px 12px">
-      <span class="xs mut">↑↓ kiezen · Enter openen · Esc sluiten</span>
-      <button type="button" class="btn sm outline" id="jclose">Sluiten</button>
+    <div class="jmp-b"><ul id="jl"></ul></div>
+    <div class="jmp-f">
+      <span class="row" style="gap:5px"><kbd>&#8593;</kbd><kbd>&#8595;</kbd>${esc(tr("jmp_pick"))}</span>
+      <span class="row" style="gap:5px"><kbd>Enter</kbd>${esc(tr("jmp_open"))}</span>
+      <span class="row" style="gap:5px"><kbd>Esc</kbd>${esc(tr("jmp_close"))}</span>
     </div>`;
   dlg.showModal();
   $("#jx").onclick = () => dlg.close();
-  $("#jclose").onclick = () => dlg.close();
   const q = $("#jq"), ul = $("#jl");
   let idx = 0, shown = rows;
+  /* Gegroepeerd op soort, met het kopje alleen waar de soort wisselt. Zo lees
+     je de lijst als drie korte lijstjes in plaats van als veertig regels. */
   const paint = () => {
-    ul.innerHTML = shown.slice(0, 40).map((r, i) => `<li><button type="button" data-i="${i}"
-      style="width:100%;display:flex;gap:10px;align-items:center;padding:8px 10px;border:0;border-radius:7px;
-      cursor:pointer;text-align:left;background:${i === idx ? "var(--surface-2)" : "none"};color:inherit">
-      <span class="trunc" style="flex:1">${esc(r.label)}</span>
-      <span class="xs mut">${r.kind}</span></button></li>`).join("")
-      || `<li class="xs mut" style="padding:16px;text-align:center">Nothing matches that.</li>`;
+    let vorige = "";
+    const lijst = shown.slice(0, 40);
+    ul.innerHTML = lijst.map((r, i) => {
+      const kop = r.kind !== vorige ? `<li class="jmp-g">${esc(r.kind)}</li>` : "";
+      vorige = r.kind;
+      return `${kop}<li><button type="button" data-i="${i}" class="jmp-i ${i === idx ? "on" : ""}">
+        <span class="ico-tile" style="--it:${r.kleur};width:26px;height:26px;border-radius:8px">${ico(r.icon || "tasks", "", 13)}</span>
+        <span class="jmp-t">${esc(r.label)}</span>
+        ${r.hint ? `<span class="jmp-n">${esc(r.hint)}</span>` : ""}
+      </button></li>`;
+    }).join("")
+      || `<li class="jmp-leeg">${esc(tr("nothing_matches"))}</li>`;
+    const actief = ul.querySelector(".jmp-i.on");
+    if (actief) actief.scrollIntoView({ block: "nearest" });
   };
   const filter = () => {
     const s = q.value.trim().toLowerCase();
