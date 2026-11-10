@@ -1090,12 +1090,16 @@ const STR = {
           "Wat er is besproken, en wat eruit volgde. Door Copilot samengevat uit de transcriptie."],
   tr_f_all:["Alles","Alles"], tr_f_open:["Nog open","Nog open"],
   tr_n:["{0} verslagen","{0} verslagen"], tr_n_1:["1 verslag","1 verslag"],
-  tr_n_act:["{0} acties, waarvan {1} nog niet op een lijst","{0} acties, waarvan {1} nog niet op een lijst"],
+  tr_n_act:["{0} acties, waarvan {1} nog open","{0} acties, waarvan {1} nog open"],
   tr_actions:["Acties","Acties"],
   tr_no_actions:["Geen acties uit dit overleg.","Geen acties uit dit overleg."],
   tr_me:["Voor mij","Voor mij"],
   tr_to_task:["Naar takenlijst","Naar takenlijst"],
   tr_on_list:["Op je lijst","Op je lijst"],
+  tr_tick:["Meteen afvinken — hoeft niet naar je takenlijst",
+           "Meteen afvinken — hoeft niet naar je takenlijst"],
+  tr_untick:["Toch weer openzetten","Toch weer openzetten"],
+  tr_ticked:["Actie afgevinkt","Actie afgevinkt"],
   tr_open_meeting:["De afspraak","De afspraak"],
   tr_open_transcript:["Transcriptie","Transcriptie"],
   tr_open_chat:["In Teams","In Teams"],
@@ -1126,7 +1130,7 @@ const STR = {
   sg_none_ignored:["Je hebt nog niets afgehandeld.","Je hebt nog niets afgehandeld."],
   sg_show_open:["Terug naar de open voorstellen ({0})","Terug naar de open voorstellen ({0})"],
   tr_none:["Nog geen verslagen","Nog geen verslagen"],
-  tr_none_open:["Alle acties staan op een lijst","Alle acties staan op een lijst"],
+  tr_none_open:["Alle acties zijn afgehandeld","Alle acties zijn afgehandeld"],
   tr_none_d:["Ze komen binnen zodra de avondstroom een transcriptie heeft kunnen samenvatten. Een overleg zonder transcriptie slaat hij over.",
              "Ze komen binnen zodra de avondstroom een transcriptie heeft kunnen samenvatten. Een overleg zonder transcriptie slaat hij over."],
   tr_privacy:["Deze verslagen blijven in je werkruimte bewaard en komen dus ook in je back-up. Mail en briefing doen dat niet — die staan alleen in het geheugen.",
@@ -6188,10 +6192,16 @@ function trMeeting(t) {
     || null;
 }
 
+/* Een actie uit een verslag is afgehandeld als hij op je takenlijst staat, of
+   als je hem ter plekke hebt afgevinkt. Veel van wat uit een overleg komt is
+   klein genoeg om meteen te doen - iemand een bestand sturen, een datum
+   doorgeven - en dat hoeft de omweg langs je takenlijst niet te maken. */
+const trOpenActies = (t) => (t.acties || []).filter((a) => !a.taskId && !a.doneAt);
+
 function viewTranscripts() {
   const all = DB.transcripts || [];
   const f = UI.trFilter || "all";
-  const openCount = (t) => t.acties.filter((a) => !a.taskId).length;
+  const openCount = (t) => trOpenActies(t).length;
   const lijst = f === "open" ? all.filter((t) => openCount(t) > 0) : all;
 
   const byDay = [];
@@ -6249,7 +6259,7 @@ function trForMeeting(m) {
 function transcriptCard(m) {
   const t = trForMeeting(m);
   if (!t) return "";
-  const open = t.acties.filter((a) => !a.taskId).length;
+  const open = trOpenActies(t).length;
   const kort = t.secties.samenvatting || t.secties.besluiten || "";
   const chat = teamsChatUrl(m.onlineUrl);
   const url = t.link || chat;
@@ -6279,7 +6289,7 @@ function trCard(t) {
   });
 
   const open = UI.trOpen && UI.trOpen[t.id];
-  const nogOpen = t.acties.filter((a) => !a.taskId).length;
+  const nogOpen = trOpenActies(t).length;
   /* Dicht is de normale stand: een pagina vol uitgeklapte verslagen is niet te
      overzien. De kopregel vertelt genoeg om te kiezen welke je opent. */
   const kop = `<button class="tr-head" data-act="tr-toggle" data-id="${t.id}" aria-expanded="${Boolean(open)}">
@@ -6312,15 +6322,30 @@ function trCard(t) {
         <p class="row" style="gap:7px;align-items:center;margin-bottom:3px">
           <span class="att-dot" style="background:${vanBuiten(wie) ? "var(--warning)" : "var(--info)"};margin:0"></span>
           <span class="sm2" style="font-weight:500">${esc(wie)}</span></p>
-        <ul class="grid" style="gap:3px;padding-left:14px">${lijst.map((a) => `<li class="row" style="gap:6px;align-items:baseline">
-          <span class="xs" style="flex:1;min-width:0;line-height:1.55;${a.taskId ? "color:var(--ink-2)" : ""}">${esc(a.text)}</span>
-          <button class="btn icon sm ghost" data-act="tr-who" data-id="${t.id}" data-v="${a.id}"
-            style="flex:0 0 auto" title="${esc(tr("tr_who"))}" aria-label="${esc(tr("tr_who"))}">${ico("users", "", 12)}</button>
+        <ul class="grid" style="gap:3px;padding-left:14px">${lijst.map((a) => {
+          const af = Boolean(a.doneAt);
+          /* Drie uitkomsten per actie: hier afvinken, doorzetten naar je
+             takenlijst, of hem laten staan. Het vinkje staat vooraan, op
+             dezelfde plek als bij een taak - afvinken moet overal hetzelfde
+             gebaar zijn. Een actie die al een taak is krijgt er geen: die
+             status hoort bij de taak zelf, niet op twee plekken. */
+          return `<li class="row" style="gap:7px;align-items:flex-start">
+          ${a.taskId ? `<span style="width:16px;flex:0 0 auto"></span>` : `<button class="chk" role="checkbox" aria-checked="${af}"
+            data-act="tr-done" data-id="${t.id}" data-v="${a.id}" style="margin-top:1px"
+            title="${esc(af ? tr("tr_untick") : tr("tr_tick"))}"
+            aria-label="${esc(af ? tr("tr_untick") : tr("tr_tick"))}">${ico("check", "", 11)}</button>`}
+          <span class="xs" style="flex:1;min-width:0;line-height:1.55;${a.taskId || af
+            ? "color:var(--ink-2)" : ""}${af ? ";text-decoration:line-through" : ""}">${esc(a.text)}</span>
+          ${af ? "" : `<button class="btn icon sm ghost" data-act="tr-who" data-id="${t.id}" data-v="${a.id}"
+            style="flex:0 0 auto" title="${esc(tr("tr_who"))}" aria-label="${esc(tr("tr_who"))}">${ico("users", "", 12)}</button>`}
           ${a.taskId
             ? `<span class="badge success" style="flex:0 0 auto">${ico("check", "", 10)} ${esc(tr("tr_on_list"))}</span>`
-            : `<button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
-                style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>`}
-        </li>`).join("")}</ul>
+            : af
+              ? `<span class="xs mut tab" style="flex:0 0 auto">${esc(fmtDate(String(a.doneAt).slice(0, 10)))}</span>`
+              : `<button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
+                  style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>`}
+        </li>`;
+        }).join("")}</ul>
       </div>`).join("")}
     </div>` : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}
     <div class="row wrap" style="gap:8px;margin-top:12px">
@@ -11633,6 +11658,18 @@ document.addEventListener("click", (e) => {
       const t = (DB.transcripts || []).find((x) => x.id === id);
       const a = t && t.acties.find((x) => x.id === el.dataset.v);
       if (a) trWhoDialog(t, a);
+      break;
+    }
+    /* Meteen afvinken, zonder er eerst een taak van te maken. Het vinkje is
+       zijn eigen ongedaanmaking: nog een keer klikken zet hem terug open, dus
+       hier hoort geen herstelpunt bij. */
+    case "tr-done": {
+      const t = (DB.transcripts || []).find((x) => x.id === id);
+      const a = t && t.acties.find((x) => x.id === el.dataset.v);
+      if (!a) break;
+      if (a.doneAt) { delete a.doneAt; save(); render(); break; }
+      a.doneAt = new Date().toISOString();
+      save(); render(); toast(tr("tr_ticked"));
       break;
     }
     case "tr-to-task": {
