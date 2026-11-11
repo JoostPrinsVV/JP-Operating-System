@@ -284,6 +284,11 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 .sug-sub{font-size:12px;color:var(--navy-muted)}
 .sug-d{font-size:11.5px;color:var(--ink-2);line-height:1.5;margin:15px 0 3px}
 .sug-txt{font-weight:600}
+/* De tekst houdt minstens een fatsoenlijke kolom; past er niet ook nog vier
+   knoppen naast, dan schuiven die eronder in plaats van de tekst plat te
+   drukken tot één woord per regel. */
+.sug-row{flex-wrap:wrap}
+.sug-acts{flex-wrap:wrap;max-width:100%}
 
 /* Dagkiezer: bolletjes die meteen laten zien wat je hebt aangevinkt, zonder
    dat het venster opnieuw getekend hoeft te worden. */
@@ -848,6 +853,15 @@ a.btn{text-decoration:none}
   background:color-mix(in srgb,var(--c5) 6%,transparent);
   border-radius:11px;padding:11px 13px;margin-bottom:13px}
 .brief-ai .lbl{color:var(--ink-2)}
+/* Wat jij zelf wilt inbrengen staat erboven, in de kleur van het overleg zelf
+   (de deelnamekaart) en niet in die van Copilot: dit is van jou. */
+.ap{border:1px solid color-mix(in srgb,var(--info) 30%,transparent);
+  background:color-mix(in srgb,var(--info) 5%,transparent);
+  border-radius:11px;padding:11px 13px;margin-bottom:13px}
+.ap .lbl{color:var(--ink-2)}
+.ap>p>svg{color:var(--info)}
+.ap-leeg{margin:-4px 0 9px}
+.ap-leeg:last-child,.ap:last-child{margin-bottom:0}
 
 /* Het vierkantje dat een categorie aanduidt, ook in de lijst en de popup. */
 /* Het randje houdt een lichte kleur als geel zichtbaar op een witte kaart. */
@@ -1118,9 +1132,49 @@ const STR = {
   tr_untitled:["Zonder titel","Zonder titel"],
   sg_head:["Copilot-analyse","Copilot-analyse"],
   sg_sub:["Mogelijk nog op te pakken taken","Mogelijk nog op te pakken taken"],
-  sg_d:["Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je hier beoordeelt — aanmaken, al gedaan of niet voor jou — komt niet opnieuw langs.",
-        "Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je hier beoordeelt — aanmaken, al gedaan of niet voor jou — komt niet opnieuw langs."],
+  sg_d:["Every Monday Copilot reads back thirty days of mail and Teams. Whatever you decide here — make a task, put it on a meeting's agenda, already done or not yours — does not come back.",
+        "Elke maandag leest Copilot dertig dagen mail en Teams terug. Wat je hier beoordeelt — aanmaken, op de agenda van een overleg, al gedaan of niet voor jou — komt niet opnieuw langs."],
   sg_make:["Taak maken","Taak maken"],
+  sg_agenda:["On an agenda","Op agenda"],
+  sg_agenda_t:["Bring it up in a planned meeting instead of making it a task",
+               "Meenemen als bespreekpunt in een gepland overleg, in plaats van een losse taak"],
+
+  /* bespreekpunten bij een overleg */
+  ap_head:["Your points ({0})","Jouw bespreekpunten ({0})"],
+  ap_head0:["Your points","Jouw bespreekpunten"],
+  ap_add:["Add a point","Bespreekpunt toevoegen"],
+  ap_add_d:["What do you want to bring up at {0}?","Wat wil je inbrengen bij {0}?"],
+  ap_text:["Point","Bespreekpunt"],
+  ap_text_ph:["e.g. Agree who sends the proposal","Bijv. afspreken wie het voorstel stuurt"],
+  ap_meeting:["Meeting","Overleg"],
+  ap_pick_t:["Discuss in a meeting","Bespreken in een overleg"],
+  ap_pick_d:["The point goes to the top of that meeting's briefing, so you have it in front of you when you prepare.",
+             "Het punt komt bovenaan de briefing van dat overleg te staan, zodat je het bij de voorbereiding voor je hebt."],
+  ap_pick_go:["Put on the agenda","Op de agenda zetten"],
+  ap_move_t:["Move to another meeting","Naar een ander overleg"],
+  ap_move_go:["Move","Verplaatsen"],
+  ap_choose:["Choose a meeting…","Kies een overleg…"],
+  ap_sugg:["Suggested","Voorgesteld"],
+  ap_with:["with {0}","met {0}"],
+  ap_none:["No meeting in your calendar in the coming six weeks to put it on.",
+           "Er staat de komende zes weken geen overleg in je agenda om het aan te hangen."],
+  ap_set:["On the agenda of {0}","Op de agenda van {0}"],
+  ap_moved:["Moved to {0}","Verplaatst naar {0}"],
+  ap_removed:["Point removed","Bespreekpunt weggehaald"],
+  ap_removed_sug:["Point removed — the suggestion is open again under your tasks",
+                  "Bespreekpunt weggehaald — het voorstel staat weer open bij je taken"],
+  ap_from_sug:["from Copilot analysis","uit Copilot-analyse"],
+  ap_from_task:["task","taak"],
+  ap_done:["Discussed","Besproken"],
+  ap_del:["Remove","Weghalen"],
+  ap_past:["Didn't get to it? Move it to the next meeting.","Niet aan toegekomen? Verplaats het naar een volgend overleg."],
+  ap_n:["{0} points","{0} bespreekpunten"],
+  ap_1:["1 point","1 bespreekpunt"],
+  ap_task_field:["Discuss in meeting","Bespreken in overleg"],
+  ap_task_none:["— not on an agenda —","— niet bespreken —"],
+  ap_task_on:["On the agenda of {0}","Op de agenda van {0}"],
+  ag_n_moved:["{0} points moved along to the new time","{0} bespreekpunten meeverhuisd naar de nieuwe tijd"],
+  u_point:["Point","Bespreekpunt"],
   sg_done:["Al gedaan","Al gedaan"],
   sg_ignore:["Niet voor mij","Niet voor mij"],
   sg_show_done:["{0} afgehandeld","{0} afgehandeld"],
@@ -1621,8 +1675,8 @@ const STR = {
   ag_auto_short:["automatisch","automatisch"],
 
   m_brief:["Briefing","Briefing"],
-  m_brief_d:["Wat de app zelf weet, en wat Copilot er vanochtend over schreef.",
-             "Wat de app zelf weet, en wat Copilot er vanochtend over schreef."],
+  m_brief_d:["What you want to bring up, what the app knows, and what Copilot wrote about it this morning.",
+             "Wat jij wilt inbrengen, wat de app zelf weet, en wat Copilot er vanochtend over schreef."],
   m_brief_ai:["Door Copilot","Door Copilot"],
   m_brief_ai_note:["Geschreven door een taalmodel op basis van je mail, chats en agenda. Lees het als een geheugensteun, niet als een vastgelegd besluit.",
                    "Geschreven door een taalmodel op basis van je mail, chats en agenda. Lees het als een geheugensteun, niet als een vastgelegd besluit."],
@@ -3295,6 +3349,7 @@ function dedupeMeetings() {
   DB.meetings = DB.meetings.filter((m) => !weg.has(m.id));
   DB.actions.forEach((a) => { if (weg.has(a.meetingId)) a.meetingId = weg.get(a.meetingId); });
   DB.timeEntries.forEach((e) => { if (weg.has(e.meetingId)) e.meetingId = weg.get(e.meetingId); });
+  (DB.agendaPoints || []).forEach((p) => { if (weg.has(p.meetingId)) p.meetingId = weg.get(p.meetingId); });
   return true;
 }
 
@@ -3374,6 +3429,7 @@ function migrate() {
   DB.meetings.forEach((m) => { if (normaliseAllDay(m)) changed = true; });
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
   if (!Array.isArray(DB.suggestions)) { DB.suggestions = []; changed = true; }
+  if (!Array.isArray(DB.agendaPoints)) { DB.agendaPoints = []; changed = true; }
   if (!Array.isArray(DB.news)) { DB.news = []; changed = true; }
   if (!Array.isArray(DB.subprojects)) { DB.subprojects = []; changed = true; }
   /* De ingebouwde opdrachttypes komen in de lijst te staan, zodat ze te
@@ -3936,6 +3992,8 @@ function viewDashboard() {
                   <span class="tsk-m">
                     ${rel ? `<span class="badge ${rel.tone}" data-when="${esc(m.startsAt)}"
                       data-end="${esc(m.endsAt || "")}">${esc(rel.text)}</span>` : ""}
+                    ${(() => { const n = openPointsOf(m.id).length;
+                      return n ? `<span style="color:var(--info);font-weight:500">${esc(pointsLabel(n))}</span>` : ""; })()}
                     ${m.location ? `<span>${esc(m.location)}</span>` : ""}
                     ${(m.categories || []).length ? `<span>${esc(m.categories[0])}</span>` : ""}</span>
                 </span></button>
@@ -4347,6 +4405,7 @@ async function sugRead(dir) {
    vertellen ze of deze analyse je iets oplevert of vooral ruis. */
 const SUG_AF = [
   ["task",    ["Task made","Taak gemaakt"], "info"],
+  ["agenda",  ["On an agenda","Op agenda"], "info"],
   ["done",    ["Already done","Al gedaan"], "success"],
   ["ignored", ["Not mine","Niet voor mij"], "neutral"],
 ];
@@ -4358,11 +4417,18 @@ function suggestionCard() {
   if (!alle.length) return "";
   const toon = UI.sugIgnored ? af : open;
 
-  const rij = (s) => `<li class="row" style="gap:10px;padding:9px 2px;align-items:flex-start">
-    <span style="flex:1;min-width:0">
+  const rij = (s) => {
+    // Staat hij op een agenda, dan zie je op welke, en kun je erheen.
+    const p = s.status === "agenda" && pointForSug(s.id);
+    const pm = p && DB.meetings.find((m) => m.id === p.meetingId);
+    return `<li class="row sug-row" style="gap:10px;padding:9px 2px;align-items:flex-start">
+    <span style="flex:1 1 260px;min-width:0">
       <span class="sm2 sug-txt" style="display:block;line-height:1.5">${esc(s.text)}</span>
       ${s.why ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(s.why)}</span>` : ""}
       ${s.source ? `<span class="xs mut" style="display:block;margin-top:1px;font-style:italic">${esc(s.source)}</span>` : ""}
+      ${pm ? `<button class="tsk-t xs row" data-act="peek-meeting" data-id="${pm.id}"
+          style="gap:5px;margin-top:4px;width:auto;color:var(--info);font-weight:500">
+          ${ico("meetings", "", 12)} ${esc(mtgKort(pm))}</button>` : ""}
     </span>
     ${s.status !== "open"
       ? `<span class="row" style="gap:6px;flex:0 0 auto">
@@ -4370,14 +4436,17 @@ function suggestionCard() {
           <button class="btn sm ghost" data-act="sug-open" data-id="${s.id}">
             ${ico("back", "", 11)} ${esc(tr("sg_back"))}</button>
         </span>`
-      : `<span class="row" style="gap:4px;flex:0 0 auto">
+      : `<span class="row sug-acts" style="gap:4px;flex:0 0 auto">
           <button class="btn sm outline" data-act="sug-task" data-id="${s.id}">
             ${ico("plus", "", 11)} ${esc(tr("sg_make"))}</button>
+          <button class="btn sm outline" data-act="sug-agenda" data-id="${s.id}"
+            title="${esc(tr("sg_agenda_t"))}">${ico("meetings", "", 11)} ${esc(tr("sg_agenda"))}</button>
           <button class="btn sm ghost" data-act="sug-done" data-id="${s.id}">
             ${ico("check", "", 11)} ${esc(tr("sg_done"))}</button>
           <button class="btn sm ghost" data-act="sug-ignore" data-id="${s.id}">${esc(tr("sg_ignore"))}</button>
         </span>`}
   </li>`;
+  };
 
   return `<section class="card sug-card">
     <div class="sug-h">${ico("sparkle", "ico", 15)}
@@ -4476,6 +4545,8 @@ function kanbanCard(t) {
   const g = t.goalId && DB.goals.find((x) => x.id === t.goalId);
   const p = t.projectId && DB.projects.find((x) => x.id === t.projectId);
   const od = t.status !== "done" && overdue(t.dueDate);
+  const ap = pointForTask(t.id);
+  const apm = ap && DB.meetings.find((x) => x.id === ap.meetingId);
   return `<article class="kcard" draggable="true" data-task="${t.id}"
       data-act="edit-task" data-id="${t.id}">
     <button class="kcard-t" data-act="edit-task" data-id="${t.id}">${esc(t.title)}</button>
@@ -4484,8 +4555,10 @@ function kanbanCard(t) {
       ${t.priority !== "medium" ? badge(PRIOS, t.priority) : ""}
       ${t.energy === "deep" ? `<span class="badge neutral">${esc(tr("deep"))}</span>` : ""}
     </div>
-    ${(t.dueDate || p || g) ? `<div class="tsk-m">
+    ${(t.dueDate || p || g || apm) ? `<div class="tsk-m">
       ${t.dueDate ? `<span ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${esc(fmtDate(t.dueDate))}</span>` : ""}
+      ${apm ? `<span class="row" style="gap:3px;color:var(--info)" title="${esc(tr("ap_task_on", mtgKort(apm)))}">
+        ${ico("meetings", "", 11)}${esc(fmtDate(String(apm.startsAt).slice(0, 10)))}</span>` : ""}
       ${g ? `<span><i style="display:inline-block;width:6px;height:6px;border-radius:2px;background:${slotColor(g.slot)};margin-right:3px"></i>${esc(g.code)}</span>` : ""}
       ${p ? `<span class="trunc" style="max-width:120px">${esc(p.name)}</span>` : ""}</div>` : ""}
   </article>`;
@@ -4908,6 +4981,8 @@ function meetingRow(m, isNext, past) {
       <span class="tsk-m">
         ${m.cancelled ? `<span class="badge warning">${esc(tr("m_cancelled"))}</span>` : ""}
         ${isNext ? `<span style="color:var(--primary);font-weight:600">${esc(tr("m_next"))}</span>` : ""}
+        ${(() => { const n = openPointsOf(m.id).length;
+          return n ? `<span style="color:var(--info);font-weight:500">${esc(pointsLabel(n))}</span>` : ""; })()}
         ${m.location ? `<span>${esc(m.location)}</span>` : ""}
         ${m.attendees.length ? `<span>${m.attendees.length} ${esc(tr("m_attendees"))}</span>` : ""}
         ${(m.categories || []).map((c) => `<span class="row" style="gap:5px">
@@ -6413,6 +6488,209 @@ function vanBuiten(naam) {
   return Boolean(att) && !attEmail(att).toLowerCase().endsWith(`@${domein}`);
 }
 
+/* ---- bespreekpunten -----------------------------------------------------
+   Iets wat je wilt inbrengen bij een overleg, zonder dat het een taak hoeft te
+   worden: een voorstel uit de Copilot-analyse, een taak die je liever eerst
+   bespreekt, of iets wat je er zelf bij zet. Het hangt aan één afspraak en
+   staat bovenaan de briefing daarvan, waar je je voorbereidt.
+
+   Elk punt draagt zijn eigen tekst. Bij een taak toont de app de titel zoals
+   die nu is, maar valt de taak weg, dan blijft het punt gewoon leesbaar.
+------------------------------------------------------------------------- */
+const pointsOf = (meetingId) => (DB.agendaPoints || []).filter((p) => p.meetingId === meetingId);
+const openPointsOf = (meetingId) => pointsOf(meetingId).filter((p) => p.status === "open");
+const pointTask = (p) => (p.taskId && DB.tasks.find((t) => t.id === p.taskId)) || null;
+const pointText = (p) => { const t = pointTask(p); return t ? t.title : p.text; };
+const pointForTask = (taskId) => (DB.agendaPoints || []).find((p) => p.taskId === taskId && p.status === "open") || null;
+const pointForSug = (sugId) => (DB.agendaPoints || []).find((p) => p.suggestionId === sugId) || null;
+const mtgKort = (m) => `${m.title} (${fmtDate(String(m.startsAt).slice(0, 10))} ${fmtTime(m.startsAt)})`;
+const pointsLabel = (n) => (n === 1 ? tr("ap_1") : tr("ap_n", n));
+
+function pointAdd(meetingId, fields) {
+  const p = { id: uid(), meetingId, text: "", why: "", source: "", suggestionId: null, taskId: null,
+    status: "open", createdAt: TODAY(), ...fields };
+  DB.agendaPoints.push(p);
+  return p;
+}
+
+/* Een punt weghalen. Kwam het uit de Copilot-analyse en was het nog niet
+   besproken, dan staat het voorstel weer open: van de agenda halen is geen
+   oordeel dat het voorstel niet klopte. */
+function pointLos(p) {
+  DB.agendaPoints = DB.agendaPoints.filter((x) => x !== p);
+  const s = p.suggestionId && p.status === "open" && (DB.suggestions || []).find((x) => x.id === p.suggestionId);
+  if (s && s.status === "agenda") { s.status = "open"; return true; }
+  return false;
+}
+
+/* Een taak staat op hoogstens één agenda tegelijk. Leeg betekent eraf; een
+   punt dat al besproken is blijft staan als wat het was. */
+function pointSyncTask(t, meetingId) {
+  const p = pointForTask(t.id);
+  if (!meetingId) { if (p) DB.agendaPoints = DB.agendaPoints.filter((x) => x !== p); return; }
+  if (p) { p.meetingId = meetingId; p.text = t.title; return; }
+  pointAdd(meetingId, { taskId: t.id, text: t.title });
+}
+
+/* De afspraken waar je een punt aan kunt hangen: wat nog moet komen of nu
+   loopt, binnen zes weken. Een hele-dag-blok is geen gesprek, en wat in
+   Outlook is weggegooid ook niet. */
+function agendaKandidaten() {
+  const nu = Date.now(), grens = addDays(42);
+  return DB.meetings.filter((m) => !m.cancelled && !isAllDay(m) &&
+      String(m.startsAt).slice(0, 10) <= grens &&
+      new Date(m.endsAt || m.startsAt).getTime() >= nu)
+    .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)));
+}
+
+/* Wie uit de tekst bij deze afspraak zit. Alleen op de volle naam: op een
+   voornaam alleen zit je in een kantoor van honderden mensen zo naast. */
+function agendaWie(m, hint) {
+  const h = briefNorm(hint);
+  if (!h) return [];
+  return (m.attendees || []).map(attName)
+    .filter((n) => n && briefNorm(n).includes(" ") && !isMij(n) && h.includes(briefNorm(n)));
+}
+
+/* De keuzelijst, per dag gegroepeerd. Zit iemand die in de tekst wordt
+   genoemd bij een afspraak, of hoort de afspraak bij hetzelfde project, dan
+   staat hij bovenaan als voorstel - dat is meestal waar het punt thuishoort.
+   Met `autoKies` staat het eerste voorstel alvast geselecteerd. */
+function agendaOptions(sel, hint, projectId, autoKies = false) {
+  const lijst = agendaKandidaten();
+  // De huidige keuze blijft kiesbaar, ook als die inmiddels voorbij is.
+  const huidig = sel && DB.meetings.find((m) => m.id === sel);
+  if (huidig && !lijst.includes(huidig)) lijst.unshift(huidig);
+
+  const voorstel = [], rest = [];
+  const proj = projectId && DB.projects.find((p) => p.id === projectId);
+  lijst.forEach((m) => {
+    const wie = agendaWie(m, hint);
+    if (wie.length) voorstel.push({ m, reden: tr("ap_with", wie.slice(0, 2).join(", ")) });
+    else if (proj && m.projectId === proj.id) voorstel.push({ m, reden: proj.name });
+    else rest.push(m);
+  });
+  if (!sel && autoKies && voorstel.length) sel = voorstel[0].m.id;
+
+  const opt = (m, label) => `<option value="${m.id}" ${m.id === sel ? "selected" : ""}>${esc(label)}</option>`;
+  const dagen = [];
+  rest.forEach((m) => {
+    const dag = String(m.startsAt).slice(0, 10);
+    const laatste = dagen[dagen.length - 1];
+    if (laatste && laatste.dag === dag) laatste.items.push(m);
+    else dagen.push({ dag, items: [m] });
+  });
+  const html =
+    (voorstel.length ? `<optgroup label="${esc(tr("ap_sugg"))}">${voorstel.map(({ m, reden }) =>
+      opt(m, `${fmtDate(String(m.startsAt).slice(0, 10))} ${fmtTime(m.startsAt)} · ${truncate(m.title, 60)} · ${reden}`)).join("")}</optgroup>` : "") +
+    dagen.map(({ dag, items }) => `<optgroup label="${esc(dayHeading(dag))}">${items.map((m) =>
+      opt(m, `${fmtTime(m.startsAt)} · ${truncate(m.title, 70)}`)).join("")}</optgroup>`).join("");
+  return { html, n: lijst.length, sel: sel || "" };
+}
+
+/* Staat er een afspraak open in het venster? Dan kan een venster dat er even
+   overheen kwam - een punt toevoegen, verplaatsen - daarna terugkeren. */
+const peekOpen = () => (dlg.open && dlg.dataset.peek) || "";
+
+/* Eén venster voor op de agenda zetten en voor verplaatsen. Met `text` staat
+   het punt zelf erbij, om nog bij te schaven voor het op de agenda komt. */
+function agendaDialog({ title = "", submit = "", text = null, hint = "", projectId = null, current = "", onPick }) {
+  const keuze = agendaOptions(current, hint, projectId, true);
+  if (!keuze.n) { toast(tr("ap_none")); return; }
+  const terug = peekOpen();
+  openDialog({
+    title: title || tr("ap_pick_t"), desc: tr("ap_pick_d"), submit: submit || tr("ap_pick_go"),
+    body: (text !== null ? field(tr("ap_text"),
+        `<input class="inp" name="text" required maxlength="400" value="${esc(text)}">`) : "") +
+      field(tr("ap_meeting"), `<select class="inp" name="meetingId" required>
+        ${keuze.sel ? "" : `<option value="" selected disabled>${esc(tr("ap_choose"))}</option>`}${keuze.html}</select>`),
+    onSubmit: (f) => {
+      const m = DB.meetings.find((x) => x.id === f.meetingId);
+      const tekst = String(f.text || "").trim();
+      if (!m || (text !== null && !tekst)) return false;
+      onPick(m, tekst);
+      save(); render();
+      if (terug) setTimeout(() => meetingPeek(terug), 0);
+    },
+  });
+}
+
+function pointDialog(meetingId) {
+  const m = DB.meetings.find((x) => x.id === meetingId);
+  if (!m) return;
+  const terug = peekOpen();
+  openDialog({
+    title: tr("ap_add"), desc: tr("ap_add_d", m.title), submit: tr("add"),
+    body: field(tr("ap_text"), `<input class="inp" name="text" required maxlength="400"
+      placeholder="${esc(tr("ap_text_ph"))}">`),
+    onSubmit: (f) => {
+      const tekst = String(f.text || "").trim();
+      if (!tekst) return false;
+      pointAdd(m.id, { text: tekst });
+      save(); render();
+      if (terug) setTimeout(() => meetingPeek(terug), 0);
+    },
+  });
+}
+
+/* Na een vinkje of een weggehaald punt: de pagina opnieuw, en staat dezelfde
+   afspraak open in het venster, dan het blok daarin ook. Anders zie je je
+   vinkje pas na het sluiten. */
+function pointsRefresh(meetingId) {
+  save(); render();
+  if (!dlg.open) return;
+  const m = DB.meetings.find((x) => x.id === meetingId);
+  dlg.querySelectorAll(`[data-ap="${CSS.escape(meetingId)}"]`)
+    .forEach((el) => { el.outerHTML = m ? pointsBlock(m) : ""; });
+}
+
+/* Bovenaan de briefing: wat jij wilt inbrengen. Afvinken als het besproken
+   is; wat bleef liggen gaat met één klik naar een volgend overleg. Zonder
+   punten blijft alleen de knop over, zodat een lege agenda geen kader kost. */
+function pointsBlock(m) {
+  const lijst = pointsOf(m.id)
+    .sort((a, b) => (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1));
+  const voorbij = new Date(m.endsAt || m.startsAt).getTime() < Date.now();
+  const kanErbij = !m.cancelled && !voorbij;
+  const knop = kanErbij ? `<button type="button" class="btn sm ghost" data-act="pt-add" data-id="${m.id}"
+    style="padding-left:0">${ico("plus", "", 12)} ${esc(tr("ap_add"))}</button>` : "";
+  if (!lijst.length) return kanErbij ? `<div class="ap-leeg" data-ap="${m.id}">${knop}</div>` : "";
+
+  const open = lijst.filter((p) => p.status === "open").length;
+  const doorhalen = "color:var(--ink-2);text-decoration:line-through";
+  const rij = (p) => {
+    const af = p.status === "done";
+    const t = pointTask(p);
+    const herkomst = p.suggestionId ? tr("ap_from_sug") : p.taskId ? tr("ap_from_task") : "";
+    const bron = [p.source, herkomst].filter(Boolean).join(" · ");
+    return `<li class="row" style="gap:9px;align-items:flex-start">
+      <button type="button" class="chk" role="checkbox" aria-checked="${af}" data-act="pt-toggle" data-id="${p.id}"
+        aria-label="${esc(tr("ap_done"))}: ${esc(pointText(p))}" style="margin-top:2px">${ico("check", "", 11)}</button>
+      <span style="flex:1;min-width:0">
+        ${t ? `<button type="button" class="tsk-t sm2" data-act="edit-task" data-id="${t.id}"
+            style="display:block;font-weight:500;line-height:1.45;${af ? doorhalen : ""}">${esc(t.title)}</button>`
+          : `<span class="sm2" style="display:block;font-weight:500;line-height:1.45;${af ? doorhalen : ""}">${esc(p.text)}</span>`}
+        ${p.why && !af ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(p.why)}</span>` : ""}
+        ${bron ? `<span class="xs mut" style="display:block;margin-top:1px;font-style:italic">${esc(bron)}</span>` : ""}
+      </span>
+      <span class="row" style="gap:0;flex:0 0 auto">
+        ${af ? "" : `<button type="button" class="btn icon sm ghost" data-act="pt-move" data-id="${p.id}"
+          title="${esc(tr("ap_move_t"))}" aria-label="${esc(tr("ap_move_t"))}">${ico("arrow", "", 12)}</button>`}
+        <button type="button" class="btn icon sm ghost" data-act="pt-del" data-id="${p.id}"
+          title="${esc(tr("ap_del"))}" aria-label="${esc(tr("ap_del"))}">${ico("close", "", 12)}</button>
+      </span>
+    </li>`;
+  };
+
+  return `<div class="ap" data-ap="${m.id}">
+    <p class="row" style="gap:7px;align-items:center;margin-bottom:8px">
+      ${ico("meetings", "", 14)}<span class="lbl" style="margin:0">${esc(open ? tr("ap_head", open) : tr("ap_head0"))}</span></p>
+    <ul class="grid" style="gap:9px">${lijst.map(rij).join("")}</ul>
+    ${open && !kanErbij ? `<p class="xs mut" style="margin-top:8px">${esc(tr("ap_past"))}</p>` : ""}
+    ${knop ? `<div style="margin-top:6px">${knop}</div>` : ""}
+  </div>`;
+}
+
 function briefingCard(m) {
   const related = relatedMeetings(m);
   const prev = related[0] ? related[0].x : null;
@@ -6429,9 +6707,10 @@ function briefingCard(m) {
     : [];
 
   const cop = briefFor(m);
+  const punten = pointsBlock(m);
 
   // Niets te melden is ook een antwoord, maar dan hoeft er geen kaart te staan.
-  if (!cop && !prev && !open.length && !tasks.length) return "";
+  if (!cop && !prev && !open.length && !tasks.length && !punten) return "";
 
   const line = (label, body) => `<div style="margin-bottom:11px">
     <p class="lbl" style="margin-bottom:3px">${esc(label)}</p>${body}</div>`;
@@ -6462,6 +6741,7 @@ function briefingCard(m) {
   </div>`;
 
   return card(tr("m_brief"), `
+    ${punten}
     ${copBlok}
     ${prev ? line(tr("m_brief_prev", fmtDate(prev.startsAt.slice(0, 10))),
       `<button class="tsk-t sm2" data-act="open-meeting" data-id="${prev.id}"
@@ -9305,6 +9585,8 @@ function openDialog({ title, desc = "", body, submit = "Save", del = null, onSub
   // showModal() throws if the dialog is already open, e.g. opening a task
   // straight from the search panel.
   if (dlg.open) dlg.close();
+  // Welke afspraak er in het venster staat, zet meetingPeek zelf weer neer.
+  delete dlg.dataset.peek;
   // Een venster dat een hele pagina samenvat heeft meer breedte nodig.
   dlg.classList.toggle("wide", Boolean(wide));
   dlg.innerHTML = `<form id="dlg-form" method="dialog">
@@ -9367,6 +9649,9 @@ function taskDialog(task, defaults = {}) {
     dueDate: "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "",
     subId: defaults.subId || "", waitingOn: defaults.waitingOn || "",
   };
+  // Op welke agenda deze taak nu staat, als hij nog besproken moet worden.
+  const apNu = task ? ((pointForTask(task.id) || {}).meetingId || "") : "";
+  const apKeuze = agendaOptions(apNu, [t.title, t.waitingOn].join(" "), t.projectId);
   openDialog({
     title: task ? tr("dl_task_edit") : tr("dl_task_new"),
     desc: tr("dl_task_d"),
@@ -9389,6 +9674,8 @@ function taskDialog(task, defaults = {}) {
         ${field(tr("th_goal"), `<select class="inp" name="goalId">${goalOptions(t.goalId)}</select>`)}
         ${field(tr("dl_energy"), `<select class="inp" name="energy">${opts([["deep", "Deep work"], ["shallow", "Shallow"]], t.energy)}</select>`)}
         ${field(tr("dl_waiting"), `<input class="inp" name="waitingOn" value="${esc(t.waitingOn || "")}" placeholder="Who or what">`)}
+        ${field(tr("ap_task_field"), `<select class="inp" name="meetingId" ${apKeuze.n ? "" : "disabled"}>
+          <option value="">${esc(tr("ap_task_none"))}</option>${apKeuze.html}</select>`)}
       </div>` +
       field(tr("dl_notes"), `<textarea class="inp" name="notes" rows="3" placeholder="Context, links, next step…">${esc(t.notes)}</textarea>`),
     onSubmit: (f) => {
@@ -9402,13 +9689,18 @@ function taskDialog(task, defaults = {}) {
       // Een onderdeel bepaalt bij welk project de taak hoort; anders kunnen de
       // twee uit elkaar lopen en staat een taak op twee plekken tegelijk.
       if (patch.subId) { const s = subOf(patch.subId); if (s) patch.projectId = s.projectId; }
+      /* Een uitgeschakeld keuzemenu komt niet mee in het formulier. Zonder
+         afspraken om uit te kiezen blijft de koppeling dus zoals hij was. */
+      const apNaar = "meetingId" in f ? f.meetingId : apNu;
       if (task) {
         Object.assign(task, patch);
         if (task.status === "done" && !task.completedAt) task.completedAt = TODAY();
         if (task.status !== "done") task.completedAt = null;
+        pointSyncTask(task, apNaar);
       } else {
         const nieuw = { id: uid(), createdAt: TODAY(), completedAt: patch.status === "done" ? TODAY() : null, ...patch };
         DB.tasks.unshift(nieuw);
+        pointSyncTask(nieuw, apNaar);
         // De aanroeper mag weten welke taak het werd, om hem te kunnen koppelen.
         if (typeof defaults.onSaved === "function") defaults.onSaved(nieuw);
       }
@@ -9482,6 +9774,8 @@ function meetingDialog(meeting, defaults) {
       checkpoint(tr("u_meeting"));
       DB.meetings = DB.meetings.filter((x) => x.id !== meeting.id);
       DB.actions = DB.actions.filter((a) => a.meetingId !== meeting.id);
+      // Wat nog besproken moest worden, gaat terug naar waar het vandaan kwam.
+      DB.agendaPoints.filter((p) => p.meetingId === meeting.id).forEach(pointLos);
       UI.detail = null;
       save(); go("meetings"); toast(tr("dl_meet_deleted"), true);
     } : null,
@@ -9561,6 +9855,7 @@ function meetingPeek(id) {
         : `<p class="xs mut">${esc(tr("m_noact"))}</p>`),
     onSubmit: () => { open_("meeting", m.id); },
   });
+  dlg.dataset.peek = m.id;
 }
 
 function classifyDialog(idea) {
@@ -10387,11 +10682,11 @@ function importEvents(events, from, to) {
   /* Een categorie die uit Outlook komt en hier nog niet bestond, wordt er een
      - dan kun je hem meteen ook zelf aan een afspraak hangen. */
   const nieuweCats = catEnsure(events.flatMap((e) => e.categories || []));
-  const { removed, cancelled } = removeDeleted(events, from, to);
-  if (added || filled || attFilled || nieuweCats || removed || cancelled) save();
+  const { removed, cancelled, moved } = removeDeleted(events, from, to);
+  if (added || filled || attFilled || nieuweCats || removed || cancelled || moved) save();
   // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
   // zoeken in de app als het eigenlijk aan de flow ligt.
-  return { added, filled, attFilled, skipped, withAtt, removed, cancelled };
+  return { added, filled, attFilled, skipped, withAtt, removed, cancelled, moved };
 }
 
 /* Wat je in Outlook weggooit, hoort hier ook weg. Zien kun je dat alleen zo:
@@ -10404,9 +10699,9 @@ function importEvents(events, from, to) {
    met genoeg afspraken erin, zodat een half weggeschreven bestand je agenda
    niet leegt. En alleen bij afspraken die je niet zelf hebt aangemaakt. */
 function removeDeleted(events, from, to) {
-  let removed = 0, cancelled = 0;
+  let removed = 0, cancelled = 0, moved = 0;
   const binnen = events.filter((e) => e.uid && e.start.day >= from && e.start.day <= to);
-  if (binnen.length < 3) return { removed, cancelled };
+  if (binnen.length < 3) return { removed, cancelled, moved };
 
   const dagen = binnen.map((e) => e.start.day);
   /* Nooit achteruit opruimen. De ondergrens kwam uit het bestand zelf, en één
@@ -10429,12 +10724,32 @@ function removeDeleted(events, from, to) {
     if (!m.outlookUid || dag < vanaf || dag > tot) return true;
     if (inBestand.has(meetingKey(m.outlookUid, m.startsAt))) return true;
 
+    /* Een bespreekpunt hoort bij het gesprek, niet bij het tijdstip. Verzet
+       iemand de afspraak, dan komt hij onder dezelfde Outlook-sleutel op een
+       nieuwe tijd terug en zou je punt op de oude blijven hangen. Wat nog
+       open stond gaat dus mee naar de eerstvolgende keer met die sleutel - bij
+       een reeks waaruit één keer is geschrapt is dat de volgende keer. */
+    const punten = DB.agendaPoints.filter((p) => p.meetingId === m.id && p.status === "open");
+    if (punten.length) {
+      const opvolger = DB.meetings
+        .filter((x) => x !== m && x.outlookUid === m.outlookUid && !x.cancelled &&
+          String(x.startsAt).slice(0, 10) >= TODAY() &&
+          inBestand.has(meetingKey(x.outlookUid, x.startsAt)))
+        .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)))[0];
+      if (opvolger) {
+        punten.forEach((p) => { p.meetingId = opvolger.id; });
+        moved += punten.length;
+      }
+    }
+
     /* Hangt er eigen werk aan, dan wordt hij doorgestreept in plaats van
        weggegooid. Notities tellen niet mee - die komen uit de import zelf -
-       maar besluiten, een eigen agenda, actiepunten en geboekte uren wel. */
+       maar besluiten, een eigen agenda, actiepunten, bespreekpunten die niet
+       mee konden en geboekte uren wel. */
     const eigenWerk = Boolean(String(m.decisions || "").trim()) ||
       Boolean(String(m.agenda || "").trim()) ||
-      DB.actions.some((a) => a.meetingId === m.id) || meetingBooked(m.id);
+      DB.actions.some((a) => a.meetingId === m.id) ||
+      DB.agendaPoints.some((p) => p.meetingId === m.id) || meetingBooked(m.id);
     if (eigenWerk) {
       if (!m.cancelled) { m.cancelled = true; cancelled++; }
       return true;
@@ -10442,7 +10757,7 @@ function removeDeleted(events, from, to) {
     removed++;
     return false;
   });
-  return { removed, cancelled };
+  return { removed, cancelled, moved };
 }
 
 function icsImport() {
@@ -10821,6 +11136,7 @@ async function agendaRead(loud) {
       r.attFilled ? tr("ag_n_att", r.attFilled) : "",
       r.removed ? tr("ag_n_removed", r.removed) : "",
       r.cancelled ? tr("ag_n_cancelled", r.cancelled) : "",
+      r.moved ? tr("ag_n_moved", r.moved) : "",
       ...erbij,
     ].filter(Boolean);
     if (delen.length) {
@@ -11181,6 +11497,9 @@ function pruneOrphans() {
 
   DB.actions = DB.actions.filter((a) => meetings.has(a.meetingId));
   DB.actions.forEach((a) => { if (a.taskId && !tasks.has(a.taskId)) a.taskId = null; });
+  // Een bespreekpunt draagt zijn eigen tekst, dus zonder taak blijft hij leesbaar.
+  DB.agendaPoints = (DB.agendaPoints || []).filter((p) => meetings.has(p.meetingId));
+  DB.agendaPoints.forEach((p) => { if (p.taskId && !tasks.has(p.taskId)) p.taskId = null; });
   DB.tasks.forEach((t) => { if (t.projectId && !projects.has(t.projectId)) t.projectId = null; });
   DB.meetings.forEach((m) => { if (m.projectId && !projects.has(m.projectId)) m.projectId = null; });
   DB.ideas.forEach((i) => { if (i.projectId && !projects.has(i.projectId)) i.projectId = null; });
@@ -11693,6 +12012,19 @@ document.addEventListener("click", (e) => {
       } });
       break;
     }
+    /* Niet elk voorstel is een taak: soms is het iets om in te brengen bij
+       een overleg dat toch al gepland staat. Dan komt het op die agenda en
+       telt het voorstel als beoordeeld. */
+    case "sug-agenda": {
+      const s = (DB.suggestions || []).find((x) => x.id === id);
+      if (!s) break;
+      agendaDialog({ text: s.text, hint: [s.source, s.why, s.text].join(" "), onPick: (m, tekst) => {
+        pointAdd(m.id, { text: tekst, why: s.why || "", source: s.source || "", suggestionId: s.id });
+        s.status = "agenda";
+        toast(tr("ap_set", mtgKort(m)));
+      } });
+      break;
+    }
     case "sug-done":
     case "sug-ignore": {
       const s = (DB.suggestions || []).find((x) => x.id === id);
@@ -11704,7 +12036,43 @@ document.addEventListener("click", (e) => {
     case "sug-open": {
       const s = (DB.suggestions || []).find((x) => x.id === id);
       if (!s) break;
+      /* Terug naar open haalt hem ook van de agenda, tenzij hij daar al is
+         besproken: dat is gebeurd, en blijft bij dat overleg staan. */
+      const p = pointForSug(s.id);
+      if (p && p.status === "open") DB.agendaPoints = DB.agendaPoints.filter((x) => x !== p);
+      else if (p) p.suggestionId = null;
       s.status = "open"; s.taskId = null; save(); render();
+      break;
+    }
+    case "pt-add": pointDialog(id); break;
+    case "pt-toggle": {
+      const p = DB.agendaPoints.find((x) => x.id === id); if (!p) break;
+      p.status = p.status === "done" ? "open" : "done";
+      p.doneAt = p.status === "done" ? TODAY() : null;
+      pointsRefresh(p.meetingId);
+      break;
+    }
+    case "pt-move": {
+      const p = DB.agendaPoints.find((x) => x.id === id); if (!p) break;
+      const t = pointTask(p);
+      agendaDialog({ title: tr("ap_move_t"), submit: tr("ap_move_go"), current: p.meetingId,
+        hint: [p.source, p.why, pointText(p), t ? t.waitingOn : ""].join(" "),
+        projectId: t ? t.projectId : null,
+        onPick: (m) => {
+          if (m.id === p.meetingId) return;
+          p.meetingId = m.id;
+          toast(tr("ap_moved", mtgKort(m)));
+        } });
+      break;
+    }
+    /* Eén regel weghalen vraagt niet om bevestiging, maar is wel terug te
+       draaien - net als een actiepunt. */
+    case "pt-del": {
+      const p = DB.agendaPoints.find((x) => x.id === id); if (!p) break;
+      checkpoint(tr("u_point"));
+      const terug = pointLos(p);
+      pointsRefresh(p.meetingId);
+      toast(terug ? tr("ap_removed_sug") : tr("ap_removed"), true);
       break;
     }
     case "sug-toggle": UI.sugIgnored = !UI.sugIgnored; render(); break;
