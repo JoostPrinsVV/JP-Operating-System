@@ -1605,15 +1605,15 @@ const STR = {
   m_wk_weekend:["Weekend","Weekend"],
   m_wk_of:["{0} appointments this week","{0} afspraken deze week"],
   m_cats:["Categories","Categorieën"],
-  m_cats_d:["Outlook sends the name but not the colour, so each category keeps its own here. Click one to rename or recolour it.",
-            "Outlook stuurt de naam mee maar niet de kleur, dus die houdt elke categorie hier zelf. Klik er een aan om hem te hernoemen of bij te kleuren."],
+  m_cats_d:["New ones arrive from Outlook by themselves. Click one to rename or recolour it; a colour you pick here stays yours.",
+            "Nieuwe komen vanzelf uit Outlook binnen. Klik er een aan om hem te hernoemen of bij te kleuren; een kleur die je hier kiest blijft van jou."],
   m_cats_none:["No categories","Geen categorieën"],
-  m_cats_none_d:["Add one yourself, or let the calendar bring them along once CATEGORIES is in the flow.",
-                 "Voeg er zelf een toe, of laat de agenda ze meebrengen zodra CATEGORIES in de flow staat."],
+  m_cats_none_d:["Add one yourself, or let the flow write your Outlook categories to the folder.",
+                 "Voeg er zelf een toe, of laat de stroom je Outlook-categorieën in de map zetten."],
   m_cat_n:["in {0} appointments","in {0} afspraken"], m_cat_1:["in 1 appointment","in 1 afspraak"],
   cat_edit:["Category “{0}”","Categorie “{0}”"],
-  cat_edit_d:["The name is what Outlook sends along, so keep it spelled the same. The colour is yours: pick the one it has in Outlook and both read alike.",
-              "De naam is wat Outlook meestuurt, dus schrijf hem hetzelfde. De kleur is van jou: kies die van Outlook en ze lezen hetzelfde."],
+  cat_edit_d:["The name is what Outlook sends along, so keep it spelled the same. Pick a colour here and Outlook no longer changes it.",
+              "De naam is wat Outlook meestuurt, dus schrijf hem hetzelfde. Kies je hier een kleur, dan verandert Outlook die niet meer."],
   cat_new:["New category","Nieuwe categorie"], cat_add:["Add","Toevoegen"],
   cat_name:["Name","Naam"],
   cat_name_ph:["Exactly as it reads in Outlook","Precies zoals hij in Outlook heet"],
@@ -1732,6 +1732,8 @@ const STR = {
   sy_sug_1:["1 voorstel van Copilot","1 voorstel van Copilot"],
   sy_nws:["{0} nieuwsitems","{0} nieuwsitems"],
   sy_nws_1:["1 nieuwsitem","1 nieuwsitem"],
+  sy_cat:["{0} new categories from Outlook","{0} nieuwe categorieën uit Outlook"],
+  sy_cat_1:["1 new category from Outlook","1 nieuwe categorie uit Outlook"],
   nws_sub:["AI-nieuws uit je nieuwsbrieven","AI-nieuws uit je nieuwsbrieven"],
   nws_d:["Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Elke maandag begint de lijst schoon; wat je bewaart blijft staan bij je artikelen.",
          "Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Elke maandag begint de lijst schoon; wat je bewaart blijft staan bij je artikelen."],
@@ -1751,6 +1753,8 @@ const STR = {
   ag_n_cancelled:["{0} doorgestreept","{0} doorgestreept"],
   m_cancelled:["Verwijderd in Outlook","Verwijderd in Outlook"],
   ag_n_att:["{0} deelnemerslijsten aangevuld","{0} deelnemerslijsten aangevuld"],
+  ag_n_cats:["{0} appointments with a different category","{0} afspraken met een andere categorie"],
+  ag_n_cats_1:["1 appointment with a different category","1 afspraak met een andere categorie"],
   ag_noatt:["Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen.",
             "Niets nieuws. Let op: in dit bestand staan bij geen enkele afspraak deelnemers — daar moet de flow ATTENDEE-regels gaan meesturen."],
   ag_uptodate:["Niets nieuws — alles was al bij","Niets nieuws — alles was al bij"],
@@ -2869,17 +2873,114 @@ const catHex = (key) => (CAT_COLORS.find(([k]) => k === key) || CAT_COLORS[0])[1
 
 /* Namen die uit de agenda binnenkomen en nog niet in de lijst staan, worden
    toegevoegd. Zo is een categorie die Outlook stuurt meteen ook een categorie
-   die je zelf aan een afspraak kunt hangen. Geeft terug of er iets bij kwam. */
+   die je zelf aan een afspraak kunt hangen. Geeft terug of er iets bij kwam.
+
+   colorSrc zegt wie de kleur koos: "auto" is de app zelf, "outlook" is de
+   categorielijst uit je postbus. Staat er niets, dan heb jij hem gekozen -
+   of hij stamt van vóór dit veld - en dan blijft hij altijd zoals hij is. */
 function catEnsure(namen) {
   DB.categories = DB.categories || [];
   let nieuw = false;
   (namen || []).forEach((n) => {
     const naam = String(n ?? "").trim();
     if (!naam || catFind(naam)) return;
-    DB.categories.push({ id: uid(), name: naam, color: catFallback(naam) });
+    DB.categories.push({ id: uid(), name: naam, color: catFallback(naam), colorSrc: "auto" });
     nieuw = true;
   });
   return nieuw;
+}
+
+/* ---- de categorielijst uit je postbus -----------------------------------
+   De agenda brengt alleen categorieën mee die op een afspraak staan. Een
+   categorie die je net in Outlook hebt gemaakt en nog nergens gebruikt, kwam
+   daardoor nooit binnen. De stroom schrijft daarom ook de lijst zelf weg,
+   zoals Microsoft Graph hem geeft (/me/outlook/masterCategories), als
+   categorieen-<datum>.json in dezelfde map. Daar staat ook de kleur in.
+
+   Graph kent 25 voorinstellingen; de app heeft er 14. Elke voorinstelling
+   gaat naar de dichtstbijzijnde. Een "Dark"-variant zonder eigen tegenhanger
+   hier valt op de gewone. */
+const OUTLOOK_PRESETS = {
+  preset0: "rood",        preset15: "donkerrood",
+  preset1: "oranje",      preset16: "donkeroranje",
+  preset2: "bruin",       preset17: "bruin",
+  preset3: "geel",        preset18: "oranje",
+  preset4: "groen",       preset19: "donkergroen",
+  preset5: "turkoois",    preset20: "turkoois",
+  preset6: "groen",       preset21: "donkergroen",
+  preset7: "blauw",       preset22: "blauw",
+  preset8: "lichtpaars",  preset23: "paars",
+  preset9: "magenta",     preset24: "magenta",
+  preset10: "grijs", preset11: "grijs", preset12: "grijs", preset13: "grijs", preset14: "grijs",
+};
+
+/* Neemt het bestand zoals de stroom het wegschrijft: het hele antwoord van
+   Graph ({ value: [...] }), of alleen de rij. Wat je hier al had blijft staan;
+   alleen een kleur die niemand bewust koos volgt Outlook. Verwijderen doet
+   dit niet - een categorie die alleen hier bestaat, mag. */
+function catImportOutlook(raw) {
+  const lijst = Array.isArray(raw) ? raw
+    : Array.isArray(raw?.value) ? raw.value
+    : Array.isArray(raw?.body?.value) ? raw.body.value
+    : Array.isArray(raw?.categories) ? raw.categories : null;
+  if (!lijst) return null;
+  DB.categories = DB.categories || [];
+  let nieuw = 0, kleur = 0;
+  lijst.forEach((x) => {
+    const naam = String(x?.displayName ?? x?.name ?? "").trim();
+    if (!naam) return;
+    const k = OUTLOOK_PRESETS[String(x?.color ?? "").trim().toLowerCase()] || "";
+    const c = catFind(naam);
+    if (!c) {
+      DB.categories.push(k ? { id: uid(), name: naam, color: k, colorSrc: "outlook" }
+                           : { id: uid(), name: naam, color: catFallback(naam), colorSrc: "auto" });
+      nieuw++;
+      return;
+    }
+    if (!k || (c.colorSrc !== "auto" && c.colorSrc !== "outlook")) return;
+    if (c.color !== k || c.colorSrc !== "outlook") { c.color = k; c.colorSrc = "outlook"; kleur++; }
+  });
+  if (nieuw || kleur) save();
+  return { nieuw, kleur };
+}
+
+/* Nieuwste bestand wint, net als bij de mail. Een fout hierin houdt de
+   agenda niet tegen. */
+async function catRead(dir) {
+  try {
+    const file = await agendaNewestFile(dir, /^categor(ie[eë]n|ies).*\.json$/i);
+    if (!file) return null;
+    return catImportOutlook(JSON.parse(String(await file.text()).replace(/^﻿/, "")));
+  } catch (e) { return null; }
+}
+
+/* Twee rijtjes categorieën zijn hetzelfde als dezelfde namen erin staan,
+   ongeacht volgorde, hoofdletters of spaties aan de rand. */
+const catSame = (a, b) => {
+  const x = [...new Set((a || []).map(catNorm))].sort();
+  const y = [...new Set((b || []).map(catNorm))].sort();
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+};
+
+/* Wat Outlook nu over de categorieën van een afspraak zegt, tegen wat het de
+   vorige keer zei (outlookCats). Stond de afspraak hier nog zoals Outlook hem
+   toen stuurde, dan volgt hij Outlook. Heb je hem hier zelf anders gezet, dan
+   blijft jouw keuze staan. Geeft terug of de categorieën veranderden.
+
+   Een afspraak van vóór dit veld heeft geen vorige keer. Die volgt Outlook
+   één keer - wat hier anders staat is bijna altijd een wijziging in Outlook
+   die de app eerder liet liggen - behalve als Outlook niets meer stuurt: dan
+   is wat hier staat waarschijnlijk van jou, en dat blijft. */
+function catFollow(m, uitOutlook) {
+  const nu = (uitOutlook || []).slice(0, 8);
+  const hier = m.categories || [];
+  let volgen;
+  if (Array.isArray(m.outlookCats)) volgen = catSame(hier, m.outlookCats);
+  else volgen = nu.length > 0 || !hier.length;
+  m.outlookCats = nu;
+  if (!volgen || catSame(hier, nu)) return false;
+  m.categories = [...nu];
+  return true;
 }
 
 /* De lijst zoals hij op het scherm hoort: op naam, met hoe vaak hij in de
@@ -2937,6 +3038,9 @@ function categoryDialog(cat) {
       /* Hernoemen trekt de afspraken mee, anders valt de koppeling stuk en
          verliest de afspraak zijn kleur. */
       const oud = cat.name;
+      /* Een kleur die je hier zelf kiest, is van jou: Outlook verandert hem
+         daarna niet meer. Alleen hernoemen laat dat ongemoeid. */
+      if (f.color && f.color !== cat.color) delete cat.colorSrc;
       cat.name = naam; cat.color = f.color || cat.color;
       if (catNorm(oud) !== catNorm(naam)) {
         DB.meetings.forEach((m) => {
@@ -3341,6 +3445,7 @@ function dedupeMeetings() {
     });
     if (!(baas.attendees || []).length && (m.attendees || []).length) baas.attendees = m.attendees;
     if (!(baas.categories || []).length && (m.categories || []).length) baas.categories = m.categories;
+    if (!Array.isArray(baas.outlookCats) && Array.isArray(m.outlookCats)) baas.outlookCats = m.outlookCats;
     if (!baas.projectId && m.projectId) baas.projectId = m.projectId;
     weg.set(m.id, baas.id);
   });
@@ -6781,6 +6886,8 @@ function icsToMeeting(e) {
     location: cleanLocation(e.location),
     attendees: e.attendees.slice(0, 25),
     categories: (e.categories || []).slice(0, 8),
+    // Wat Outlook stuurde, zodat een latere wijziging daar herkend wordt.
+    outlookCats: (e.categories || []).slice(0, 8),
     agenda: "", decisions: "",
     notes: [desc, e.recurring ? tr("m_rec_note") : ""].filter(Boolean).join("\n\n"),
     onlineUrl: onlineUrl || "",
@@ -10637,7 +10744,7 @@ function importEvents(events, from, to) {
   DB.meetings.forEach((m) => {
     if (m.outlookUid) byUid.set(meetingKey(m.outlookUid, m.startsAt), m);
   });
-  let added = 0, skipped = 0, filled = 0, attFilled = 0, withAtt = 0;
+  let added = 0, skipped = 0, filled = 0, attFilled = 0, withAtt = 0, catChanged = 0;
 
   events.forEach((e) => {
     if (e.start.day < from || e.start.day > to) return;
@@ -10664,9 +10771,9 @@ function importEvents(events, from, to) {
       if ((e.attendees || []).length && !(existing.attendees || []).length) {
         existing.attendees = e.attendees.slice(0, 50); attFilled++; touched = true;
       }
-      if ((e.categories || []).length && !(existing.categories || []).length) {
-        existing.categories = e.categories.slice(0, 8); touched = true;
-      }
+      /* Categorieën zijn de uitzondering: die volgen Outlook ook als er al
+         iets stond, zolang je ze hier niet zelf hebt veranderd. */
+      if (catFollow(existing, e.categories)) { catChanged++; touched = true; }
       // Stond hij als verwijderd gemerkt en is hij terug, dan is dat voorbij.
       if (existing.cancelled) { delete existing.cancelled; touched = true; }
       if (!touched) skipped++;
@@ -10683,10 +10790,10 @@ function importEvents(events, from, to) {
      - dan kun je hem meteen ook zelf aan een afspraak hangen. */
   const nieuweCats = catEnsure(events.flatMap((e) => e.categories || []));
   const { removed, cancelled, moved } = removeDeleted(events, from, to);
-  if (added || filled || attFilled || nieuweCats || removed || cancelled || moved) save();
+  if (added || filled || attFilled || catChanged || nieuweCats || removed || cancelled || moved) save();
   // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
   // zoeken in de app als het eigenlijk aan de flow ligt.
-  return { added, filled, attFilled, skipped, withAtt, removed, cancelled, moved };
+  return { added, filled, attFilled, catChanged, skipped, withAtt, removed, cancelled, moved };
 }
 
 /* Wat je in Outlook weggooit, hoort hier ook weg. Zien kun je dat alleen zo:
@@ -11089,6 +11196,9 @@ async function agendaRead(loud) {
       }
     }
 
+    /* De categorielijst vóór de agenda: dan krijgt een nieuwe categorie de
+       kleur uit Outlook, en niet eerst een gekozen kleur van de app. */
+    const ctR = await catRead(AGENDA_DIR);
     // Mail en briefing eerst: dan staan ze klaar zodra de pagina opnieuw tekent.
     await mailRead(AGENDA_DIR);
     await briefRead(AGENDA_DIR);
@@ -11104,6 +11214,7 @@ async function agendaRead(loud) {
       trR && trR.bij ? tr(trR.bij === 1 ? "sy_trbij_1" : "sy_trbij", trR.bij) : "",
       sgR && sgR.nieuw ? tr(sgR.nieuw === 1 ? "sy_sug_1" : "sy_sug", sgR.nieuw) : "",
       nwR && nwR.nieuw ? tr(nwR.nieuw === 1 ? "sy_nws_1" : "sy_nws", nwR.nieuw) : "",
+      ctR && ctR.nieuw ? tr(ctR.nieuw === 1 ? "sy_cat_1" : "sy_cat", ctR.nieuw) : "",
     ].filter(Boolean);
     /* Zonder .ics is er nog steeds nieuws te melden, dus die melding gaat voor
        op de klacht dat het agendabestand ontbreekt. */
@@ -11134,6 +11245,7 @@ async function agendaRead(loud) {
       r.added ? tr(r.added === 1 ? "ag_n_added_1" : "ag_n_added", r.added) : "",
       r.filled ? tr("ag_n_links", r.filled) : "",
       r.attFilled ? tr("ag_n_att", r.attFilled) : "",
+      r.catChanged ? tr(r.catChanged === 1 ? "ag_n_cats_1" : "ag_n_cats", r.catChanged) : "",
       r.removed ? tr("ag_n_removed", r.removed) : "",
       r.cancelled ? tr("ag_n_cancelled", r.cancelled) : "",
       r.moved ? tr("ag_n_moved", r.moved) : "",

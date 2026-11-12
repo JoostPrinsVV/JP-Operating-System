@@ -115,6 +115,7 @@ beveiligde omgeving van Visser & Visser.
 | Bestand | Van welke stroom |
 |---|---|
 | `*.ics` | Agenda |
+| `categorieen-*.json` | Agenda: je lijst met categorieën uit Outlook |
 | `mail-*.json` | Mail |
 | `briefing-*.json` | Copilot-briefing per afspraak |
 | `transcript-*.json` | Copilot-samenvatting van vergaderverslagen |
@@ -174,6 +175,46 @@ mislukte uitvoering gekost:
   "Opstellen".
 - **Een formule zet je in het veld via het `fx`-knopje.** Alleen de formule
   zelf gaat het veld in — geen uitleg, geen aanhalingstekens eromheen.
+
+## Je categorieën meesturen
+
+Het agendabestand bevat alleen de categorieën die op een afspraak staan. Een
+categorie die je net in Outlook hebt gemaakt en nog nergens gebruikt, ziet de
+app daardoor niet. Daarom schrijft de agendastroom ook de lijst zelf weg. Daar
+staat de kleur bij, zodat een nieuwe categorie in de app dezelfde kleur krijgt
+als in Outlook.
+
+Zet in de **agendastroom**, ná de stap die het `.ics`-bestand wegschrijft,
+twee stappen erbij:
+
+1. **Office 365 Outlook → Send an HTTP request** (zoek binnen de connector op
+   "HTTP"). Noem de stap `Categorieen`.
+   - **URI:** `https://graph.microsoft.com/v1.0/me/outlook/masterCategories`
+   - **Method:** `GET`
+2. **OneDrive voor Bedrijven → Bestand maken.**
+   - **Mappad:** `/AI operating system/Agenda`
+   - **Bestandsnaam**, via `fx`:
+     `concat('categorieen-', formatDateTime(utcNow(), 'yyyy-MM-dd-HH'), '.json')`
+   - **Bestandsinhoud**, via `fx`: `body('Categorieen')`
+
+Test de stroom één keer en klik in de app op **Vernieuwen**. Staan er
+categorieën in Outlook die de app nog niet kende, dan meldt hij
+*"… nieuwe categorieën uit Outlook"*.
+
+> **Geeft stap 1 een fout over rechten?** Vervang hem dan door **Office 365
+> Outlook → Get Outlook category names** (geen invoer nodig) en houd de naam
+> `Categorieen`. Die geeft alleen de namen, dus de app kiest dan zelf een
+> kleur. Nieuwe categorieën komen nog steeds vanzelf binnen.
+
+Wat de app met de lijst doet:
+
+- Een categorie die er nog niet was, komt erbij.
+- Een kleur die je in de app zelf hebt gekozen, blijft staan. Een kleur die
+  de app zelf had gekozen, volgt Outlook.
+- Verwijderen doet hij niet. Een categorie die alleen in de app bestaat, mag
+  blijven.
+- Outlook heeft 25 kleuren en de app 14. Elke kleur komt op de dichtstbijzijnde
+  terecht.
 
 ---
 
@@ -292,6 +333,7 @@ weggeschreven.
 | De app ziet de map niet meer | De browser is de toestemming vergeten; kies de map opnieuw |
 | Een vergaderverslag komt leeg binnen | Copilot heeft andere kopjes gebruikt dan de prompt vraagt |
 | Alle acties staan op jou | Je naam staat niet in **Instellingen → Profiel** |
+| Een nieuwe categorie uit Outlook verschijnt niet | De categoriestappen ontbreken in de agendastroom (zie Deel 3), of de stroom liep daarna niet meer |
 
 ---
 
