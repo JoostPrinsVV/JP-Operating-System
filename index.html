@@ -2876,8 +2876,8 @@ const catHex = (key) => (CAT_COLORS.find(([k]) => k === key) || CAT_COLORS[0])[1
    die je zelf aan een afspraak kunt hangen. Geeft terug of er iets bij kwam.
 
    colorSrc zegt wie de kleur koos: "auto" is de app zelf, "outlook" is de
-   categorielijst uit je postbus. Staat er niets, dan heb jij hem gekozen -
-   of hij stamt van vóór dit veld - en dan blijft hij altijd zoals hij is. */
+   categorielijst uit je postbus, "user" ben jij - en die blijft altijd zoals
+   hij is. Een categorie van vóór dit veld krijgt het bij het laden (migrate). */
 function catEnsure(namen) {
   DB.categories = DB.categories || [];
   let nieuw = false;
@@ -2898,16 +2898,19 @@ function catEnsure(namen) {
    categorieen-<datum>.json in dezelfde map. Daar staat ook de kleur in.
 
    Graph kent 25 voorinstellingen; de app heeft er 14. Elke voorinstelling
-   gaat naar de dichtstbijzijnde. Een "Dark"-variant zonder eigen tegenhanger
-   hier valt op de gewone. */
+   gaat naar de kleur die er in de nieuwe Outlook het meest op lijkt - en dat
+   is niet altijd wat de Graph-naam doet vermoeden. Afgestemd op kleuren die
+   met de hand naast Outlook zijn gelegd: preset1 ("Orange") oogt daar
+   donkeroranje, preset2 ("Brown") als licht oranje, preset21 ("DarkOlive")
+   als gewoon groen. */
 const OUTLOOK_PRESETS = {
   preset0: "rood",        preset15: "donkerrood",
-  preset1: "oranje",      preset16: "donkeroranje",
-  preset2: "bruin",       preset17: "bruin",
+  preset1: "donkeroranje", preset16: "donkeroranje",
+  preset2: "oranje",      preset17: "bruin",
   preset3: "geel",        preset18: "oranje",
   preset4: "groen",       preset19: "donkergroen",
   preset5: "turkoois",    preset20: "turkoois",
-  preset6: "groen",       preset21: "donkergroen",
+  preset6: "groen",       preset21: "groen",
   preset7: "blauw",       preset22: "blauw",
   preset8: "lichtpaars",  preset23: "paars",
   preset9: "magenta",     preset24: "magenta",
@@ -3031,7 +3034,7 @@ function categoryDialog(cat) {
       if (botsing && (!cat || botsing.id !== cat.id)) { toast(tr("cat_dup", naam)); return false; }
       DB.categories = DB.categories || [];
       if (!cat) {
-        DB.categories.push({ id: uid(), name: naam, color: f.color || "blauw" });
+        DB.categories.push({ id: uid(), name: naam, color: f.color || "blauw", colorSrc: "user" });
         save(); render(); toast(tr("cat_added", naam));
         return;
       }
@@ -3040,7 +3043,7 @@ function categoryDialog(cat) {
       const oud = cat.name;
       /* Een kleur die je hier zelf kiest, is van jou: Outlook verandert hem
          daarna niet meer. Alleen hernoemen laat dat ongemoeid. */
-      if (f.color && f.color !== cat.color) delete cat.colorSrc;
+      if (f.color && f.color !== cat.color) cat.colorSrc = "user";
       cat.name = naam; cat.color = f.color || cat.color;
       if (catNorm(oud) !== catNorm(naam)) {
         DB.meetings.forEach((m) => {
@@ -3527,6 +3530,15 @@ function migrate() {
     });
     delete DB.catColors; changed = true;
   }
+  /* Een categorie van vóór colorSrc: wie koos de kleur? Staat er precies de
+     kleur die de app zelf uit de naam afleidt, dan heeft niemand hem gekozen
+     en mag Outlook hem zetten. Anders is hij met de hand gekozen, en blijft
+     hij. Dit gebeurt één keer; daarna draagt elke categorie het veld. */
+  DB.categories.forEach((c) => {
+    if (c.colorSrc) return;
+    c.colorSrc = c.color === catFallback(c.name) ? "auto" : "user";
+    changed = true;
+  });
   // Alles wat de agenda ooit aanleverde hoort ook in de lijst te staan.
   if (catEnsure(DB.meetings.flatMap((m) => m.categories || []))) changed = true;
   /* Hele-dag-afspraken die als 01:00 of 02:00 zijn binnengekomen worden
