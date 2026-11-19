@@ -906,6 +906,45 @@ a.btn{text-decoration:none}
 .tr-head:hover{background:var(--surface-2)}
 .tr-chev{flex:0 0 auto;color:var(--ink-2);display:grid;place-items:center}
 .tr-head[aria-expanded="true"]{border-radius:12px 12px 0 0}
+/* Naast de kopregel: rechtstreeks naar de afspraak. */
+.tr-row{display:flex;align-items:center}
+.tr-row .tr-head{flex:1;min-width:0}
+.tr-meet{flex:0 0 auto;margin-right:12px}
+.tr-row .card-t{overflow-wrap:anywhere}
+/* De kolom ligt vast: een voorproefregel die niet afbreekt mag de kaart niet
+   breder duwen dan het scherm, hij wordt afgekapt. */
+.tr-list{grid-template-columns:minmax(0,1fr)}
+/* Project en categorie in de kopregel, en de eerste regel van het verslag. */
+.tr-tag{display:inline-flex;align-items:center;gap:4px;vertical-align:middle}
+.tr-peek{display:block;margin-top:3px;font-size:12.5px;color:var(--ink-2);
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* Het verslag waar een open actie vandaan komt: een link, geen knop. */
+.tr-src{display:block;margin-top:2px;padding:0;background:none;border:0;font:inherit;
+  font-size:11.5px;color:var(--ink-3);cursor:pointer;text-align:left}
+.tr-src:hover{color:var(--ink);text-decoration:underline}
+/* Een sectie in een verslag: het kopje is zelf de knop die hem dichtklapt. */
+.tr-sec{margin-bottom:11px}
+.tr-sec-h{display:flex;align-items:center;gap:5px;width:100%;margin-bottom:3px;padding:2px 0;
+  background:none;border:0;font:inherit;color:var(--ink-2);cursor:pointer;text-align:left}
+.tr-sec-h:hover,.tr-sec-h:hover .lbl{color:var(--ink)}
+.tr-sec-h[aria-expanded="false"]{margin-bottom:0}
+/* De acties van anderen, ingeklapt onder die van jou. */
+.tr-others{display:flex;align-items:center;gap:6px;width:100%;margin:2px 0 8px;padding:4px 0;
+  background:none;border:0;font:inherit;font-size:12px;color:var(--ink-2);cursor:pointer;text-align:left}
+.tr-others:hover{color:var(--ink)}
+.tr-open-meta{display:none}
+/* Op een telefoon past naast een lange titel geen label én een knop: het
+   aantal open acties schuift dan naar de regel eronder. */
+@media (max-width:520px){
+  .tr-meet{margin-right:8px}
+  .tr-meet .tr-meet-l,.tr-badge{display:none}
+  .tr-open-meta{display:inline}
+  /* Een actie met zijn knoppen past niet op één regel: de tekst houdt de
+     breedte, de knop naar de takenlijst schuift eronder. */
+  .tr-acts > li{flex-wrap:wrap}
+  .tr-acts .tr-act-t{flex:1 1 150px !important}
+  .tr-acts [data-act="tr-to-task"]{margin-left:23px}
+}
 
 /* De agendamap als smalle balk: één regel zolang alles werkt. */
 .ag-bar{padding:9px 13px}
@@ -1114,7 +1153,20 @@ const STR = {
            "Meteen afvinken — hoeft niet naar je takenlijst"],
   tr_untick:["Toch weer openzetten","Toch weer openzetten"],
   tr_ticked:["Actie afgevinkt","Actie afgevinkt"],
-  tr_open_meeting:["De afspraak","De afspraak"],
+  tr_open_meeting:["Meeting","Afspraak"],
+  tr_open_meeting_t:["Go to the meeting: {0}","Naar de afspraak: {0}"],
+  tr_mine_t:["Still open for you","Voor jou nog open"],
+  tr_mine_d:["{0} actions from your meetings, newest first","{0} acties uit je overleggen, het nieuwste eerst"],
+  tr_mine_d1:["1 action from your meetings","1 actie uit je overleggen"],
+  tr_mine_from:["From {0} · {1}","Uit {0} · {1}"],
+  tr_mine_all:["Show all {0}","Toon alle {0}"],
+  tr_mine_less:["Show fewer","Toon minder"],
+  tr_others:["For others","Voor anderen"],
+  tr_link:["Link to a meeting","Koppel aan een afspraak"],
+  tr_relink:["Other meeting","Andere afspraak"],
+  tr_link_pick:["Meeting that day","Afspraak op die dag"],
+  tr_link_cancelled:["cancelled","geannuleerd"],
+  tr_linked:["Linked to the meeting","Gekoppeld aan de afspraak"],
   tr_open_transcript:["Transcriptie","Transcriptie"],
   tr_open_chat:["In Teams","In Teams"],
   tr_card:["Transcriptie","Transcriptie"],
@@ -3669,6 +3721,8 @@ const UI = {
   meetFilter: { days: 30 },
   trFilter: "all",
   trOpen: {},            // welke verslagen uitgeklapt staan
+  trDicht: {},           // welke secties van een verslag dicht staan, voor alle verslagen
+  trMineDicht: false,    // staat het blok "voor jou nog open" dicht
   sugIgnored: false,     // toont de genegeerde voorstellen in plaats van de open
   planPast: false,       // toont ook de weken die al voorbij zijn
   knowOpen: {},          // welke bronlijsten dichtgeklapt staan
@@ -3692,11 +3746,14 @@ try {
   if (s.taskView) UI.taskView = s.taskView;
   if (s.meetView) UI.meetView = s.meetView;
   if (s.pastOpen === false) UI.pastOpen = false;
+  if (s.trDicht && typeof s.trDicht === "object") UI.trDicht = s.trDicht;
+  if (s.trMineDicht === true) UI.trMineDicht = true;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
   try {
     localStorage.setItem(KEY + ":ui", JSON.stringify({
-      view: UI.view, taskView: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen }));
+      view: UI.view, taskView: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
+      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht }));
   }
   catch (e) { /* ignore */ }
 };
@@ -6375,13 +6432,55 @@ async function trRead(dir) {
   } catch (e) { return null; }
 }
 
-/* De afspraak waar dit verslag bij hoort, zodat je erheen kunt klikken. */
+/* De afspraken van de dag van een verslag, op volgorde. Een verslag hoort bij
+   een gesprek van dezelfde dag; een hele-dag-blok is nooit een gesprek. */
+const trDagAfspraken = (t) => DB.meetings
+  .filter((m) => String(m.startsAt).slice(0, 10) === t.day && !isAllDay(m))
+  .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)));
+
+/* Hoeveel van de woorden van de kortste titel ook in de andere staan. Copilot
+   neemt de titel niet altijd letterlijk over: hij kort hem in, laat "RE:" of
+   een projectcode weg, of zet er "Vergadering" voor. */
+function titelOverlap(a, b) {
+  const woorden = (s) => new Set(briefNorm(s).split(/[^a-z0-9à-ÿ]+/).filter((w) => w.length > 2));
+  const A = woorden(a), B = woorden(b);
+  if (!A.size || !B.size) return 0;
+  let gedeeld = 0;
+  A.forEach((w) => { if (B.has(w)) gedeeld++; });
+  return gedeeld / Math.min(A.size, B.size);
+}
+
+/* De afspraak waar dit verslag bij hoort, zodat je erheen kunt klikken.
+
+   Heb je hem zelf aangewezen, dan is dat hem. Anders zoekt de app op die dag:
+   eerst dezelfde begintijd, dan dezelfde titel, dan een titel die erop lijkt.
+   Pas als laatste telt de tijd alleen - de opname begint zelden precies op de
+   minuut - en dan alleen als er maar één afspraak in de buurt ligt. Twee
+   kandidaten is gokken, en een verkeerde koppeling is erger dan geen. */
 function trMeeting(t) {
-  return DB.meetings.find((m) => String(m.startsAt).slice(0, 10) === t.day &&
-      String(m.startsAt).slice(11, 16) === t.time)
-    || DB.meetings.find((m) => String(m.startsAt).slice(0, 10) === t.day &&
-      briefNorm(m.title) === briefNorm(t.title))
-    || null;
+  if (t.meetingId) {
+    const vast = DB.meetings.find((m) => m.id === t.meetingId);
+    if (vast) return vast;
+  }
+  const dag = trDagAfspraken(t);
+  if (!dag.length) return null;
+  const tijd = (m) => String(m.startsAt).slice(11, 16);
+  const exact = dag.find((m) => tijd(m) === t.time);
+  if (exact) return exact;
+  const titel = briefNorm(t.title);
+  const zelfde = titel && dag.find((m) => briefNorm(m.title) === titel);
+  if (zelfde) return zelfde;
+
+  const minuten = (hhmm) => { const [h, mi] = String(hhmm).split(":").map(Number); return h * 60 + mi; };
+  const afstand = (m) => Math.abs(minuten(tijd(m)) - minuten(t.time));
+  const lijkt = dag.filter((m) => {
+    const ander = briefNorm(m.title);
+    return titel && ander && (ander.includes(titel) || titel.includes(ander) ||
+      titelOverlap(ander, titel) >= 0.5);
+  }).sort((a, b) => afstand(a) - afstand(b));
+  if (lijkt.length) return lijkt[0];
+  const dichtbij = dag.filter((m) => afstand(m) <= 15);
+  return dichtbij.length === 1 ? dichtbij[0] : null;
 }
 
 /* Een actie uit een verslag is afgehandeld als hij op je takenlijst staat, of
@@ -6414,13 +6513,76 @@ function viewTranscripts() {
       <span>${esc(all.length === 1 ? tr("tr_n_1") : tr("tr_n", all.length))}</span>
       <span>${esc(tr("tr_n_act", totaalActies, totaalOpen))}</span>
     </p>` : "") +
+  trMijnBlok(all) +
   (lijst.length ? byDay.map((g) => `<div class="dayhead" style="padding-left:0">
       <span class="dayhead-t">${esc(dayHeading(g.day))}</span>
       <span class="xs mut">${g.items.length}</span>
     </div>
-    <div class="grid" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`).join("")
+    <div class="grid tr-list" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`).join("")
     : empty(f === "open" ? tr("tr_none_open") : tr("tr_none"), tr("tr_none_d"))) +
   `<p class="xs mut" style="margin-top:6px">${esc(tr("tr_privacy"))}</p>`;
+}
+
+/* Wat er voor jou uit je overleggen kwam en nog openstaat, over alle
+   verslagen heen. Hier begint het tabblad: je hoeft geen verslag open te
+   klappen om te zien wat je moet doen. Afvinken of doorzetten kan hier
+   meteen, en het verslag waar het vandaan komt is één klik weg. */
+const TR_MIJN_KORT = 6;
+function trMijnBlok(all) {
+  const open = all.flatMap((t) => trOpenActies(t)
+    .filter((a) => isMij(a.person)).map((a) => ({ t, a })));
+  if (!open.length) return "";
+  const alles = Boolean(UI.trMineAll);
+  const toon = alles ? open : open.slice(0, TR_MIJN_KORT);
+  const dicht = Boolean(UI.trMineDicht);
+  /* Dezelfde kopregel als een verslag: de hele regel klapt het blok dicht,
+     en dicht zie je nog hoeveel er openstaat. */
+  const kop = `<button class="tr-head" data-act="tr-mine-fold" aria-expanded="${!dicht}">
+    <span class="tr-chev">${ico(dicht ? "chevdown" : "chevup", "", 14)}</span>
+    <span style="flex:1;min-width:0">
+      <span class="card-t" style="display:block">${esc(tr("tr_mine_t"))}</span>
+      <span class="xs mut">${esc(open.length === 1 ? tr("tr_mine_d1") : tr("tr_mine_d", open.length))}</span>
+    </span>
+    <span class="badge accent">${open.length}</span>
+  </button>`;
+  if (dicht) return `<section class="card" style="margin-bottom:18px"><div class="card-b" style="padding:0">${kop}</div></section>`;
+  return `<section class="card" style="margin-bottom:18px"><div class="card-b" style="padding:0">${kop}</div>
+    <div class="card-b" style="padding-top:0">
+    <ul class="divide tr-acts">${toon.map(({ t, a }) => `<li class="row" style="gap:7px;padding:8px 0;align-items:flex-start">
+       <button class="chk" role="checkbox" aria-checked="false" data-act="tr-done" data-id="${t.id}" data-v="${a.id}"
+         style="margin-top:2px" title="${esc(tr("tr_tick"))}" aria-label="${esc(tr("tr_tick"))}">${ico("check", "", 11)}</button>
+       <span class="tr-act-t" style="flex:1;min-width:0">
+         <span class="sm2" style="display:block;line-height:1.5">${esc(a.text)}</span>
+         <button class="tr-src" data-act="tr-open" data-id="${t.id}">${
+           esc(tr("tr_mine_from", t.title || tr("tr_untitled"), fmtDate(t.day)))}</button>
+       </span>
+       <button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
+         style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>
+     </li>`).join("")}</ul>
+     ${open.length > TR_MIJN_KORT ? `<button class="btn sm ghost" data-act="tr-mine-all" style="margin-top:6px">
+       ${esc(alles ? tr("tr_mine_less") : tr("tr_mine_all", open.length))}</button>` : ""}
+    </div></section>`;
+}
+
+/* Project en categorie van een verslag, via de afspraak: het verslag zelf
+   weet dat niet, de afspraak wel. Eén categorie is genoeg om te herkennen
+   waar het over ging. */
+function trLabels(m) {
+  if (!m) return "";
+  const p = m.projectId && DB.projects.find((x) => x.id === m.projectId);
+  const c = (m.categories || [])[0];
+  return [
+    p ? `<span class="tr-tag">${ico("projects", "", 11)}${esc(p.name)}</span>` : "",
+    c ? `<span class="tr-tag"><span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>` : "",
+  ].filter(Boolean).map((s) => ` · ${s}`).join("");
+}
+
+/* De eerste regel van de samenvatting, als voorproefje onder een dichte
+   kopregel. Afkappen op één regel doet de opmaak. */
+function trVoorproef(t) {
+  const s = (t.secties && (t.secties.samenvatting || t.secties.besluiten)) || "";
+  const eerste = String(s).split("\n").map((r) => r.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean)[0] || "";
+  return truncate(eerste, 220);
 }
 
 /* Schreef Copilot een opsomming, toon hem dan ook als opsomming: de sterretjes
@@ -6438,12 +6600,12 @@ function trText(tekst) {
   return `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(tekst)}</p>`;
 }
 
-/* Het verslag dat bij deze afspraak hoort - de omgekeerde weg van trMeeting. */
+/* Het verslag dat bij deze afspraak hoort - de omgekeerde weg van trMeeting,
+   en daarom ook met dezelfde regels. Alleen de verslagen van die dag komen in
+   aanmerking, zodat de agenda er niet traag van wordt. */
 function trForMeeting(m) {
-  const dag = String(m.startsAt).slice(0, 10), tijd = String(m.startsAt).slice(11, 16);
-  return (DB.transcripts || []).find((t) => t.day === dag && t.time === tijd)
-    || (DB.transcripts || []).find((t) => t.day === dag && briefNorm(t.title) === briefNorm(m.title))
-    || null;
+  const dag = String(m.startsAt).slice(0, 10);
+  return (DB.transcripts || []).find((t) => t.day === dag && trMeeting(t) === m) || null;
 }
 
 /* Op de pagina van een afspraak: niet het hele verslag, wel dat het er is en
@@ -6470,86 +6632,157 @@ function transcriptCard(m) {
       : tr("tr_no_actions"));
 }
 
+/* Eén actie uit een verslag, met zijn knoppen. */
+function trActieRij(t, a) {
+  const af = Boolean(a.doneAt);
+  /* Drie uitkomsten per actie: hier afvinken, doorzetten naar je
+     takenlijst, of hem laten staan. Het vinkje staat vooraan, op
+     dezelfde plek als bij een taak - afvinken moet overal hetzelfde
+     gebaar zijn. Een actie die al een taak is krijgt er geen: die
+     status hoort bij de taak zelf, niet op twee plekken. */
+  return `<li class="row" style="gap:7px;align-items:flex-start">
+  ${a.taskId ? `<span style="width:16px;flex:0 0 auto"></span>` : `<button class="chk" role="checkbox" aria-checked="${af}"
+    data-act="tr-done" data-id="${t.id}" data-v="${a.id}" style="margin-top:1px"
+    title="${esc(af ? tr("tr_untick") : tr("tr_tick"))}"
+    aria-label="${esc(af ? tr("tr_untick") : tr("tr_tick"))}">${ico("check", "", 11)}</button>`}
+  <span class="xs tr-act-t" style="flex:1;min-width:0;line-height:1.55;${a.taskId || af
+    ? "color:var(--ink-2)" : ""}${af ? ";text-decoration:line-through" : ""}">${esc(a.text)}</span>
+  ${af ? "" : `<button class="btn icon sm ghost" data-act="tr-who" data-id="${t.id}" data-v="${a.id}"
+    style="flex:0 0 auto" title="${esc(tr("tr_who"))}" aria-label="${esc(tr("tr_who"))}">${ico("users", "", 12)}</button>`}
+  ${a.taskId
+    ? `<span class="badge success" style="flex:0 0 auto">${ico("check", "", 10)} ${esc(tr("tr_on_list"))}</span>`
+    : af
+      ? `<span class="xs mut tab" style="flex:0 0 auto">${esc(fmtDate(String(a.doneAt).slice(0, 10)))}</span>`
+      : `<button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
+          style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>`}
+</li>`;
+}
+
+/* Samenvatting, besluiten en acties klappen elk apart dicht. Dat geldt voor
+   alle verslagen tegelijk en blijft bewaard: wie alleen de acties wil zien,
+   wil dat bij het volgende verslag ook. Wat dicht staat toont zijn telling,
+   zodat je ziet wat er onder zit. */
+function trSectie(k, label, inhoud, telling = "") {
+  const open = !(UI.trDicht && UI.trDicht[k]);
+  return `<div class="tr-sec">
+    <button class="tr-sec-h" data-act="tr-sec" data-v="${k}" aria-expanded="${open}">
+      ${ico(open ? "chevup" : "chevdown", "", 12)}
+      <span class="lbl">${esc(label)}</span>
+      ${!open && telling ? `<span class="xs mut">${esc(telling)}</span>` : ""}
+    </button>
+    ${open ? `<div class="tr-sec-b">${inhoud}</div>` : ""}
+  </div>`;
+}
+
+/* De acties van één persoon, onder zijn naam. */
+const trGroep = (t, wie, lijst, kleur) => `<div style="margin-bottom:9px">
+  <p class="row" style="gap:7px;align-items:center;margin-bottom:3px">
+    <span class="att-dot" style="background:${kleur};margin:0"></span>
+    <span class="sm2" style="font-weight:500">${esc(wie)}</span></p>
+  <ul class="grid tr-acts" style="gap:3px;padding-left:14px">${lijst.map((a) => trActieRij(t, a)).join("")}</ul>
+</div>`;
+
 function trCard(t) {
   const m = trMeeting(t);
-  // Per persoon gegroepeerd: zo zie je in één blik wat van jou is.
+  /* Jouw acties eerst. Wat anderen moeten doen is goed om te weten, maar
+     zelden de reden dat je een verslag openklapt: dat staat er ingeklapt
+     onder, per persoon. Je volledige naam telt ook als "voor mij". */
+  const mijn = t.acties.filter((a) => isMij(a.person));
   const perPersoon = new Map();
-  t.acties.forEach((a) => {
-    const wie = a.person || tr("tr_me");
-    if (!perPersoon.has(wie)) perPersoon.set(wie, []);
-    perPersoon.get(wie).push(a);
+  t.acties.filter((a) => !isMij(a.person)).forEach((a) => {
+    if (!perPersoon.has(a.person)) perPersoon.set(a.person, []);
+    perPersoon.get(a.person).push(a);
   });
 
   const open = UI.trOpen && UI.trOpen[t.id];
   const nogOpen = trOpenActies(t).length;
+  const voorproef = open ? "" : trVoorproef(t);
   /* Dicht is de normale stand: een pagina vol uitgeklapte verslagen is niet te
-     overzien. De kopregel vertelt genoeg om te kiezen welke je opent. */
+     overzien. De kopregel vertelt genoeg om te kiezen welke je opent: waar het
+     bij hoorde, en de eerste regel van wat er besproken is. */
   const kop = `<button class="tr-head" data-act="tr-toggle" data-id="${t.id}" aria-expanded="${Boolean(open)}">
     <span class="tr-chev">${ico(open ? "chevup" : "chevdown", "", 14)}</span>
     <span style="flex:1;min-width:0">
       <span class="card-t" style="display:block">${esc(t.title || tr("tr_untitled"))}</span>
       <span class="xs mut">${esc(fmtTime(`${t.day}T${t.time}`))}${m ? "" : ` · ${esc(tr("tr_no_meeting"))}`}
-        ${t.acties.length ? ` · ${esc(t.acties.length === 1 ? tr("tr_card_1") : tr("tr_card_n", t.acties.length))}` : ""}</span>
+        ${t.acties.length ? ` · ${esc(t.acties.length === 1 ? tr("tr_card_1") : tr("tr_card_n", t.acties.length))}` : ""}${
+        nogOpen ? `<span class="tr-open-meta"> · ${esc(tr("tr_card_open_n", nogOpen))}</span>` : ""}${trLabels(m)}</span>
+      ${voorproef ? `<span class="tr-peek">${esc(voorproef)}</span>` : ""}
     </span>
-    ${nogOpen ? `<span class="badge accent">${esc(tr("tr_card_open_n", nogOpen))}</span>` : ""}
+    ${nogOpen ? `<span class="badge accent tr-badge">${esc(tr("tr_card_open_n", nogOpen))}</span>` : ""}
   </button>`;
+  /* Naar de afspraak staat naast de kopregel, niet erin: de kopregel is zelf
+     al een knop, en zo kun je erheen zonder eerst het verslag open te klappen. */
+  const naarAfspraak = m ? `<button class="btn sm ghost tr-meet" data-act="peek-meeting" data-id="${m.id}"
+      title="${esc(tr("tr_open_meeting_t", m.title))}" aria-label="${esc(tr("tr_open_meeting_t", m.title))}">
+      ${ico("meetings", "", 13)} <span class="tr-meet-l">${esc(tr("tr_open_meeting"))}</span></button>` : "";
+  const rij = `<div class="card-b tr-row" style="padding:0">${kop}${naarAfspraak}</div>`;
 
   if (!open) {
-    return `<section class="card" id="tr-${t.id}"><div class="card-b" style="padding:0">${kop}</div></section>`;
+    return `<section class="card" id="tr-${t.id}">${rij}</section>`;
   }
 
   const chat = m ? teamsChatUrl(m.onlineUrl) : null;
   const url = t.link || chat;
+  /* Zelf koppelen kan alleen als er op die dag iets te kiezen valt. */
+  const kiesbaar = trDagAfspraken(t).length > (m ? 1 : 0);
 
   return `<section class="card" id="tr-${t.id}">
-    <div class="card-b" style="padding:0">${kop}</div>
+    ${rij}
     <div class="card-b" style="padding-top:0">
-    ${TR_SECTIES.map(([k, label]) => t.secties[k] ? `<div style="margin-bottom:11px">
-      <p class="lbl" style="margin-bottom:3px">${esc(lbl(label))}</p>
-      ${trText(t.secties[k])}
-    </div>` : "").join("")}
-    ${t.acties.length ? `<div>
-      <p class="lbl" style="margin-bottom:5px">${esc(tr("tr_actions"))}</p>
-      ${[...perPersoon.entries()].map(([wie, lijst]) => `<div style="margin-bottom:9px">
-        <p class="row" style="gap:7px;align-items:center;margin-bottom:3px">
-          <span class="att-dot" style="background:${vanBuiten(wie) ? "var(--warning)" : "var(--info)"};margin:0"></span>
-          <span class="sm2" style="font-weight:500">${esc(wie)}</span></p>
-        <ul class="grid" style="gap:3px;padding-left:14px">${lijst.map((a) => {
-          const af = Boolean(a.doneAt);
-          /* Drie uitkomsten per actie: hier afvinken, doorzetten naar je
-             takenlijst, of hem laten staan. Het vinkje staat vooraan, op
-             dezelfde plek als bij een taak - afvinken moet overal hetzelfde
-             gebaar zijn. Een actie die al een taak is krijgt er geen: die
-             status hoort bij de taak zelf, niet op twee plekken. */
-          return `<li class="row" style="gap:7px;align-items:flex-start">
-          ${a.taskId ? `<span style="width:16px;flex:0 0 auto"></span>` : `<button class="chk" role="checkbox" aria-checked="${af}"
-            data-act="tr-done" data-id="${t.id}" data-v="${a.id}" style="margin-top:1px"
-            title="${esc(af ? tr("tr_untick") : tr("tr_tick"))}"
-            aria-label="${esc(af ? tr("tr_untick") : tr("tr_tick"))}">${ico("check", "", 11)}</button>`}
-          <span class="xs" style="flex:1;min-width:0;line-height:1.55;${a.taskId || af
-            ? "color:var(--ink-2)" : ""}${af ? ";text-decoration:line-through" : ""}">${esc(a.text)}</span>
-          ${af ? "" : `<button class="btn icon sm ghost" data-act="tr-who" data-id="${t.id}" data-v="${a.id}"
-            style="flex:0 0 auto" title="${esc(tr("tr_who"))}" aria-label="${esc(tr("tr_who"))}">${ico("users", "", 12)}</button>`}
-          ${a.taskId
-            ? `<span class="badge success" style="flex:0 0 auto">${ico("check", "", 10)} ${esc(tr("tr_on_list"))}</span>`
-            : af
-              ? `<span class="xs mut tab" style="flex:0 0 auto">${esc(fmtDate(String(a.doneAt).slice(0, 10)))}</span>`
-              : `<button class="btn sm outline" data-act="tr-to-task" data-id="${t.id}" data-v="${a.id}"
-                  style="flex:0 0 auto">${ico("plus", "", 11)} ${esc(tr("tr_to_task"))}</button>`}
-        </li>`;
-        }).join("")}</ul>
-      </div>`).join("")}
-    </div>` : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}
+    ${TR_SECTIES.map(([k, label]) => t.secties[k]
+      ? trSectie(k, lbl(label), trText(t.secties[k])) : "").join("")}
+    ${t.acties.length ? trSectie("acties", tr("tr_actions"), `
+      ${mijn.length ? trGroep(t, tr("tr_me"), mijn, "var(--info)") : ""}
+      ${perPersoon.size ? (() => {
+        /* Heb je zelf niets uit dit overleg, dan valt er niets weg te klappen:
+           dan zijn de acties van anderen het enige wat er staat. */
+        const n = t.acties.length - mijn.length;
+        const uit = !mijn.length || Boolean(UI.trAnderen && UI.trAnderen[t.id]);
+        const namen = [...perPersoon.keys()];
+        return `${mijn.length ? `<button class="tr-others" data-act="tr-others" data-id="${t.id}" aria-expanded="${uit}">
+            ${ico(uit ? "chevup" : "chevdown", "", 12)}
+            <span style="flex:0 0 auto">${esc(tr("tr_others"))} · ${esc(n === 1 ? tr("tr_card_1") : tr("tr_card_n", n))}</span>
+            ${uit ? "" : `<span class="trunc" style="min-width:0;color:var(--ink-3)">${esc(namen.join(", "))}</span>`}
+          </button>` : ""}
+          ${uit ? namen.map((wie) => trGroep(t, wie, perPersoon.get(wie),
+            vanBuiten(wie) ? "var(--warning)" : "var(--info)")).join("") : ""}`;
+      })() : ""}`,
+      /* Dicht moet je nog zien dat er iets openstaat, anders vergeet je het. */
+      `${t.acties.length === 1 ? tr("tr_card_1") : tr("tr_card_n", t.acties.length)}${
+        nogOpen ? ` · ${tr("tr_card_open_n", nogOpen)}` : ""}`)
+    : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}
     <div class="row wrap" style="gap:8px;margin-top:12px">
       ${/* Het origineel staat in Teams: opname, samenvatting en de volledige
            transcriptie zitten bij elkaar in de vergaderchat. Levert Copilot
            zelf een link mee, dan wint die - die wijst preciezer. */
         url ? `<a class="btn sm outline" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
         ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : ""}
-      ${m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">
-        ${ico("meetings", "", 13)} ${esc(tr("tr_open_meeting"))}</button>` : ""}
+      ${kiesbaar ? `<button class="btn sm ghost" data-act="tr-link" data-id="${t.id}">
+        ${ico("meetings", "", 13)} ${esc(m ? tr("tr_relink") : tr("tr_link"))}</button>` : ""}
     </div>
     </div></section>`;
+}
+
+/* Vindt de app de afspraak niet, of pakt hij de verkeerde, dan wijs je hem
+   zelf aan. Dat wint daarna altijd van het zoeken. */
+function trLinkDialog(t) {
+  const dag = trDagAfspraken(t);
+  const nu = trMeeting(t);
+  openDialog({
+    title: tr("tr_link"),
+    desc: `${t.title || tr("tr_untitled")} · ${fmtDate(t.day)} · ${t.time}`,
+    submit: tr("save"),
+    body: field(tr("tr_link_pick"), `<select class="inp" name="meetingId">
+      ${dag.map((x) => `<option value="${x.id}" ${nu && nu.id === x.id ? "selected" : ""}>${
+        esc(`${fmtTime(x.startsAt)}  ${x.title}${x.cancelled ? ` (${tr("tr_link_cancelled")})` : ""}`)}</option>`).join("")}
+    </select>`),
+    onSubmit: (f) => {
+      if (!f.meetingId) return;
+      t.meetingId = f.meetingId;
+      save(); render(); toast(tr("tr_linked"));
+    },
+  });
 }
 
 /* Copilot leest uit de transcriptie wie iets oppakt, en dat gaat er geregeld
@@ -12097,6 +12330,24 @@ document.addEventListener("click", (e) => {
     /* Een actie uit een verslag wordt pas een taak als jij hem doorzet. Het
        venster gaat open met de tekst erin; pas na opslaan telt hij als gestuurd,
        zodat annuleren hem niet stilletjes afvinkt. */
+    case "tr-others": {
+      UI.trAnderen = UI.trAnderen || {};
+      if (UI.trAnderen[id]) delete UI.trAnderen[id]; else UI.trAnderen[id] = true;
+      render(); break;
+    }
+    case "tr-mine-all": UI.trMineAll = !UI.trMineAll; render(); break;
+    case "tr-mine-fold": UI.trMineDicht = !UI.trMineDicht; saveUI(); render(); break;
+    case "tr-sec": {
+      UI.trDicht = UI.trDicht || {};
+      const k = el.dataset.v;
+      if (UI.trDicht[k]) delete UI.trDicht[k]; else UI.trDicht[k] = true;
+      saveUI(); render(); break;
+    }
+    case "tr-link": {
+      const t = (DB.transcripts || []).find((x) => x.id === id);
+      if (t) trLinkDialog(t);
+      break;
+    }
     case "tr-who": {
       const t = (DB.transcripts || []).find((x) => x.id === id);
       const a = t && t.acties.find((x) => x.id === el.dataset.v);
