@@ -282,6 +282,17 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 .sug-t{font-size:13px;font-weight:650;letter-spacing:-.012em}
 .sug-bar{width:1px;height:13px;background:var(--navy-muted);opacity:.55}
 .sug-sub{font-size:12px;color:var(--navy-muted)}
+/* In Kennis is de hele donkere kop een knop. Dicht blijft alleen die balk
+   over, met hoeveel er deze week nog open staat. */
+.sug-fold{width:100%;border:0;font:inherit;text-align:left;cursor:pointer;transition:background .14s}
+.sug-fold:hover{background:var(--navy-2)}
+.sug-fold[aria-expanded="false"]{border-radius:calc(var(--r-block) - 1px)}
+.sug-end{margin-left:auto;display:flex;align-items:center;gap:9px}
+.sug-n{font-size:11.5px;font-weight:600;padding:1px 8px;border:1px solid var(--navy-border);border-radius:999px;white-space:nowrap}
+.sug-chev{display:grid;place-items:center;color:var(--navy-muted)}
+.sug-fold:hover .sug-chev{color:var(--navy-ink)}
+/* Op de telefoon blijft de dichte balk kort: de ondertitel ken je al. */
+@media (max-width:520px){.sug-fold[aria-expanded="false"] :is(.sug-sub,.sug-bar){display:none}}
 .sug-d{font-size:11.5px;color:var(--ink-2);line-height:1.5;margin:15px 0 3px}
 .sug-txt{font-weight:600}
 /* De tekst houdt minstens een fatsoenlijke kolom; past er niet ook nog vier
@@ -1787,6 +1798,8 @@ const STR = {
   sy_cat:["{0} new categories from Outlook","{0} nieuwe categorieën uit Outlook"],
   sy_cat_1:["1 new category from Outlook","1 nieuwe categorie uit Outlook"],
   nws_sub:["AI-nieuws uit je nieuwsbrieven","AI-nieuws uit je nieuwsbrieven"],
+  nws_open_n:["{0} open this week","{0} open deze week"],
+  nws_open_0:["Nothing open this week","Niets open deze week"],
   nws_d:["Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Elke maandag begint de lijst schoon; wat je bewaart blijft staan bij je artikelen.",
          "Copilot leest je nieuwsbrieven en houdt over wat er voor Audit & Assurance toe doet. Elke maandag begint de lijst schoon; wat je bewaart blijft staan bij je artikelen."],
   nws_show_open:["Deze week ({0})","Deze week ({0})"],
@@ -3727,6 +3740,7 @@ const UI = {
   planPast: false,       // toont ook de weken die al voorbij zijn
   knowOpen: {},          // welke bronlijsten dichtgeklapt staan
   nwsView: "open",       // "open" deze week, "read" afgevinkt, "past" eerdere weken
+  nwsDicht: false,       // staat de Copilot-analyse in Kennis dichtgeklapt
   projFilter: { status: "open" },
   subOpen: {},           // welke subprojecten hun taken tonen
   kpiOpen: {},           // welke KPI's hun metingen tonen
@@ -3748,12 +3762,13 @@ try {
   if (s.pastOpen === false) UI.pastOpen = false;
   if (s.trDicht && typeof s.trDicht === "object") UI.trDicht = s.trDicht;
   if (s.trMineDicht === true) UI.trMineDicht = true;
+  if (s.nwsDicht === true) UI.nwsDicht = true;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
   try {
     localStorage.setItem(KEY + ":ui", JSON.stringify({
       view: UI.view, taskView: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
-      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht }));
+      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht }));
   }
   catch (e) { /* ignore */ }
 };
@@ -9234,12 +9249,23 @@ function newsAnalysisCard() {
           </span>`}
     </div></li>`;
 
-  return `<section class="card sug-card">
-    <div class="sug-h">${ico("sparkle", "ico", 15)}
-      <h2 class="sug-t">${esc(tr("sg_head"))}</h2>
+  /* De hele kop klapt de analyse in en uit. Dicht zie je nog wel of er iets
+     op je ligt te wachten, zodat dichtklappen niet hetzelfde is als vergeten. */
+  const dicht = Boolean(UI.nwsDicht);
+  const kop = `<button class="sug-h sug-fold" data-act="nws-fold" aria-expanded="${!dicht}">
+      ${ico("sparkle", "ico", 15)}
+      <span class="sug-t" role="heading" aria-level="2">${esc(tr("sg_head"))}</span>
       <span class="sug-bar"></span>
       <span class="sug-sub">${esc(tr("nws_sub"))}</span>
-    </div>
+      <span class="sug-end">
+        ${dicht ? `<span class="sug-n">${esc(open.length ? tr("nws_open_n", open.length) : tr("nws_open_0"))}</span>` : ""}
+        <span class="sug-chev">${ico(dicht ? "chevdown" : "chevup", "", 14)}</span>
+      </span>
+    </button>`;
+  if (dicht) return `<section class="card sug-card">${kop}</section>`;
+
+  return `<section class="card sug-card">
+    ${kop}
     <div class="card-b"><p class="sug-d">${esc(tr("nws_d"))}</p>
       ${toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
         : `<p class="xs mut">${esc(leeg)}</p>`}
@@ -12887,6 +12913,7 @@ document.addEventListener("click", (e) => {
       UI.knowOpen[k] = UI.knowOpen[k] === false;
       render(); break;
     }
+    case "nws-fold": UI.nwsDicht = !UI.nwsDicht; saveUI(); render(); break;
     case "edit-source": sourceDialog(DB.sources.find((x) => x.id === id)); break;
     case "new-folder": folderDialog(null); break;
     case "edit-folder": folderDialog(DB.folders.find((x) => x.id === id)); break;
