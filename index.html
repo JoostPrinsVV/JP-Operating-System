@@ -521,6 +521,8 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
   color:inherit;width:100%}
 .tsk.done .tsk-t{color:var(--ink-2);text-decoration:line-through}
 .tsk-m{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:3px;font-size:11px;color:var(--ink-2)}
+/* Een taak of punt dat terugkomt: het pijltjesrondje, en waar ruimte is het ritme erbij. */
+.rp-tag{display:inline-flex;align-items:center;gap:3px;vertical-align:middle}
 /* De status staat vooraan in de regel eronder, met een stip ervoor. Geen
    badge erbij rechts: die kant draagt al de prioriteit en de urgentie, en een
    derde label maakt van een lijst een legenda. */
@@ -1230,6 +1232,34 @@ const STR = {
   ap_from_task:["task","taak"],
   ap_done:["Discussed","Besproken"],
   ap_del:["Remove","Weghalen"],
+  ap_vast:["Bring this up every time","Elke keer terug laten komen"],
+  ap_vast_d:["The point then sits on each next meeting in this series, until you remove it.",
+             "Het punt staat dan bij elke volgende keer van dit overleg, tot je het weghaalt."],
+  ap_vast_tag:["Standing point","Vast punt"],
+  ap_vast_stop:["Stop this standing point","Vast punt stoppen"],
+  ap_vast_set:["Standing point added. It comes back every time.","Vast punt toegevoegd. Het komt elke keer terug."],
+  ap_vast_stopped:["Standing point stopped. Earlier discussions stay where they were.",
+                   "Vast punt gestopt. Wat je eerder besprak blijft staan."],
+  rp_field:["Repeat","Herhalen"],
+  rp_hint:["Tick it off and the next one is ready, counted from the due date.",
+           "Vink je hem af, dan staat de volgende klaar, gerekend vanaf de vervaldatum."],
+  rp_next:["Done. The next one is on {0}.","Klaar. De volgende staat op {0}."],
+  rp_undone:["Reopened. The next one that was waiting has been removed.",
+             "Weer open. De volgende die al klaarstond is weggehaald."],
+  rp_tag_t:["Repeats: {0}","Herhaalt: {0}"],
+  m_series:["Recurring","Terugkerend"],
+  m_rep_until:["Until","Tot en met"],
+  m_rep_hint:["Without an end date it runs six months ahead; at most a year.",
+              "Zonder einddatum loopt hij een half jaar vooruit, hoogstens een jaar."],
+  m_rep_made:["{0} meetings created in this series.","{0} afspraken in deze reeks aangemaakt."],
+  m_series_all:["Also the {0} later meetings in this series","Ook de {0} keren hierna in deze reeks"],
+  m_series_all1:["Also the next meeting in this series","Ook de keer hierna in deze reeks"],
+  m_series_upd1:["Updated, along with the next meeting.","Bijgewerkt, samen met de keer hierna."],
+  m_series_del1:["Deleted, along with the next meeting.","Verwijderd, samen met de keer hierna."],
+  m_series_all_d:["Saving or deleting then applies to this meeting and every one after it. Notes and decisions stay per meeting.",
+                  "Opslaan of verwijderen geldt dan voor deze en alle keren hierna. Notities en besluiten blijven per keer."],
+  m_series_upd:["Updated, along with {0} later meetings.","Bijgewerkt, samen met {0} keren hierna."],
+  m_series_del:["Deleted, along with {0} later meetings.","Verwijderd, samen met {0} keren hierna."],
   ap_past:["Didn't get to it? Move it to the next meeting.","Niet aan toegekomen? Verplaats het naar een volgend overleg."],
   ap_n:["{0} points","{0} bespreekpunten"],
   ap_1:["1 point","1 bespreekpunt"],
@@ -2563,6 +2593,7 @@ const ICONS = {
   download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
   refresh: "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16M8 16H3v5" +
            "M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8M16 8h5V3",
+  repeat: "M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3",
   receipt: "M5 2v20l3-2 2 2 2-2 2 2 2-2 3 2V2l-3 2-2-2-2 2-2-2-2 2zM9 8h6M9 12h6",
   news: "M4 4h13a1 1 0 0 1 1 1v14a2 2 0 0 0 2 2H5a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1zM7 8h7M7 12h7M7 16h4M18 10h2a1 1 0 0 1 1 1v8",
   book: "M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5zM8 7h8M8 11h6",
@@ -3612,6 +3643,7 @@ function migrate() {
   if (!Array.isArray(DB.transcripts)) { DB.transcripts = []; changed = true; }
   if (!Array.isArray(DB.suggestions)) { DB.suggestions = []; changed = true; }
   if (!Array.isArray(DB.agendaPoints)) { DB.agendaPoints = []; changed = true; }
+  if (!Array.isArray(DB.standingPoints)) { DB.standingPoints = []; changed = true; }
   if (!Array.isArray(DB.news)) { DB.news = []; changed = true; }
   if (!Array.isArray(DB.subprojects)) { DB.subprojects = []; changed = true; }
   /* De ingebouwde opdrachttypes komen in de lijst te staan, zodat ze te
@@ -3674,6 +3706,8 @@ function migrate() {
   }
   // Helemaal aan het eind, als alle lijsten gegarandeerd bestaan.
   if (dedupeMeetings()) changed = true;
+  // Is het overleg van een vast punt intussen voorbij, dan staat het nu bij de volgende keer.
+  if (standingSync()) changed = true;
   if (changed) save();
 }
 /* ---- undo ---------------------------------------------------------------
@@ -3966,7 +4000,8 @@ function taskRow(t, opts = {}) {
       <div class="tsk-m">
         ${statusHint(t)}
         ${t.dueDate ? `<span ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${od ? `${esc(tr("overdue_p"))} — ` : ""}${esc(fmtDate(t.dueDate))}</span>` : ""}
-        ${opts.hideProject !== true && proj ? `<span class="trunc" style="max-width:150px">${esc(proj.name)}</span>` : ""}
+        ${repeatTag(t)}
+        ${opts.hideProject !== true && proj ?`<span class="trunc" style="max-width:150px">${esc(proj.name)}</span>` : ""}
         ${opts.hideGoal !== true && goal ? `<span>${esc(goal.code)}</span>` : ""}
         ${t.status === "waiting" && t.waitingOn ? `<span>${esc(tr("waiting_on"))} ${esc(t.waitingOn)}</span>` : ""}
       </div>
@@ -4744,8 +4779,9 @@ function kanbanCard(t) {
       ${t.priority !== "medium" ? badge(PRIOS, t.priority) : ""}
       ${t.energy === "deep" ? `<span class="badge neutral">${esc(tr("deep"))}</span>` : ""}
     </div>
-    ${(t.dueDate || p || g || apm) ? `<div class="tsk-m">
+    ${(t.dueDate || p || g || apm || repeatTag(t)) ? `<div class="tsk-m">
       ${t.dueDate ? `<span ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${esc(fmtDate(t.dueDate))}</span>` : ""}
+      ${repeatTag(t, true)}
       ${apm ? `<span class="row" style="gap:3px;color:var(--info)" title="${esc(tr("ap_task_on", mtgKort(apm)))}">
         ${ico("meetings", "", 11)}${esc(fmtDate(String(apm.startsAt).slice(0, 10)))}</span>` : ""}
       ${g ? `<span><i style="display:inline-block;width:6px;height:6px;border-radius:2px;background:${slotColor(g.slot)};margin-right:3px"></i>${esc(g.code)}</span>` : ""}
@@ -4785,7 +4821,7 @@ function taskTable(list) {
     return `<tr data-act="edit-task" data-id="${t.id}">
       <td><span ${t.status === "done" ? 'class="mut" style="text-decoration:line-through"' : ""}>${esc(t.title)}</span></td>
       <td>${badge(STATUSES, t.status)}</td><td>${badge(PRIOS, t.priority)}</td>
-      <td class="sm2" ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${t.dueDate ? esc(fmtDate(t.dueDate)) : "—"}</td>
+      <td class="sm2" ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${t.dueDate ? esc(fmtDate(t.dueDate)) : "—"} ${repeatTag(t, true)}</td>
       <td class="sm2 mut trunc" style="max-width:160px">${p ? esc(p.name) : "—"}</td>
       <td class="sm2 mut">${g ? esc(g.code) : "—"}</td>
       <td><span class="row" style="gap:6px"><span class="sm2 mut tab">${s.toFixed(0)}</span>
@@ -6897,6 +6933,150 @@ function pointSyncTask(t, meetingId) {
   pointAdd(meetingId, { taskId: t.id, text: t.title });
 }
 
+/* ---- reeksen ------------------------------------------------------------
+   Outlook geeft elke keer van een terugkerende afspraak een eigen UID. Het is
+   wel steeds dezelfde GlobalObjectId, met op teken 32 tot 40 de datum van die
+   keer; bij een losse afspraak staan daar nullen. Die datum weggepoetst is
+   dus de sleutel van de hele reeks. Een reeks die je in de app zelf maakt,
+   draagt een seriesId.
+------------------------------------------------------------------------- */
+const OL_GOID = /^040000008200E00074C5B7101A82E008[0-9A-F]{8}/i;
+function seriesKey(m) {
+  if (!m) return "";
+  if (m.seriesId) return `app:${m.seriesId}`;
+  const u = String(m.outlookUid || "");
+  return OL_GOID.test(u) ? `${u.slice(0, 32)}00000000${u.slice(40)}`.toUpperCase() : u;
+}
+function isSeries(m) {
+  if (!m) return false;
+  if (m.seriesId) return true;
+  const u = String(m.outlookUid || "");
+  if (OL_GOID.test(u)) return u.slice(32, 40) !== "00000000";
+  return Boolean(u) && DB.meetings.some((x) => x !== m && x.outlookUid === u);
+}
+const byStart = (a, b) => String(a.startsAt).localeCompare(String(b.startsAt));
+/* De eerstvolgende keer in dezelfde reeks die na `na` begint. */
+function seriesNext(m, na) {
+  const k = seriesKey(m);
+  if (!k) return null;
+  return DB.meetings.filter((x) => x !== m && !x.cancelled && seriesKey(x) === k &&
+      String(x.startsAt) > String(na)).sort(byStart)[0] || null;
+}
+
+/* ---- herhalen -----------------------------------------------------------
+   Een terugkerende taak staat er nooit vaker dan één keer: de volgende komt
+   pas als je deze afvinkt. Hij rekent door vanaf de vervaldatum, niet vanaf
+   de dag dat je afvinkt, zodat de vrijdagrapportage op vrijdag blijft. Ben je
+   een tijd weg geweest, dan slaat hij de gemiste keren over in plaats van ze
+   allemaal tegelijk op je lijst te zetten.
+------------------------------------------------------------------------- */
+const REPEATS = [
+  ["",        ["Does not repeat", "Niet"]],
+  ["workday", ["Every workday", "Elke werkdag"]],
+  ["week",    ["Every week", "Elke week"]],
+  ["2weeks",  ["Every two weeks", "Om de week"]],
+  ["month",   ["Every month", "Elke maand"]],
+  ["quarter", ["Every quarter", "Elk kwartaal"]],
+  ["year",    ["Every year", "Elk jaar"]],
+];
+const REP_MAANDEN = { month: 1, quarter: 3, year: 12 };
+const repeatLabel = (rep) => lbl((REPEATS.find(([k]) => k === rep) || [])[1] || "");
+
+/* Eén stap verder. Bij maanden blijft de dag van de maand staan; valt die in
+   een kortere maand weg, dan wordt het de laatste. De 31e wordt eind februari
+   de 28e, en in maart weer de 31e - daarom gaat `dom` apart mee. */
+function repeatStep(d, rep, dom) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (rep === "workday") {
+    do x.setDate(x.getDate() + 1); while (x.getDay() === 0 || x.getDay() === 6);
+    return x;
+  }
+  if (rep === "week" || rep === "2weeks") { x.setDate(x.getDate() + (rep === "week" ? 7 : 14)); return x; }
+  const mnd = REP_MAANDEN[rep];
+  if (!mnd) return null;
+  const doel = x.getMonth() + mnd;
+  const laatste = new Date(x.getFullYear(), doel + 1, 0).getDate();
+  return new Date(x.getFullYear(), doel, Math.min(dom || x.getDate(), laatste));
+}
+
+/* De eerste keer na vandaag, gerekend vanaf de vervaldatum. */
+function repeatNext(t) {
+  const vandaag = TODAY();
+  let d = repeatStep(parseD(t.dueDate || vandaag), t.repeat, t.repeatDom);
+  for (let i = 0; d && iso(d) <= vandaag && i < 2000; i++) d = repeatStep(d, t.repeat, t.repeatDom);
+  return d ? iso(d) : null;
+}
+
+/* Afvinken zet de volgende klaar, één keer: is dat al gebeurd, dan niet nog
+   eens, zodat een afgevinkte taak opnieuw opslaan geen tweede oplevert. */
+function taskRepeat(t) {
+  if (!t || t.status !== "done" || !t.repeat || t.repeatNextId) return null;
+  const due = repeatNext(t);
+  if (!due) return null;
+  const nieuw = { id: uid(), title: t.title, notes: t.notes || "", status: "planned",
+    priority: t.priority || "medium", energy: t.energy || "shallow", dueDate: due,
+    estimate: t.estimate ?? null, projectId: t.projectId || null, subId: t.subId || null,
+    goalId: t.goalId || null, waitingOn: "", repeat: t.repeat, repeatDom: t.repeatDom || null,
+    createdAt: TODAY(), completedAt: null };
+  DB.tasks.unshift(nieuw);
+  t.repeatNextId = nieuw.id;
+  /* Stond deze keer op de agenda van een terugkerend overleg, dan komt de
+     volgende op de keer daarna te staan. */
+  const laatst = DB.agendaPoints.filter((p) => p.taskId === t.id)
+    .map((p) => DB.meetings.find((m) => m.id === p.meetingId)).filter(Boolean)
+    .sort(byStart).pop();
+  const daarna = laatst && seriesNext(laatst, laatst.startsAt);
+  if (daarna) pointAdd(daarna.id, { taskId: nieuw.id, text: nieuw.title });
+  return nieuw;
+}
+
+/* Weer opengezet: de volgende die net klaarstond gaat weg, zodat een misklik
+   geen dubbele taak achterlaat. Was die zelf al af, dan blijft hij staan. */
+function taskUnrepeat(t) {
+  if (!t || t.status === "done" || !t.repeatNextId) return false;
+  const v = DB.tasks.find((x) => x.id === t.repeatNextId);
+  delete t.repeatNextId;
+  if (!v || v.status === "done") return false;
+  DB.tasks = DB.tasks.filter((x) => x !== v);
+  DB.agendaPoints = DB.agendaPoints.filter((p) => !(p.taskId === v.id && p.status === "open"));
+  return true;
+}
+
+/* Na elke statuswissel, waar die ook vandaan komt: het vinkje, het venster,
+   het bord of een actiepunt. Geeft terug wat er gebeurde, voor de melding. */
+function taskAfterStatus(t) {
+  const volgende = taskRepeat(t);
+  const weg = !volgende && taskUnrepeat(t);
+  return volgende ? tr("rp_next", fmtDate(volgende.dueDate)) : weg ? tr("rp_undone") : "";
+}
+
+const repeatTag = (t, kort = false) => t.repeat && t.status !== "done"
+  ? `<span class="rp-tag" title="${esc(tr("rp_tag_t", repeatLabel(t.repeat)))}">${ico("repeat", "", 11)}${
+      kort ? "" : esc(repeatLabel(t.repeat))}</span>` : "";
+
+/* ---- vaste bespreekpunten -----------------------------------------------
+   Een punt dat bij elk overleg in een reeks terugkomt. Het hoort bij de
+   reeks, niet bij één keer: de app zet het steeds bij de eerstvolgende keer
+   neer, en wat je eerder besprak blijft bij dat overleg staan. Weghalen
+   stopt het.
+------------------------------------------------------------------------- */
+const standingOf = (p) =>
+  (p && p.standingId && (DB.standingPoints || []).find((s) => s.id === p.standingId)) || null;
+
+function standingSync() {
+  const nu = Date.now();
+  let n = 0;
+  (DB.standingPoints || []).forEach((s) => {
+    const m = DB.meetings.filter((x) => !x.cancelled && seriesKey(x) === s.series &&
+        String(x.startsAt) >= String(s.from || "") &&
+        new Date(x.endsAt || x.startsAt).getTime() >= nu).sort(byStart)[0];
+    if (!m || DB.agendaPoints.some((p) => p.standingId === s.id && p.meetingId === m.id)) return;
+    pointAdd(m.id, { text: s.text, standingId: s.id });
+    n++;
+  });
+  return n;
+}
+
 /* De afspraken waar je een punt aan kunt hangen: wat nog moet komen of nu
    loopt, binnen zes weken. Een hele-dag-blok is geen gesprek, en wat in
    Outlook is weggegooid ook niet. */
@@ -6987,11 +7167,23 @@ function pointDialog(meetingId) {
   openDialog({
     title: tr("ap_add"), desc: tr("ap_add_d", m.title), submit: tr("add"),
     body: field(tr("ap_text"), `<input class="inp" name="text" required maxlength="400"
-      placeholder="${esc(tr("ap_text_ph"))}">`),
+      placeholder="${esc(tr("ap_text_ph"))}">`) +
+      // Alleen bij een overleg dat terugkomt: anders is er geen volgende keer.
+      (isSeries(m) ? `<label class="row" style="gap:8px">
+        <input type="checkbox" name="vast" style="width:16px;height:16px">
+        <span class="sm2">${esc(tr("ap_vast"))}</span></label>
+        <p class="xs mut" style="margin-top:-6px">${esc(tr("ap_vast_d"))}</p>` : ""),
     onSubmit: (f) => {
       const tekst = String(f.text || "").trim();
       if (!tekst) return false;
-      pointAdd(m.id, { text: tekst });
+      if (f.vast) {
+        DB.standingPoints = DB.standingPoints || [];
+        const s = { id: uid(), series: seriesKey(m), text: tekst, title: m.title,
+          from: String(m.startsAt).slice(0, 16), createdAt: TODAY() };
+        DB.standingPoints.push(s);
+        pointAdd(m.id, { text: tekst, standingId: s.id });
+        toast(tr("ap_vast_set"));
+      } else pointAdd(m.id, { text: tekst });
       save(); render();
       if (terug) setTimeout(() => meetingPeek(terug), 0);
     },
@@ -7026,6 +7218,8 @@ function pointsBlock(m) {
   const rij = (p) => {
     const af = p.status === "done";
     const t = pointTask(p);
+    // Een vast punt dat nog loopt: weghalen stopt het, verplaatsen kan niet.
+    const vast = !af && standingOf(p);
     const herkomst = p.suggestionId ? tr("ap_from_sug") : p.taskId ? tr("ap_from_task") : "";
     const bron = [p.source, herkomst].filter(Boolean).join(" · ");
     return `<li class="row" style="gap:9px;align-items:flex-start">
@@ -7036,13 +7230,14 @@ function pointsBlock(m) {
             style="display:block;font-weight:500;line-height:1.45;${af ? doorhalen : ""}">${esc(t.title)}</button>`
           : `<span class="sm2" style="display:block;font-weight:500;line-height:1.45;${af ? doorhalen : ""}">${esc(p.text)}</span>`}
         ${p.why && !af ? `<span class="xs mut" style="display:block;margin-top:2px;line-height:1.5">${esc(p.why)}</span>` : ""}
+        ${vast ? `<span class="xs rp-tag" style="display:flex;margin-top:2px;color:var(--info)">${ico("repeat", "", 11)}${esc(tr("ap_vast_tag"))}</span>` : ""}
         ${bron ? `<span class="xs mut" style="display:block;margin-top:1px;font-style:italic">${esc(bron)}</span>` : ""}
       </span>
       <span class="row" style="gap:0;flex:0 0 auto">
-        ${af ? "" : `<button type="button" class="btn icon sm ghost" data-act="pt-move" data-id="${p.id}"
+        ${af || vast ? "" : `<button type="button" class="btn icon sm ghost" data-act="pt-move" data-id="${p.id}"
           title="${esc(tr("ap_move_t"))}" aria-label="${esc(tr("ap_move_t"))}">${ico("arrow", "", 12)}</button>`}
         <button type="button" class="btn icon sm ghost" data-act="pt-del" data-id="${p.id}"
-          title="${esc(tr("ap_del"))}" aria-label="${esc(tr("ap_del"))}">${ico("close", "", 12)}</button>
+          title="${esc(tr(vast ? "ap_vast_stop" : "ap_del"))}" aria-label="${esc(tr(vast ? "ap_vast_stop" : "ap_del"))}">${ico("close", "", 12)}</button>
       </span>
     </li>`;
   };
@@ -10054,7 +10249,9 @@ function taskDialog(task, defaults = {}) {
         ${field(tr("dl_waiting"), `<input class="inp" name="waitingOn" value="${esc(t.waitingOn || "")}" placeholder="Who or what">`)}
         ${field(tr("ap_task_field"), `<select class="inp" name="meetingId" ${apKeuze.n ? "" : "disabled"}>
           <option value="">${esc(tr("ap_task_none"))}</option>${apKeuze.html}</select>`)}
-      </div>` +
+        ${field(tr("rp_field"), `<select class="inp" name="repeat">${opts(REPEATS, t.repeat || "")}</select>`)}
+      </div>
+      <p class="xs mut" style="margin-top:-4px">${esc(tr("rp_hint"))}</p>` +
       field(tr("dl_notes"), `<textarea class="inp" name="notes" rows="3" placeholder="Context, links, next step…">${esc(t.notes)}</textarea>`),
     onSubmit: (f) => {
       if (!f.title.trim()) return false;
@@ -10062,27 +10259,37 @@ function taskDialog(task, defaults = {}) {
         title: f.title.trim(), notes: f.notes, status: f.status, priority: f.priority, energy: f.energy,
         dueDate: f.dueDate || null, estimate: f.estimate === "" ? null : Number(f.estimate),
         projectId: f.projectId || null, goalId: f.goalId || null, waitingOn: f.waitingOn || "",
-        subId: f.subId || null,
+        subId: f.subId || null, repeat: f.repeat || "",
       };
+      /* De dag van de maand onthouden we apart, anders schuift een taak op
+         de 31e na februari blijvend naar de 28e. Alleen opnieuw vastleggen
+         als de datum of het ritme verandert. */
+      if (REP_MAANDEN[patch.repeat]) {
+        const anders = !task || !task.repeatDom || task.dueDate !== patch.dueDate || task.repeat !== patch.repeat;
+        patch.repeatDom = anders ? parseD(patch.dueDate || TODAY()).getDate() : task.repeatDom;
+      } else patch.repeatDom = null;
       // Een onderdeel bepaalt bij welk project de taak hoort; anders kunnen de
       // twee uit elkaar lopen en staat een taak op twee plekken tegelijk.
       if (patch.subId) { const s = subOf(patch.subId); if (s) patch.projectId = s.projectId; }
       /* Een uitgeschakeld keuzemenu komt niet mee in het formulier. Zonder
          afspraken om uit te kiezen blijft de koppeling dus zoals hij was. */
       const apNaar = "meetingId" in f ? f.meetingId : apNu;
+      let herhaal = "";
       if (task) {
         Object.assign(task, patch);
         if (task.status === "done" && !task.completedAt) task.completedAt = TODAY();
         if (task.status !== "done") task.completedAt = null;
         pointSyncTask(task, apNaar);
+        herhaal = taskAfterStatus(task);
       } else {
         const nieuw = { id: uid(), createdAt: TODAY(), completedAt: patch.status === "done" ? TODAY() : null, ...patch };
         DB.tasks.unshift(nieuw);
         pointSyncTask(nieuw, apNaar);
+        herhaal = taskAfterStatus(nieuw);
         // De aanroeper mag weten welke taak het werd, om hem te kunnen koppelen.
         if (typeof defaults.onSaved === "function") defaults.onSaved(nieuw);
       }
-      save(); toast(task ? tr("dl_updated") : tr("dl_created")); render();
+      save(); toast(herhaal || (task ? tr("dl_updated") : tr("dl_created"))); render();
     },
   });
 }
@@ -10139,10 +10346,58 @@ function projectDialog(project) {
   });
 }
 
+/* Een afspraak die je hier zelf maakt, kan zich herhalen. De keren worden in
+   één keer aangemaakt, tot de einddatum en hoogstens een jaar vooruit. Dan
+   staan ze gewoon in je agenda, en is elke keer los te openen en aan te
+   vullen. Outlook-afspraken herhalen in Outlook; die komen al per keer binnen. */
+const MEET_REPEATS = REPEATS.filter(([k]) => k !== "year");
+function meetingRepeat(m, rep, tot) {
+  const dag = String(m.startsAt).slice(0, 10), tijd = String(m.startsAt).slice(11, 16);
+  const start = parseD(dag);
+  const jaar = iso(new Date(start.getFullYear() + 1, start.getMonth(), start.getDate()));
+  const halfjaar = iso(new Date(start.getFullYear(), start.getMonth() + 6, start.getDate()));
+  const eind = tot && tot > dag ? (tot < jaar ? tot : jaar) : halfjaar;
+  const duur = m.endsAt ? new Date(m.endsAt) - new Date(m.startsAt) : 0;
+  m.seriesId = m.seriesId || uid();
+  m.repeat = rep;
+  let d = start, n = 0;
+  while ((d = repeatStep(d, rep, start.getDate())) && iso(d) <= eind && n < 400) {
+    const startsAt = `${iso(d)}T${tijd}`;
+    DB.meetings.push({ id: uid(), title: m.title, kind: m.kind, startsAt,
+      endsAt: duur > 0 ? localIso(new Date(new Date(startsAt).getTime() + duur)) : "",
+      location: m.location || "", attendees: JSON.parse(JSON.stringify(m.attendees || [])),
+      agenda: m.agenda || "", notes: "", decisions: "", projectId: m.projectId || null,
+      onlineUrl: m.onlineUrl || "", categories: [...(m.categories || [])],
+      seriesId: m.seriesId, repeat: rep });
+    n++;
+  }
+  return n;
+}
+/* De keren ná deze, in een reeks die je in de app maakte. */
+const seriesLater = (m) => m.seriesId
+  ? DB.meetings.filter((x) => x !== m && x.seriesId === m.seriesId && String(x.startsAt) > String(m.startsAt))
+  : [];
+
 function meetingDialog(meeting, defaults) {
   const m = meeting || { title: "", kind: "other", startsAt: new Date().toISOString().slice(0, 16),
     endsAt: "", location: "", attendees: [], agenda: "", notes: "", decisions: "", projectId: "",
     ...(defaults || {}) };
+  /* Herhalen kan alleen bij een eigen afspraak. Hoort hij al bij een eigen
+     reeks met keren erna, dan kies je of een wijziging die ook raakt. */
+  const eigen = !m.outlookUid;
+  const later = meeting ? seriesLater(meeting) : [];
+  let ookLater = false;
+  const herhaalVeld = !eigen ? "" : later.length
+    ? `<label class="row" style="gap:8px">
+        <input type="checkbox" name="seriesAll" style="width:16px;height:16px">
+        <span class="sm2">${esc(later.length === 1 ? tr("m_series_all1") : tr("m_series_all", later.length))}</span></label>
+      <p class="xs mut" style="margin-top:-6px">${esc(tr("m_series_all_d"))}</p>`
+    : m.seriesId ? ""
+    : `<div class="f2">
+        ${field(tr("rp_field"), `<select class="inp" name="repeat">${opts(MEET_REPEATS, "")}</select>`)}
+        ${field(tr("m_rep_until"), `<input class="inp" type="date" name="repeatUntil">`)}
+      </div>
+      <p class="xs mut" style="margin-top:-4px">${esc(tr("m_rep_hint"))}</p>`;
   openDialog({
     title: meeting ? tr("dl_meet_edit") : tr("dl_meet_new"),
     desc: tr("dl_meet_d"),
@@ -10150,12 +10405,16 @@ function meetingDialog(meeting, defaults) {
     delLabel: meeting ? tr("conf_del_meet") : "",
     del: meeting ? () => {
       checkpoint(tr("u_meeting"));
-      DB.meetings = DB.meetings.filter((x) => x.id !== meeting.id);
-      DB.actions = DB.actions.filter((a) => a.meetingId !== meeting.id);
+      // Met het vinkje aan gaan de keren erna mee; de keren ervoor blijven.
+      const weg = new Set([meeting, ...(ookLater ? later : [])].map((x) => x.id));
+      DB.meetings = DB.meetings.filter((x) => !weg.has(x.id));
+      DB.actions = DB.actions.filter((a) => !weg.has(a.meetingId));
       // Wat nog besproken moest worden, gaat terug naar waar het vandaan kwam.
-      DB.agendaPoints.filter((p) => p.meetingId === meeting.id).forEach(pointLos);
+      DB.agendaPoints.filter((p) => weg.has(p.meetingId)).forEach(pointLos);
       UI.detail = null;
-      save(); go("meetings"); toast(tr("dl_meet_deleted"), true);
+      save(); go("meetings");
+      toast(weg.size > 2 ? tr("m_series_del", weg.size - 1) : weg.size === 2 ? tr("m_series_del1")
+        : tr("dl_meet_deleted"), true);
     } : null,
     body: field(tr("dl_title"), `<input class="inp" name="title" required value="${esc(m.title)}"
         placeholder="e.g. Audit AI steering — monthly">`) +
@@ -10164,7 +10423,7 @@ function meetingDialog(meeting, defaults) {
         ${field(tr("dl_type"), `<select class="inp" name="kind">${opts(MKINDS, m.kind)}</select>`)}
         ${field(tr("dl_location"), `<input class="inp" name="location" value="${esc(m.location)}" placeholder="Teams, room, city">`)}
         ${field(tr("th_project"), `<select class="inp" name="projectId">${projOptions(m.projectId)}</select>`)}
-      </div>` +
+      </div>` + herhaalVeld +
       field(tr("m_cats"), categoryPicker(m.categories || [])) +
       field(tr("dl_attendees"), `<input class="inp" name="attendees" value="${esc((m.attendees || []).map(attText).join(", "))}" placeholder="${esc(tr("dl_att_ph"))}">`) +
       field(tr("m_link"), `<input class="inp" name="onlineUrl" type="url" value="${esc(m.onlineUrl || "")}"
@@ -10180,11 +10439,47 @@ function meetingDialog(meeting, defaults) {
         projectId: f.projectId || null, agenda: f.agenda, notes: f.notes, decisions: f.decisions,
         onlineUrl: (f.onlineUrl || "").trim(), categories: cats.slice(0, 8),
         attendees: f.attendees.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean).map(attParse) };
-      if (meeting) Object.assign(meeting, patch);
-      else { const id = uid(); DB.meetings.unshift({ id, endsAt: "", ...patch }); UI.detail = { type: "meeting", id }; }
-      save(); toast(meeting ? tr("dl_meet_updated") : tr("dl_meet_created")); render();
+      let doel = meeting, melding = meeting ? tr("dl_meet_updated") : tr("dl_meet_created");
+      if (meeting) {
+        const oudeTijd = String(meeting.startsAt).slice(11, 16);
+        Object.assign(meeting, patch);
+        /* De keren erna krijgen de vaste gegevens mee, en een andere begintijd
+           op hun eigen dag. Notities, besluiten en de agenda blijven per keer. */
+        if (f.seriesAll && later.length) {
+          const nieuweTijd = String(meeting.startsAt).slice(11, 16);
+          const schuif = (s) => {
+            if (!s || nieuweTijd === oudeTijd) return s;
+            const [oh, om] = oudeTijd.split(":").map(Number), [nh, nm] = nieuweTijd.split(":").map(Number);
+            return localIso(new Date(new Date(s).getTime() + ((nh - oh) * 60 + (nm - om)) * 60000));
+          };
+          later.forEach((x) => {
+            Object.assign(x, { title: patch.title, kind: patch.kind, location: patch.location,
+              projectId: patch.projectId, onlineUrl: patch.onlineUrl, categories: [...patch.categories],
+              attendees: JSON.parse(JSON.stringify(patch.attendees)) });
+            x.startsAt = schuif(x.startsAt);
+            if (x.endsAt) x.endsAt = schuif(x.endsAt);
+          });
+          melding = later.length === 1 ? tr("m_series_upd1") : tr("m_series_upd", later.length);
+        }
+      } else {
+        const id = uid();
+        doel = { id, endsAt: "", ...patch };
+        DB.meetings.unshift(doel);
+        UI.detail = { type: "meeting", id };
+      }
+      if (eigen && !doel.seriesId && f.repeat) {
+        const n = meetingRepeat(doel, f.repeat, f.repeatUntil);
+        if (n) melding = tr("m_rep_made", n + 1);
+      }
+      // Een nieuwe keer in een reeks krijgt de vaste punten van die reeks mee.
+      standingSync();
+      save(); toast(melding); render();
     },
   });
+  /* Het vinkje wordt hier al gelezen: verwijderen vraagt eerst om bevestiging,
+     en dat venster vervangt dit formulier. */
+  const vink = dlg.querySelector('[name="seriesAll"]');
+  if (vink) vink.onchange = () => { ookLater = vink.checked; };
 }
 
 /* Een afspraak aanklikken in de agenda hoort je niet uit de agenda weg te
@@ -10216,7 +10511,8 @@ function meetingPeek(id) {
           <a class="btn sm outline" href="${esc(m.onlineUrl)}" target="_blank" rel="noopener noreferrer">
             ${app ? "" : ico("video", "", 13) + " "}${esc(app ? tr("m_join_web") : tr("m_join"))}</a>` : ""}
       </div>` +
-      ((m.location || (m.categories || []).length) ? `<p class="row wrap xs mut" style="gap:10px;align-items:center">
+      ((m.location || (m.categories || []).length || isSeries(m)) ? `<p class="row wrap xs mut" style="gap:10px;align-items:center">
+        ${isSeries(m) ? `<span class="row" style="gap:5px">${ico("repeat", "", 13)}${esc(tr("m_series"))}</span>` : ""}
         ${m.location ? `<span class="row" style="gap:5px">${ico("pin", "", 13)}${esc(m.location)}</span>` : ""}
         ${(m.categories || []).map((c) => `<span class="cat-chip" style="cursor:default">
           <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>`).join("")}
@@ -11061,7 +11357,9 @@ function importEvents(events, from, to) {
      - dan kun je hem meteen ook zelf aan een afspraak hangen. */
   const nieuweCats = catEnsure(events.flatMap((e) => e.categories || []));
   const { removed, cancelled, moved } = removeDeleted(events, from, to);
-  if (added || filled || attFilled || catChanged || nieuweCats || removed || cancelled || moved) save();
+  // Een nieuwe keer van een overleg krijgt zijn vaste punten mee.
+  const vast = standingSync();
+  if (added || filled || attFilled || catChanged || nieuweCats || removed || cancelled || moved || vast) save();
   // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
   // zoeken in de app als het eigenlijk aan de flow ligt.
   return { added, filled, attFilled, catChanged, skipped, withAtt, removed, cancelled, moved };
@@ -11109,13 +11407,22 @@ function removeDeleted(events, from, to) {
        een reeks waaruit één keer is geschrapt is dat de volgende keer. */
     const punten = DB.agendaPoints.filter((p) => p.meetingId === m.id && p.status === "open");
     if (punten.length) {
+      // Elke keer van een reeks heeft een eigen UID; de reeks herken je aan seriesKey.
       const opvolger = DB.meetings
-        .filter((x) => x !== m && x.outlookUid === m.outlookUid && !x.cancelled &&
+        .filter((x) => x !== m && seriesKey(x) === seriesKey(m) && !x.cancelled &&
           String(x.startsAt).slice(0, 10) >= TODAY() &&
           inBestand.has(meetingKey(x.outlookUid, x.startsAt)))
         .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)))[0];
       if (opvolger) {
-        punten.forEach((p) => { p.meetingId = opvolger.id; });
+        punten.forEach((p) => {
+          // Een vast punt dat daar al staat, hoeft er geen tweede keer bij.
+          if (p.standingId && DB.agendaPoints.some((q) => q !== p &&
+              q.standingId === p.standingId && q.meetingId === opvolger.id)) {
+            DB.agendaPoints = DB.agendaPoints.filter((q) => q !== p);
+            return;
+          }
+          p.meetingId = opvolger.id;
+        });
         moved += punten.length;
       }
     }
@@ -11883,6 +12190,9 @@ function pruneOrphans() {
   // Een bespreekpunt draagt zijn eigen tekst, dus zonder taak blijft hij leesbaar.
   DB.agendaPoints = (DB.agendaPoints || []).filter((p) => meetings.has(p.meetingId));
   DB.agendaPoints.forEach((p) => { if (p.taskId && !tasks.has(p.taskId)) p.taskId = null; });
+  // Een vast punt zonder één afspraak meer uit zijn reeks heeft geen overleg meer om naar terug te komen.
+  const reeksen = new Set(DB.meetings.map(seriesKey));
+  DB.standingPoints = (DB.standingPoints || []).filter((s) => reeksen.has(s.series));
   DB.tasks.forEach((t) => { if (t.projectId && !projects.has(t.projectId)) t.projectId = null; });
   DB.meetings.forEach((m) => { if (m.projectId && !projects.has(m.projectId)) m.projectId = null; });
   DB.ideas.forEach((i) => { if (i.projectId && !projects.has(i.projectId)) i.projectId = null; });
@@ -12223,7 +12533,8 @@ function wireView() {
       if (!t || t.status === status) return;
       t.status = status;
       t.completedAt = status === "done" ? TODAY() : null;
-      save(); toast(`${tr("moved_to")} ${lbl(meta(STATUSES, status)[1])}`); render();
+      const herhaal = taskAfterStatus(t);
+      save(); toast(herhaal || `${tr("moved_to")} ${lbl(meta(STATUSES, status)[1])}`); render();
     });
   });
 }
@@ -12249,7 +12560,10 @@ document.addEventListener("click", (e) => {
       const done = t.status === "done";
       t.status = done ? "next" : "done";
       t.completedAt = done ? null : TODAY();
-      save(); render(); break;
+      const herhaal = taskAfterStatus(t);
+      save(); render();
+      if (herhaal) toast(herhaal);
+      break;
     }
     case "task-view": UI.taskView = el.dataset.v; saveUI(); render(); break;
 
@@ -12471,9 +12785,13 @@ document.addEventListener("click", (e) => {
     case "pt-del": {
       const p = DB.agendaPoints.find((x) => x.id === id); if (!p) break;
       checkpoint(tr("u_point"));
+      /* Een vast punt dat nog loopt weghalen stopt het. Wat er eerder van
+         besproken is, blijft bij die overleggen staan. */
+      const vast = p.status === "open" && standingOf(p);
+      if (vast) DB.standingPoints = DB.standingPoints.filter((s) => s !== vast);
       const terug = pointLos(p);
       pointsRefresh(p.meetingId);
-      toast(terug ? tr("ap_removed_sug") : tr("ap_removed"), true);
+      toast(vast ? tr("ap_vast_stopped") : terug ? tr("ap_removed_sug") : tr("ap_removed"), true);
       break;
     }
     case "sug-toggle": UI.sugIgnored = !UI.sugIgnored; render(); break;
@@ -12577,11 +12895,14 @@ document.addEventListener("click", (e) => {
     case "toggle-action": {
       const a = DB.actions.find((x) => x.id === id); if (!a) break;
       a.status = a.status === "done" ? "open" : "done";
+      let herhaal = "";
       if (a.status === "done" && a.taskId) {
         const t = DB.tasks.find((x) => x.id === a.taskId);
-        if (t) { t.status = "done"; t.completedAt = TODAY(); }
+        if (t) { t.status = "done"; t.completedAt = TODAY(); herhaal = taskAfterStatus(t); }
       }
-      save(); render(); break;
+      save(); render();
+      if (herhaal) toast(herhaal);
+      break;
     }
     /* Small items delete straight away: asking twice for one checklist line
        gets in the way. They are undoable instead. */
