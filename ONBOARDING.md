@@ -328,6 +328,7 @@ weggeschreven.
 | Wat je ziet | Wat er meestal aan de hand is |
 |---|---|
 | Stroom loopt groen, maar er komt geen bestand | Het onderwerpfilter van de stroom en het onderwerp uit de Copilot-prompt komen niet overeen |
+| Stromen lopen groen, maar er komt van géén enkele stroom nog iets binnen | OneDrive draait niet op je laptop, vaak na een automatische update. De bestanden staan wel in OneDrive online. Start OneDrive via het startmenu, of start de laptop opnieuw op |
 | `Id is malformed`, of een formule die onzin oplevert | Er staat uitleg in het veld in plaats van alleen de formule |
 | `The 'from' property value is of type 'Object'` | Je mist `?['value']` achter `body('…')` |
 | De app ziet de map niet meer | De browser is de toestemming vergeten; kies de map opnieuw |
