@@ -1812,6 +1812,11 @@ const STR = {
   ag_today_at:["vandaag om {0}","vandaag om {0}"],
   ag_needsclick:["De browser moet opnieuw toestemming vragen — druk op Nu inlezen.",
                  "De browser moet opnieuw toestemming vragen — druk op Nu inlezen."],
+  ag_stale:["No new calendar is coming in","Er komt geen nieuwe agenda meer binnen"],
+  ag_stale_d:["The newest file in your calendar folder is from {0}, while your flow normally writes more often. If the flow is still running, OneDrive is probably not running on this laptop — that sometimes happens after an update. Open OneDrive from the Start menu, then read the folder again.",
+              "Het nieuwste bestand in je agendamap is van {0}, terwijl je stroom normaal vaker schrijft. Loopt de stroom gewoon, dan draait OneDrive waarschijnlijk niet op deze laptop — dat gebeurt soms na een update. Open OneDrive via het startmenu en lees de map daarna opnieuw in."],
+  ag_stale_short:["No new calendar file since {0} — is OneDrive running on this laptop?",
+                  "Geen nieuw agendabestand sinds {0} — draait OneDrive op deze laptop?"],
   ag_n_added:["{0} afspraken toegevoegd","{0} afspraken toegevoegd"],
   ag_n_added_1:["1 afspraak toegevoegd","1 afspraak toegevoegd"],
   sy_refresh:["Vernieuwen","Vernieuwen"],
@@ -4264,6 +4269,7 @@ function viewDashboard() {
         title="${esc(tr("sy_refresh_d"))}">${ico("refresh")} ${esc(tr("sy_refresh"))}</button>` : ""}
      <button class="btn sm ghost" data-act="dash-setup">${ico("dashboard")} ${esc(tr("db_setup"))}</button>
      ${viewOn("review") ? `<button class="btn sm outline" data-nav="review">${ico("review")} ${esc(tr("nav_review"))}</button>` : ""}`) +
+    agendaStaleBanner() +
     top.join("") +
     (left.length || right.length
       ? `<div class="grid split">
@@ -11671,6 +11677,73 @@ function mailFor(m, max = 8) {
 
 const agendaSync = () => (DB.agendaSync = DB.agendaSync || { folder: "", lastAt: "", lastFile: "", auto: true });
 
+/* Valt de aanvoer stil, dan leest de app gewoon het laatste bestand dat er
+   wél is en meldt hij "niets nieuws". Zo stond de agenda in november drie
+   dagen stil zonder dat het opviel: OneDrive was na een update niet meer
+   opgestart, en de stroom liep ondertussen gewoon groen.
+
+   Hoe oud te oud is, hangt af van hoe vaak je stroom schrijft, en dat leest
+   de app af aan de bestanden zelf. Het grootste gat tussen twee bestanden in
+   de week vóór het nieuwste is het gewone ritme: bij elke twee uur overdag is
+   dat de nacht, bij eens per dag een etmaal, bij alleen werkdagen het
+   weekend. OneDrive geeft een bestand de tijd waarop de stroom het schreef,
+   niet die waarop het op de laptop aankwam, dus een storing laat in die gaten
+   geen spoor na. Pas als het nieuwste bestand dat gat plus wat speling ouder
+   is, klopt er iets niet. Eén bestand zegt nog niets over een ritme; dan gaat
+   de app uit van eens per dag. */
+const AGENDA_SLACK_H = 3;
+const AGENDA_RHYTHM_DEFAULT_H = 24;
+
+function agendaStaleAfterH(files) {              // nieuwste eerst, zoals agendaFiles ze geeft
+  const t = files.map((f) => f.lastModified).filter(Number.isFinite);
+  const week = t[0] - 8 * 864e5;
+  let gat = 0;
+  for (let i = 1; i < t.length && t[i] >= week; i++) gat = Math.max(gat, t[i - 1] - t[i]);
+  const ritme = gat ? gat / 36e5 : AGENDA_RHYTHM_DEFAULT_H;
+  return Math.round((ritme + AGENDA_SLACK_H) * 10) / 10;
+}
+
+/* Gemeten op het moment van inlezen, niet op nu: de app kan alleen iets
+   zeggen over bestanden die hij heeft gezien. Wie maandag opent na een
+   weekend dicht, krijgt dus geen waarschuwing over vrijdag voordat de map
+   opnieuw is gelezen. */
+function agendaStale() {
+  const s = agendaSync();
+  if (!AGENDA_DIR || !s.fileAt || !s.lastAt) return false;
+  const oud = Date.parse(s.lastAt) - Date.parse(s.fileAt);
+  const grens = (Number(s.staleAfterH) || AGENDA_RHYTHM_DEFAULT_H + AGENDA_SLACK_H) * 36e5;
+  return oud > grens;
+}
+
+function agendaFileWhen() {
+  const stamp = agendaSync().fileAt;
+  const d = new Date(stamp || "");
+  if (isNaN(d.getTime())) return "";
+  if (d.toDateString() === new Date().toDateString()) return tr("ag_today_at", clock(stamp));
+  return `${new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(d)} ${clock(stamp)}`;
+}
+
+/* Op het dashboard staat hij boven alles, en hij is niet weg te klikken: hij
+   verschijnt alleen als er iets kapot is, en verdwijnt vanzelf zodra er weer
+   een nieuw bestand binnenkomt. */
+function agendaStaleBanner() {
+  if (!agendaStale()) return "";
+  return `<div class="card" style="margin-bottom:14px;
+      border-color:color-mix(in srgb,var(--warning) 35%,transparent);
+      background:color-mix(in srgb,var(--warning) 7%,transparent)">
+      <div class="card-b" style="padding:12px 16px">
+        <div class="row wrap spread" style="gap:10px">
+          <div style="min-width:0">
+            <p class="sm2 row" style="gap:7px;font-weight:600">
+              <span style="color:var(--warning)">${ico("alert", "", 14)}</span>
+              ${esc(tr("ag_stale"))}</p>
+            <p class="xs mut" style="margin-top:3px">${esc(tr("ag_stale_d", agendaFileWhen()))}</p>
+          </div>
+          <button class="btn sm" data-act="agenda-read">${ico("refresh")} ${esc(tr("sy_refresh"))}</button>
+        </div>
+      </div></div>`;
+}
+
 async function agendaLoadHandle() {
   if (!FS_OK) return null;
   try { AGENDA_DIR = await idbGet(IDB_KEY); } catch (e) { AGENDA_DIR = null; }
@@ -11803,7 +11876,9 @@ async function agendaRead(loud) {
       return null;
     };
 
-    const file = await agendaNewestFile(AGENDA_DIR);
+    // Alle .ics-bestanden, niet alleen het nieuwste: de rest geeft het ritme.
+    const icsFiles = await agendaFiles(AGENDA_DIR, /\.ics$/i, 80);
+    const file = icsFiles[0];
     if (!file) return zonderAgenda("ag_nofile");
 
     const text = await file.text();
@@ -11813,11 +11888,16 @@ async function agendaRead(loud) {
     // A window wide enough for last week's notes and next quarter's planning.
     const r = importEvents(parsed.events, addDays(-14), addDays(120));
 
+    const wasStale = agendaStale();
     const s = agendaSync();
     s.lastAt = new Date().toISOString();
     s.lastFile = file.name;
     s.folder = AGENDA_DIR.name;
+    s.fileAt = new Date(file.lastModified).toISOString();
+    s.staleAfterH = agendaStaleAfterH(icsFiles);
     save();
+    const stale = agendaStale();
+    const staleMsg = stale ? tr("ag_stale_short", agendaFileWhen()) : "";
 
     const delen = [
       r.added ? tr(r.added === 1 ? "ag_n_added_1" : "ag_n_added", r.added) : "",
@@ -11829,13 +11909,20 @@ async function agendaRead(loud) {
       r.moved ? tr("ag_n_moved", r.moved) : "",
       ...erbij,
     ].filter(Boolean);
+    /* Is de aanvoer stil komen te liggen, dan is "niets nieuws" precies het
+       verkeerde antwoord, dus dan zegt de melding dat. */
     if (delen.length) {
       render();
-      toast(delen.join(", "));
+      toast(stale ? `${delen.join(", ")}. ${staleMsg}` : delen.join(", "));
     } else if (loud) {
       render();
       // Geen deelnemers in het hele bestand is bijna altijd de flow, niet de app.
-      toast(!r.withAtt && parsed.events.length ? tr("ag_noatt") : tr("ag_uptodate"));
+      toast(stale ? staleMsg : !r.withAtt && parsed.events.length ? tr("ag_noatt") : tr("ag_uptodate"));
+    } else if (stale || wasStale) {
+      /* Stil inlezen, maar de waarschuwing moet wel op of af. Ook als hij
+         blijft staan: bij het opstarten is de pagina al getekend voordat de
+         map bekend was, en toen kon hij er nog niet staan. */
+      render();
     }
     return r;
   } catch (e) {
@@ -11906,6 +11993,7 @@ function agendaCard() {
       </div>
     </div>
     ${needsClick ? `<p class="xs" style="color:var(--warning);margin-top:7px">${esc(tr("ag_needsclick"))}</p>` : ""}
+    ${!needsClick && agendaStale() ? `<p class="xs" style="color:var(--warning);margin-top:7px">${esc(tr("ag_stale_d", agendaFileWhen()))}</p>` : ""}
   </section>`;
 }
 
