@@ -211,7 +211,9 @@ a{color:var(--info)}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .main{min-width:0;display:flex;flex-direction:column}
-.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:25;display:flex;
+/* De bovenbalk en de timerband plakken samen bovenaan. */
+.head{position:sticky;top:env(safe-area-inset-top,0px);z-index:25}
+.topbar{display:flex;
   align-items:center;gap:8px;min-height:56px;padding:9px 20px;
   background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(12px) saturate(1.4);
   border-bottom:1px solid var(--border)}
@@ -698,43 +700,87 @@ details > summary::-webkit-details-marker{display:none}
 .kcard:active{cursor:grabbing}
 .kcard.drag{opacity:.35;transform:rotate(1.2deg)}
 
-/* ---- running-timer pill (topbar, visible on every screen) -------------- */
-.pill{display:flex;align-items:center;gap:2px;min-width:0;padding:2px;border-radius:999px;
-  border:1px solid color-mix(in srgb,var(--c2) 35%,transparent);
-  background:color-mix(in srgb,var(--c2) 10%,var(--surface));box-shadow:var(--shadow-xs)}
-.pill-main{display:flex;align-items:center;gap:8px;min-width:0;border:0;background:none;
-  cursor:pointer;color:inherit;padding:4px 4px 4px 10px;border-radius:999px;font:inherit}
-.pill-main:hover{background:color-mix(in srgb,var(--c2) 12%,transparent)}
-.pill-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;animation:pulse 2s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-@media (prefers-reduced-motion:reduce){.pill-dot{animation:none}}
-.pill-txt{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}
-.pill-time{font-family:var(--mono);font-size:12.5px;font-weight:500;flex:0 0 auto;
-  font-variant-numeric:tabular-nums}
-.pill-stop{width:26px;height:26px;flex:0 0 auto;border:0;border-radius:50%;cursor:pointer;
-  background:var(--c2);color:#fff;display:grid;place-items:center;padding:0}
-.pill-stop:hover{filter:brightness(1.1)}
-.pill-btn{width:26px;height:26px;flex:0 0 auto;border:0;border-radius:50%;cursor:pointer;
-  background:color-mix(in srgb,var(--ink) 9%,transparent);color:var(--ink);
-  display:grid;place-items:center;padding:0;transition:background .14s}
-.pill-btn:hover{background:color-mix(in srgb,var(--ink) 18%,transparent)}
-.pill-flag{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--ink-2);flex:0 0 auto}
-.pill-warn{color:var(--warning);display:grid;place-items:center;padding:0 5px}
-/* Paused reads as held, not running: no pulse, neutral ground. */
-.pill.paused{border-color:var(--border);background:var(--surface-2)}
-.pill.paused .pill-dot{animation:none}
-.pill.paused .pill-time{color:var(--ink-2)}
-@media (max-width:640px){.pill-txt{display:none}}
+/* ---- lopende timer: een band over de volle breedte ----------------------
+   Zolang de klok loopt, ligt er onder de bovenbalk een donkerblauwe band in
+   de kleur van de zijbalk: de app krijgt er een lijst omheen, en dat zie je
+   vanuit je ooghoek op elke pagina. Links wat je doet en voor wie, rechts de
+   klok en de knoppen. Een klik op de tekst brengt je naar de urenregistratie.
+------------------------------------------------------------------------- */
+.tbar{display:flex;align-items:center;gap:18px;min-height:60px;padding:9px 20px;
+  background:var(--navy);color:var(--navy-ink);border-bottom:1px solid var(--navy-border);
+  animation:tbar-in var(--t-slow) var(--ease)}
+@keyframes tbar-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.tb-main{display:flex;align-items:center;gap:13px;flex:1;min-width:0;margin-left:-8px;
+  padding:6px 10px 6px 8px;border:0;border-radius:11px;background:none;color:inherit;
+  font:inherit;text-align:left;cursor:pointer;transition:background var(--t-fast) var(--ease)}
+.tb-main:hover{background:rgba(255,255,255,.07)}
+/* Het opnamelampje: een rode stip met een ring die er telkens uit wegloopt. */
+.tb-dot{position:relative;width:10px;height:10px;border-radius:50%;flex:0 0 auto;
+  background:var(--vv-rood)}
+.tb-dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;
+  border:2px solid var(--vv-rood);animation:tb-ping 2s var(--ease-soft) infinite}
+@keyframes tb-ping{0%{transform:scale(.5);opacity:.8}75%,100%{transform:scale(1.35);opacity:0}}
+.tb-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tb-title{display:flex;align-items:center;gap:9px;min-width:0;font-size:14.5px;
+  font-weight:600;letter-spacing:-.012em;line-height:1.3}
+.tb-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tb-meta{display:block;font-size:12px;line-height:1.35;color:var(--navy-muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-meta b{font-weight:500;color:var(--navy-ink)}
+.tb-sep{margin:0 6px;opacity:.5}
+.tb-cdot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;
+  vertical-align:0}
+.tb-chip{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;padding:2px 8px;
+  border-radius:999px;font-size:10px;font-weight:650;letter-spacing:.07em;text-transform:uppercase;
+  background:rgba(232,163,61,.2);color:#F6C77F}
+.tb-clock{display:flex;flex-direction:column;align-items:flex-end;gap:1px;flex:0 0 auto}
+.tb-time{font-family:var(--mono);font-size:22px;font-weight:500;letter-spacing:-.01em;
+  line-height:1.1;font-variant-numeric:tabular-nums}
+.tb-today{font-size:11px;color:var(--navy-muted);white-space:nowrap}
+.tb-acts{display:flex;align-items:center;gap:7px;flex:0 0 auto;padding-left:18px;
+  border-left:1px solid var(--navy-border)}
+.tb-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;
+  padding:0 16px 0 14px;border-radius:var(--r-pill);border:1px solid rgba(255,255,255,.28);
+  background:transparent;color:var(--navy-ink);font-size:12.5px;font-weight:600;
+  white-space:nowrap;cursor:pointer;
+  transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+.tb-btn:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.5);transform:translateY(-1px)}
+.tb-btn:active{transform:translateY(1px) scale(.985);transition-duration:.06s}
+.tb-btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+/* Stoppen is de knop waar het om draait: wit vlak, met het rode stopblokje. */
+.tb-btn.stop{background:#fff;border-color:#fff;color:var(--vv-donkerblauw)}
+.tb-btn.stop:hover{background:#E7EBF3;border-color:#E7EBF3}
+.tb-btn.stop .ico{color:var(--vv-rood)}
+.tb-btn.bin{width:36px;padding:0;border-color:transparent;color:var(--navy-muted)}
+.tb-btn.bin:hover{color:var(--navy-ink);border-color:transparent}
+/* Gepauzeerd: het lampje staat stil en wordt amber, de klok wordt grijs. */
+.tbar.paused .tb-dot{background:#E8A33D}
+.tbar.paused .tb-dot::after{display:none}
+.tbar.paused .tb-time{color:var(--navy-muted)}
+@media (prefers-reduced-motion:reduce){.tb-dot::after{display:none}}
+@media (max-width:900px){
+  .tb-today{display:none}
+}
+@media (max-width:700px){
+  .tbar{padding:8px 14px;gap:10px;min-height:56px}
+  .tb-acts{padding-left:0;border-left:0;gap:5px}
+  .tb-btn{width:36px;padding:0}
+  .tb-lbl{display:none}
+  .tb-time{font-size:17px}
+  .tb-title{font-size:13.5px}
+}
+/* Op een telefoon schuift de klok onder de omschrijving, op de plek van de
+   details - anders blijft er van de omschrijving maar een woord over. */
+.tb-time-sm{display:none}
+@media (max-width:460px){
+  .tb-meta,.tb-btn.bin,.tb-clock{display:none}
+  .tb-time.tb-time-sm{display:block;font-size:13px;line-height:1.35}
+}
 
 /* ---- working hours ----------------------------------------------------- */
 .timer-card{border:1px solid var(--border);border-radius:var(--r-block);background:var(--surface);
   padding:16px;box-shadow:var(--shadow-xs)}
-.timer-card.live{border-color:color-mix(in srgb,var(--c2) 40%,transparent);
-  background:color-mix(in srgb,var(--c2) 5%,var(--surface))}
-.timer-card.held{border-color:var(--border);background:var(--surface-2)}
-.timer-live{font-family:var(--mono);font-size:34px;font-weight:500;letter-spacing:-.02em;
-  font-variant-numeric:tabular-nums;line-height:1}
 .day{border:1px solid var(--border);border-radius:var(--r-block);overflow:hidden}
 .day-h{display:flex;align-items:center;gap:10px;padding:9px 13px;background:var(--surface-2)}
 .day-n{font-size:12.5px;font-weight:600}
@@ -1099,13 +1145,15 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-2);border:1p
   <nav class="rail" id="rail" aria-label="Sections"></nav>
   <div class="scrim" id="scrim" hidden></div>
   <div class="main">
-    <header class="topbar">
-      <div class="pill" id="timer-pill" hidden aria-live="off"></div>
-      <div style="flex:1;min-width:0"></div>
-      <button class="btn icon sm ghost" id="btn-jump" aria-label="Search or jump to"></button>
-      <button class="btn icon sm ghost" id="btn-theme" aria-label="Toggle dark mode"></button>
-      <button class="btn sm" id="btn-new-task">New task</button>
-    </header>
+    <div class="head">
+      <header class="topbar">
+        <div style="flex:1;min-width:0"></div>
+        <button class="btn icon sm ghost" id="btn-jump" aria-label="Search or jump to"></button>
+        <button class="btn icon sm ghost" id="btn-theme" aria-label="Toggle dark mode"></button>
+        <button class="btn sm" id="btn-new-task">New task</button>
+      </header>
+      <div class="tbar" id="timer-bar" role="region" aria-label="Timer" hidden aria-live="off"></div>
+    </div>
     <main class="content" id="view"></main>
   </div>
 </div>
@@ -2030,7 +2078,9 @@ const STR = {
   h_sub:["Run a timer, or add hours by hand. At the end of the week you write the total into AFAS in one go.",
          "Zet een timer aan, of vul uren handmatig aan. Eind van de week schrijf je het totaal in één keer in AFAS."],
   h_start:["Start","Starten"], h_stop:["Stop","Stoppen"], h_running:["Running","Loopt"],
-  h_pause:["Pause","Pauzeren"], h_resume:["Resume","Hervatten"], h_paused:["Paused","Pauze"],
+  /* Niet h_pause: die sleutel is verderop het pauzeveld van een boeking, en
+     de laatste in deze lijst wint - de knop heette daardoor "Pauze (min)". */
+  h_pause_btn:["Pause","Pauzeren"], h_resume:["Resume","Hervatten"], h_paused:["Paused","Pauze"],
   h_paused_t:["Timer paused","Timer gepauzeerd"], h_resumed_t:["Timer resumed","Timer hervat"],
   h_paused_note:["Paused — the clock is held, nothing is lost.",
                  "Gepauzeerd — de klok staat stil, er gaat niets verloren."],
@@ -2074,6 +2124,8 @@ const STR = {
   h_allclients:["All clients","Alle klanten"],
   h_entries:["entries","boekingen"], h_entry:["entry","boeking"],
   h_open_tab:["Open working hours","Open urenregistratie"],
+  h_timer:["Timer","Timer"], h_since:["since {0}","sinds {0}"],
+  h_today_total:["Today {0}","Vandaag {0}"], h_longrun:["8h+","8u+"],
   h_clientlist:["All clients","Alle klanten"],
   h_clientlist_d:["Type a name that does not exist yet and it is created for you.",
                   "Typ een naam die nog niet bestaat en hij wordt voor je aangemaakt."],
@@ -7888,10 +7940,13 @@ function startTimer({ description, clientId, engagement, billable }) {
 }
 function stopTimer(discard) {
   if (!DB.timer) return;
+  /* Weggooien zit in de timerband op elke pagina, één klik van Stoppen af.
+     Daarom kan het terug: de klok loopt dan gewoon door alsof er niets was. */
+  if (discard) checkpoint(tr("h_timer"));
   const t = DB.timer, mins = timerMinutes();
   DB.timer = null;
 
-  if (discard) { save(); render(); toast(tr("h_discarded")); return; }
+  if (discard) { save(); render(); toast(tr("h_discarded"), true); return; }
   if (mins < 1) { save(); render(); toast(tr("h_toosmall")); return; }
 
   /* Whatever sits between the first start and the stop but was not counted is
@@ -7909,7 +7964,7 @@ function stopTimer(discard) {
   save(); render(); toast(tr("h_stopped", fmtH(mins)));
 }
 
-/* One interval for the whole app; it only repaints the pill, never the page. */
+/* One interval for the whole app; it only repaints the timer band, never the page. */
 let tickHandle = null, tickCount = 0;
 
 /* Countdown badges go stale on their own; refresh them without re-rendering
@@ -7922,31 +7977,66 @@ function refreshCountdowns() {
     el.className = `badge ${rel.tone}`;
   });
 }
-function paintTimerPill() {
-  const host = $("#timer-pill");
+/* Wat er vandaag al geboekt is plus wat de klok nu telt - maar alleen als de
+   timer vandaag begon, want daar landt hij straks ook. */
+const todayMinutesLive = () => minutesOn(TODAY()) +
+  (DB.timer && iso(new Date(DB.timer.startedAt)) === TODAY() ? timerMinutes() : 0);
+
+/* Afspelen, pauze en stop als volle vlakken. De lijniconen van de app zijn
+   daar te dun voor: de twee pauzestrepen liepen in elkaar over. */
+const TB_ICO = {
+  play: `<path d="M8 5.6v12.8a1 1 0 0 0 1.52.85l10.2-6.4a1 1 0 0 0 0-1.7L9.52 4.75A1 1 0 0 0 8 5.6z"/>`,
+  pause: `<rect x="6" y="5" width="4.4" height="14" rx="1.2"/><rect x="13.6" y="5" width="4.4" height="14" rx="1.2"/>`,
+  stop: `<rect x="6" y="6" width="12" height="12" rx="2.2"/>`,
+};
+const tbIco = (k) => `<svg class="ico" width="14" height="14" viewBox="0 0 24 24"
+  fill="currentColor" aria-hidden="true">${TB_ICO[k]}</svg>`;
+
+/* The running timer as a band across the full width, under the top bar:
+   everything you want to check without opening the hours page - what, for
+   whom, as what, since when, and how the day adds up. */
+function paintTimerBar() {
+  const host = $("#timer-bar");
   if (!host) return;
   if (!DB.timer || !viewOn("hours")) { host.hidden = true; host.innerHTML = ""; return; }
 
-  const c = clientOf(DB.timer.clientId);
-  const label = DB.timer.description || (c ? c.name : tr("h_noclient"));
-  const longRun = timerMs() > 8 * 3600e3;
+  const t = DB.timer, c = clientOf(t.clientId);
   const paused = timerPaused();
+  const longRun = !paused && timerMs() > 8 * 3600e3;
+  const sep = `<span class="tb-sep">·</span>`;
+  const since = clock(t.startedAt);
+  const ctl = (act, icon, label, cls = "") =>
+    `<button class="tb-btn ${cls}" data-act="${act}" aria-label="${esc(label)}" title="${esc(label)}">
+      ${tbIco(icon)}<span class="tb-lbl">${esc(label)}</span></button>`;
 
   host.hidden = false;
   host.classList.toggle("paused", paused);
   host.innerHTML = `
-    <button class="pill-main" data-nav="hours" title="${esc(tr("h_open_tab"))}">
-      <span class="pill-dot" style="background:${paused ? "var(--ink-3)" : (c ? slotColor(c.slot) : "var(--c2)")}"></span>
-      <span class="pill-txt">${esc(truncate(label, 28))}</span>
-      <span class="pill-time tab">${fmtHMS(timerMs())}</span>
-      ${paused ? `<span class="pill-flag">${esc(tr("h_paused"))}</span>` : ""}
+    <button class="tb-main" data-nav="hours" title="${esc(tr("h_open_tab"))}">
+      <span class="tb-dot" aria-hidden="true"></span>
+      <span class="tb-txt">
+        <span class="tb-title">
+          <span class="tb-desc">${esc(t.description || (c ? c.name : tr("h_running")))}</span>
+          ${paused ? `<span class="tb-chip" title="${esc(tr("h_paused_note"))}">${esc(tr("h_paused"))}</span>` : ""}
+          ${longRun ? `<span class="tb-chip" title="${esc(tr("h_forgot"))}">${ico("alert", "", 11)} ${esc(tr("h_longrun"))}</span>` : ""}
+        </span>
+        <span class="tb-meta">${c
+          ? `<span class="tb-cdot" style="background:${slotColor(c.slot)}"></span><b>${esc(c.name)}</b>`
+          : esc(tr("h_noclient"))}${sep}${esc(engLabel(t.engagement))}${sep}${esc(t.billable ? tr("h_billable") : tr("h_nonbillable"))}${since ? `${sep}${esc(tr("h_since", since))}` : ""}</span>
+        <span class="tb-time tb-time-sm tab">${fmtHMS(timerMs())}</span>
+      </span>
     </button>
-    <button class="pill-btn" data-act="${paused ? "timer-resume" : "timer-pause"}"
-      aria-label="${esc(paused ? tr("h_resume") : tr("h_pause"))}"
-      title="${esc(paused ? tr("h_resume") : tr("h_pause"))}">${ico(paused ? "play" : "pause", "", 12)}</button>
-    <button class="pill-stop" data-act="timer-stop" aria-label="${esc(tr("h_stop"))}"
-      title="${esc(tr("h_stop"))}">${ico("stop", "", 13)}</button>
-    ${longRun ? `<span class="pill-warn" title="${esc(tr("h_forgot"))}">${ico("alert", "", 13)}</span>` : ""}`;
+    <span class="tb-clock">
+      <span class="tb-time tab">${fmtHMS(timerMs())}</span>
+      <span class="tb-today">${esc(tr("h_today_total", fmtH(todayMinutesLive())))}</span>
+    </span>
+    <span class="tb-acts">
+      ${paused ? ctl("timer-resume", "play", tr("h_resume"))
+               : ctl("timer-pause", "pause", tr("h_pause_btn"))}
+      ${ctl("timer-stop", "stop", tr("h_stop"), "stop")}
+      <button class="tb-btn bin" data-act="timer-discard" aria-label="${esc(tr("h_discard"))}"
+        title="${esc(tr("h_discard"))}">${ico("trash", "ico", 15)}</button>
+    </span>`;
 }
 function startTick() {
   if (tickHandle) clearInterval(tickHandle);
@@ -7955,10 +8045,10 @@ function startTick() {
     if (++tickCount % 15 === 0) refreshCountdowns();
 
     if (!DB.timer || timerPaused()) return;   // a held clock has nothing to repaint
-    const el = $("#timer-pill .pill-time");
-    if (el) el.textContent = fmtHMS(timerMs());
-    const live = $("#timer-live");
-    if (live) live.textContent = fmtHMS(timerMs());
+    const now = fmtHMS(timerMs());
+    document.querySelectorAll("#timer-bar .tb-time").forEach((el) => { el.textContent = now; });
+    const today = $("#timer-bar .tb-today");
+    if (today) today.textContent = tr("h_today_total", fmtH(todayMinutesLive()));
   }, 1000);
 }
 
@@ -8143,35 +8233,11 @@ function clientsCard() {
     `<button class="btn sm outline" data-act="new-client">${ico("plus", "", 13)} ${esc(tr("h_newclient"))}</button>`);
 }
 
-/* Timer card: start form when idle, live readout when running. */
+/* Timer card: the start form when idle. A running timer has its own band
+   across the top of every page, so repeating it here would only show the
+   same clock twice. */
 function timerCard() {
-  if (DB.timer) {
-    const c = clientOf(DB.timer.clientId);
-    const paused = timerPaused();
-    return `<section class="timer-card ${paused ? "held" : "live"}">
-      <div class="row wrap" style="gap:14px;align-items:center">
-        <span class="timer-live ${paused ? "mut" : ""}" id="timer-live">${fmtHMS(timerMs())}</span>
-        <div style="min-width:0;flex:1">
-          <p style="font-size:14px;font-weight:500">${esc(DB.timer.description || tr("h_running"))}
-            ${paused ? `<span class="badge neutral" style="margin-left:6px">${esc(tr("h_paused"))}</span>` : ""}</p>
-          <p class="tsk-m"><span class="row" style="gap:6px">
-            <span class="wk-dot" style="background:${c ? slotColor(c.slot) : "var(--axis)"}"></span>
-            ${esc(c ? c.name : tr("h_noclient"))}</span>
-            <span>${esc(engLabel(DB.timer.engagement))}</span>
-            <span>${esc(DB.timer.billable ? tr("h_billable") : tr("h_nonbillable"))}</span></p>
-        </div>
-        <div class="row wrap" style="gap:8px">
-          <button class="btn sm ghost" data-act="timer-discard">${esc(tr("h_discard"))}</button>
-          <button class="btn sm outline" data-act="${paused ? "timer-resume" : "timer-pause"}">
-            ${ico(paused ? "play" : "pause", "", 13)} ${esc(paused ? tr("h_resume") : tr("h_pause"))}</button>
-          <button class="btn" data-act="timer-stop">${ico("stop", "", 13)} ${esc(tr("h_stop"))}</button>
-        </div>
-      </div>
-      ${paused ? `<p class="xs mut" style="margin-top:10px">${esc(tr("h_paused_note"))}</p>` : ""}
-      ${!paused && timerMs() > 8 * 3600e3 ? `<p class="xs" style="color:var(--warning);margin-top:10px">
-        ${ico("alert", "", 12)} ${esc(tr("h_forgot"))}</p>` : ""}
-    </section>`;
-  }
+  if (DB.timer) return "";
 
   // Pre-fill the client from this week's planning: usually the right answer.
   const plan = DB.planning.find((p) => p.week === mondayOf());
@@ -10108,7 +10174,7 @@ function render() {
   view.classList.remove("v-in");
   view.innerHTML = html;
   if (gewisseld) { void view.offsetWidth; view.classList.add("v-in"); }
-  paintTimerPill();
+  paintTimerBar();
   wireView();
 }
 
