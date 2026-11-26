@@ -301,7 +301,7 @@ afgesproken formaat verschuift.
 | Briefing per afspraak | Elke werkdag 's ochtends | zoals in het origineel |
 | Vergaderverslagen van die dag | Elke werkdag 's avonds | zoals in het origineel |
 | Mogelijk vergeten taken | Maandag 07:30 | `Joost OS taken` |
-| Nieuwsronde en webinars | Ma, wo en vr 's ochtends | `Joost OS nieuws` |
+| Nieuwsronde en webinars | Ma, wo en vr 's ochtends | `Joost OS AI nieuws` |
 
 **Het onderwerp van de mail moet exact overeenkomen** met het onderwerpfilter
 in de bijbehorende stroom. Verandert er één letter, dan vindt de stroom niets
@@ -350,11 +350,10 @@ alinea aan op de nieuwsbrieven en de map waarin ze bij jou binnenkomen.
 ```text
 Zoek in mijn mailbox naar e-mails van de afgelopen 3 dagen van deze
 nieuwsbrieven: The Rundown AI, Ben's Bites, Import AI, The Batch, Every,
-One Useful Thing, Last Week in AI. Neem ook andere nieuwsbrieven over AI mee
-die je in die periode tegenkomt.
+One Useful Thing, Last Week in AI, AI-report, Dharmesh (simple AI). Neem ook andere nieuwsbrieven over AI mee die je in die periode tegenkomt.
 
 Beoordeel eerst per mail of hij inhoudelijk iets toevoegt. Sla over:
-- reclame, aanbiedingen en wervingsmails
+- reclame, aanbiedingen en wervingsmails (webinars en events komen hieronder apart aan bod)
 - mails die alleen naar een betaalde versie verwijzen zonder zelf inhoud te geven
 - dubbele berichten over hetzelfde onderwerp: kies dan de uitgebreidste
 - alles wat niet over AI gaat
@@ -364,17 +363,15 @@ als er in één nieuwsbrief vijf onderwerpen staan. Staat hetzelfde onderwerp in
 meerdere nieuwsbrieven, maak er dan één item van en noem beide bronnen.
 
 Beoordeel per onderwerp of het ertoe doet voor een AI-rol binnen Audit &
-Assurance bij een middelgroot accountantskantoor. Laat weg wat alleen voor
-consumenten, ontwikkelaars of durfkapitaal interessant is. Houd maximaal 12
-items over, de belangrijkste eerst.
+Assurance bij een middelgroot accountantskantoor. Generiek AI niews kan ook waardevol zijn, ik wil namelijk goed op de hoogte blijven van recente ontwikkelingen. Laat weg wat alleen voor consumenten, ontwikkelaars of durfkapitaal interessant is. Houd maximaal 10-15 items over, de belangrijkste eerst.
 
 Schrijf per item exact dit formaat, zonder opsommingstekens, zonder kopjes,
 zonder inleiding of afsluiting:
 
 NIEUWS: <de kop, één zin, concreet>
-Wat: <2 tot 3 zinnen over wat er feitelijk is gebeurd of aangekondigd>
-Waarom: <1 tot 2 zinnen: wat dit betekent voor controleteams of voor mijn
-AI-rol. Wees concreet; schrijf niet "dit is interessant">
+Wat: <maximaal 10 zinnen over wat er feitelijk is gebeurd of aangekondigd>
+Waarom: <maximaal 10 zinnen: wat dit betekent voor controleteams of voor mijn
+AI-rol. Wees concreet; schrijf niet "dit is interessant". Maar geef ook aan als het niet per se interessant is voor audit, maar mogelijk wel als basiskennis AI die relevant kan zijn>
 Pijler: <één van: Kwaliteit, Adoptie, Waarde, Innovatie>
 Bron: <naam van de nieuwsbrief>, <datum van de mail als dd-mm-jjjj>
 Link: <de URL naar het oorspronkelijke bericht, of leeg als die er niet is>
@@ -396,9 +393,11 @@ Neem de tijd en de tijdzone over zoals ze in de mail staan; reken ze niet om.
 Staat er geen eindtijd, laat die dan weg. Wordt hetzelfde event in meerdere
 mails aangekondigd, noem het dan één keer. Sla events over die al voorbij zijn.
 
-Is er geen nieuws en geen event, schrijf dan alleen: GEEN.
+Uiteindelijk heb je dus een overzicht van al het relevante AI nieuws van de afgelopen 3 dagen, met daaronder de webinars en events die eraan komen, overzichtelijk, duidelijk, compleet en in een vaste structuur voor mij klaar staan.
 
-Zet dit in een conceptmail aan mezelf met als onderwerp exact: Joost OS nieuws
+Is er geen nieuws en geen event, schrijf dan alleen: NIET RELEVANT.
+
+Zet dit in een conceptmail aan mezelf met als onderwerp exact: Joost OS AI nieuws
 ```
 
 Een event begint ook met `NIEUWS:`. Zo neemt de nieuwsstroom het ongewijzigd
