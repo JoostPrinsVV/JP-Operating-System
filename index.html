@@ -1045,6 +1045,15 @@ a.btn{text-decoration:none}
 .cw-ev.dragging{z-index:5;cursor:grabbing;opacity:.9;box-shadow:var(--shadow-lg);
   transition:none;filter:none}
 .cw-ev.done{opacity:.62}
+/* Tijd selecteren: een lege plek is klikbaar, het halfuur onder de muis licht
+   zacht op, en wat je selecteert wordt een blok met begin- en eindtijd. */
+.cw-grid .cw-col{cursor:cell}
+.cw-hover,.cw-sel{position:absolute;left:2px;right:2px;border-radius:6px;pointer-events:none}
+.cw-hover{background:color-mix(in srgb,var(--primary) 7%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--primary) 22%,transparent)}
+.cw-sel{z-index:4;background:color-mix(in srgb,var(--primary) 16%,var(--surface));
+  box-shadow:inset 3px 0 0 var(--primary),inset 0 0 0 1px color-mix(in srgb,var(--primary) 45%,transparent);
+  padding:3px 7px;font-size:11px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 .cw-ad{flex-direction:row;align-items:center;gap:5px;font-size:11px;font-weight:500;
   line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* De tijd van een afspraak die buiten de getoonde uren valt. */
@@ -6158,6 +6167,88 @@ function cwDragEnd(e) {
   if (m.ol) olSoon(true);
 }
 
+/* ---- tijd selecteren in de week --------------------------------------------
+   Zoals in Outlook: met de muis boven een lege plek licht het halfuur op dat
+   je zou pakken. Klik, en je maakt een overleg van een half uur; houd de
+   muis ingedrukt en trek omlaag of omhoog, en je selecteert meerdere blokken.
+   Bij loslaten gaat het venster voor een nieuw overleg open, met dag, begin-
+   en eindtijd al ingevuld. Annuleer je, dan verdwijnt de selectie weer.
+------------------------------------------------------------------------- */
+const CW_SLOT = 30;
+let CW_SEL = null;
+
+/* Welk halfuur ligt er onder de muis in deze kolom? */
+function cwSlotAt(col, clientY) {
+  const grid = col.closest(".cw-grid");
+  const lo = Number(grid.dataset.lo), hi = Number(grid.dataset.hi);
+  const r = col.getBoundingClientRect();
+  const min = lo + ((clientY - r.top) / CW_H) * 60;
+  const slot = Math.floor(min / CW_SLOT) * CW_SLOT;
+  return Math.max(lo - (lo % CW_SLOT), Math.min(hi - CW_SLOT, slot));
+}
+function cwBlok(col, cls) {
+  let el = col.querySelector(`.${cls}`);
+  if (!el) { el = document.createElement("div"); el.className = cls; col.appendChild(el); }
+  return el;
+}
+function cwToon(el, col, van, tot, label) {
+  const lo = Number(col.closest(".cw-grid").dataset.lo);
+  el.style.top = `${((van - lo) / 60) * CW_H}px`;
+  el.style.height = `${((tot - van) / 60) * CW_H}px`;
+  el.textContent = label ? `${cwKlok(van)}–${cwKlok(tot)}` : "";
+}
+const cwKlok = (min) => `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`;
+const cwWegHover = () => document.querySelectorAll(".cw-hover").forEach((x) => x.remove());
+
+function cwSelStart(e) {
+  if (e.pointerType === "touch" || e.button !== 0) return;
+  if (e.target.closest(".cw-ev")) return;             // een afspraak versleep je
+  const col = e.target.closest(".cw-col");
+  if (!col || !col.closest(".cw-grid")) return;
+  e.preventDefault();                                 // geen tekst selecteren
+  document.querySelectorAll(".cw-sel").forEach((x) => x.remove());
+  cwWegHover();
+  const a = cwSlotAt(col, e.clientY);
+  CW_SEL = { col, a, b: a, el: cwBlok(col, "cw-sel") };
+  cwToon(CW_SEL.el, col, a, a + CW_SLOT, true);
+  try { col.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+}
+function cwSelMove(e) {
+  if (CW_DRAG) return;
+  if (CW_SEL) {
+    const b = cwSlotAt(CW_SEL.col, e.clientY);
+    if (b === CW_SEL.b) return;
+    CW_SEL.b = b;
+    const van = Math.min(CW_SEL.a, b), tot = Math.max(CW_SEL.a, b) + CW_SLOT;
+    cwToon(CW_SEL.el, CW_SEL.col, van, tot, true);
+    return;
+  }
+  /* Zonder ingedrukte knop: laat zien welk halfuur je zou pakken. */
+  if (e.pointerType === "touch") return;
+  const col = e.target.closest && e.target.closest(".cw-col");
+  if (!col || e.target.closest(".cw-ev") || !col.closest(".cw-grid")) { cwWegHover(); return; }
+  document.querySelectorAll(".cw-hover").forEach((x) => { if (x.parentElement !== col) x.remove(); });
+  const s = cwSlotAt(col, e.clientY);
+  cwToon(cwBlok(col, "cw-hover"), col, s, s + CW_SLOT, false);
+}
+function cwSelEnd() {
+  const s = CW_SEL;
+  CW_SEL = null;
+  if (!s) return;
+  const van = Math.min(s.a, s.b), tot = Math.max(s.a, s.b) + CW_SLOT;
+  const dag = s.col.dataset.day;
+  meetingDialog(null, { startsAt: `${dag}T${cwKlok(van)}`, endsAt: `${dag}T${cwKlok(tot)}`, blijf: true });
+}
+document.addEventListener("pointerdown", cwSelStart);
+document.addEventListener("pointermove", cwSelMove);
+document.addEventListener("pointerup", cwSelEnd);
+document.addEventListener("pointercancel", () => {
+  if (CW_SEL) CW_SEL.el.remove();
+  CW_SEL = null;
+});
+// Venster dicht zonder opslaan: de selectie hoort er dan niet meer te staan.
+$("#dlg").addEventListener("close", () => document.querySelectorAll(".cw-sel").forEach((x) => x.remove()));
+
 document.addEventListener("pointerdown", cwDragStart);
 document.addEventListener("pointermove", cwDragMove);
 document.addEventListener("pointerup", cwDragEnd);
@@ -6315,7 +6406,9 @@ function viewMeetings() {
       `${tr("m_week")} ${isoWeekNo(monday)}`,
       toon === "tasks"
         ? `<div class="tw-wrap" style="padding:0">${taskWeekHtml(monday, DB.tasks.filter((t) => t.status !== "done"))}</div>`
-        : (grid.total || taken.length) ? grid.html : empty(tr("m_wk_empty"), tr("m_wk_empty_d")),
+        /* Ook een lege week toont het rooster: daarin klik of sleep je een
+           nieuw overleg. */
+        : grid.html,
       `${from.getDate()} ${MONTHS[from.getMonth()].toLowerCase()} – ${end.getDate()} ${MONTHS[end.getMonth()].toLowerCase()} · ${
         toon === "tasks" ? nTaken : toon === "both" ? `${nAfspr} · ${nTaken}` : nAfspr}`,
       `<div class="row wrap" style="gap:6px">
@@ -12218,7 +12311,8 @@ function meetingDialog(meeting, defaults) {
         // Staat Naar Outlook aan, dan gaat wat je hier maakt ook naar Outlook.
         doel = { id, ...patch, ...(olAan() ? { ol: true } : {}) };
         DB.meetings.unshift(doel);
-        UI.detail = { type: "meeting", id };
+        // Gemaakt vanuit het weekrooster: blijf in de week staan.
+        if (!(defaults && defaults.blijf)) UI.detail = { type: "meeting", id };
       }
       if (eigen && !doel.seriesId && f.repeat) {
         const n = meetingRepeat(doel, f.repeat, f.repeatUntil);
