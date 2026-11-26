@@ -1072,8 +1072,16 @@ a.btn{text-decoration:none}
   align-items:start;margin-bottom:16px}
 .trl{position:sticky;top:76px;max-height:calc(100dvh - 96px);overflow:auto;scrollbar-width:thin;
   background:var(--surface);border:1px solid var(--border);border-radius:var(--r-block);padding:6px}
-.trl-d{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--ink-2);padding:10px 10px 4px}
+/* De kop van een dag: een knop die de dag dichtklapt. In de smalle lijst
+   links klein en in kapitalen, boven de kaarten op een smal scherm iets
+   groter. */
+.trd-day{display:flex;align-items:center;gap:7px;width:100%;padding:8px 10px 5px;border:0;
+  border-radius:8px;background:none;color:var(--ink-2);font:inherit;text-align:left;cursor:pointer;
+  transition:background var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.trd-day:hover{background:var(--surface-2);color:var(--ink)}
+.trd-day-t{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+.trd-day.smal{padding:6px 4px;margin-bottom:6px}
+.trd-day.smal .trd-day-t{font-size:12px;letter-spacing:-.005em;text-transform:none;color:var(--ink)}
 .trl-i{display:flex;flex-direction:column;gap:2px;width:100%;padding:10px 11px;border-radius:11px;
   border:1px solid transparent;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;
   transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
@@ -1385,6 +1393,8 @@ const STR = {
   tr_detail_e:["Notes · {0}, {1}","Verslag · {0}, {1}"], tr_min:["{0} min","{0} min"],
   tr_people:["{0} people","{0} deelnemers"], tr_k_dec:["Decisions","Besluiten"],
   tr_k_mine:["Open for you","Open voor jou"],
+  tr_none_week:["No notes this week","Geen verslagen in deze week"],
+  tr_goto:["To week {0}","Naar week {0}"],
   sg_head:["Copilot-analyse","Copilot-analyse"],
   sg_sub:["Mogelijk nog op te pakken taken","Mogelijk nog op te pakken taken"],
   sg_d:["Every Monday Copilot reads back thirty days of mail and Teams. Whatever you decide here — make a task, put it on a meeting's agenda, already done or not yours — does not come back.",
@@ -6919,10 +6929,33 @@ function trMeeting(t) {
    doorgeven - en dat hoeft de omweg langs je takenlijst niet te maken. */
 const trOpenActies = (t) => (t.acties || []).filter((a) => !a.taskId && !a.doneAt);
 
+/* Transcripties bladert per week, net als de urenregistratie: je ziet de
+   verslagen van één week, en met de pijltjes ga je terug. UI.trWeek is het
+   aantal weken vanaf nu (0 = deze week, -1 = vorige). */
+const trMaandag = () => addDays((UI.trWeek || 0) * 7, parseD(mondayOf()));
+const trWeekVan = (day) => Math.round((parseD(mondayOf(parseD(day))) - parseD(mondayOf())) / (7 * 864e5));
+
+/* De kop van een dag is een knop: dicht zie je nog hoeveel verslagen er
+   onder zitten en hoeveel daarvan nog iets voor jou hebben. */
+function trDagKop(day, items, cls = "") {
+  const dicht = Boolean(UI.trDagDicht && UI.trDagDicht[day]);
+  const mijn = items.reduce((s, t) => s + trOpenActies(t).filter((a) => isMij(a.person)).length, 0);
+  return `<button class="trd-day ${cls}" data-act="tr-day" data-v="${day}" aria-expanded="${!dicht}">
+    <span class="tl-chev">${ico(dicht ? "chevdown" : "chevup", "", 12)}</span>
+    <span class="trd-day-t">${esc(dayHeading(day))}</span>
+    <span class="tl-n">${items.length}</span>
+    ${dicht && mijn ? `<span class="tchip sig" style="margin-left:auto">${mijn}</span>` : ""}
+  </button>`;
+}
+const trDagDicht = (day) => Boolean(UI.trDagDicht && UI.trDagDicht[day]);
+
 function viewTranscripts() {
-  const all = DB.transcripts || [];
+  const alles = DB.transcripts || [];
   const f = UI.trFilter || "all";
   const openCount = (t) => trOpenActies(t).length;
+
+  const ma = trMaandag(), zo = addDays(6, parseD(ma));
+  const all = alles.filter((t) => t.day >= ma && t.day <= zo);
   const lijst = f === "open" ? all.filter((t) => openCount(t) > 0) : all;
 
   const byDay = [];
@@ -6934,6 +6967,30 @@ function viewTranscripts() {
 
   const totaalActies = all.reduce((s, t) => s + t.acties.length, 0);
   const totaalOpen = all.reduce((s, t) => s + openCount(t), 0);
+  const deze = !(UI.trWeek || 0);
+  const van = parseD(ma), tot = parseD(zo);
+  /* Een lege week is geen eindpunt: wijs naar de dichtstbijzijnde eerdere
+     week waarin wel iets staat. */
+  const eerder = alles.filter((t) => t.day < ma).sort((a, b) => b.day.localeCompare(a.day))[0];
+
+  const weekNav = `<div class="row wrap" style="gap:8px;margin-bottom:14px">
+    <div class="row" style="gap:4px">
+      <button class="btn icon sm outline" data-act="tr-week" data-v="prev" aria-label="${esc(tr("h_prevweek"))}">‹</button>
+      <button class="btn sm outline" data-act="tr-week" data-v="now" ${deze ? 'aria-pressed="true"' : ""}>${esc(tr("h_thisweek"))}</button>
+      <button class="btn icon sm outline" data-act="tr-week" data-v="next" aria-label="${esc(tr("h_nextweek"))}"
+        ${deze ? "disabled" : ""}>›</button>
+    </div>
+    <b style="font-size:13px">${esc(tr("h_wk"))} ${isoWeekNo(ma)} · ${van.getDate()} ${MONTHS[van.getMonth()].toLowerCase()} – ${
+      tot.getDate()} ${MONTHS[tot.getMonth()].toLowerCase()}</b>
+    ${all.length ? `<span class="xs mut">${esc(all.length === 1 ? tr("tr_n_1") : tr("tr_n", all.length))} · ${
+      esc(tr("tr_n_act", totaalActies, totaalOpen))}</span>` : ""}
+  </div>`;
+
+  const leeg = `${empty(f === "open" && all.length ? tr("tr_none_open") : alles.length ? tr("tr_none_week") : tr("tr_none"),
+      alles.length ? "" : tr("tr_none_d"))}
+    ${eerder && !lijst.length ? `<div style="text-align:center;margin:-4px 0 16px">
+      <button class="btn sm outline" data-act="tr-goto" data-v="${eerder.day}">‹ ${
+        esc(tr("tr_goto", isoWeekNo(mondayOf(parseD(eerder.day)))))}</button></div>` : ""}`;
 
   return pageHead(tr("nav_transcripts"), tr("tr_sub"),
     `<div class="seg">${[["all", tr("tr_f_all")], ["open", tr("tr_f_open")]]
@@ -6941,18 +6998,12 @@ function viewTranscripts() {
         aria-pressed="${f === v}">${esc(l)}</button>`).join("")}</div>
      <button class="btn sm outline" data-act="tr-add" title="${esc(tr("tr_add_d"))}">
        ${ico("plus", "", 12)} ${esc(tr("tr_add"))}</button>`) +
-  (all.length ? `<p class="row wrap xs mut" style="gap:14px;margin-bottom:14px">
-      <span>${esc(all.length === 1 ? tr("tr_n_1") : tr("tr_n", all.length))}</span>
-      <span>${esc(tr("tr_n_act", totaalActies, totaalOpen))}</span>
-    </p>` : "") +
-  trMijnBlok(all) +
+  trMijnBlok(alles) +
+  weekNav +
   (lijst.length && trBreed() ? trTweeluik(lijst) :
-   lijst.length ? byDay.map((g) => `<div class="dayhead" style="padding-left:0">
-      <span class="dayhead-t">${esc(dayHeading(g.day))}</span>
-      <span class="xs mut">${g.items.length}</span>
-    </div>
-    <div class="grid tr-list" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`).join("")
-    : empty(f === "open" ? tr("tr_none_open") : tr("tr_none"), tr("tr_none_d"))) +
+   lijst.length ? byDay.map((g) => `${trDagKop(g.day, g.items, "smal")}
+    ${trDagDicht(g.day) ? "" : `<div class="grid tr-list" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`}`).join("")
+    : leeg) +
   `<p class="xs mut" style="margin-top:6px">${esc(tr("tr_privacy"))}</p>`;
 }
 
@@ -7282,8 +7333,8 @@ function trTweeluik(lijst) {
   });
   return `<div class="trl-grid">
     <nav class="trl" aria-label="${esc(tr("nav_transcripts"))}">${byDay.map((g) => `
-      <p class="trl-d">${esc(dayHeading(g.day))}</p>
-      ${g.items.map((t) => trLijstItem(t, gekozen && t.id === gekozen.id)).join("")}`).join("")}
+      ${trDagKop(g.day, g.items)}
+      ${trDagDicht(g.day) ? "" : g.items.map((t) => trLijstItem(t, gekozen && t.id === gekozen.id)).join("")}`).join("")}
     </nav>
     ${gekozen ? trDetail(gekozen) : ""}
   </div>`;
@@ -7438,7 +7489,12 @@ function trAddDialog(meeting = null) {
       if (!m) return false;
       if (!tekst) { toast(tr("tr_add_empty")); return false; }
       const { t, nieuw, bij } = trAddPaste(m, tekst);
-      if (t) { UI.trSel = t.id; UI.trOpen = { [t.id]: true }; }
+      if (t) {
+        UI.trSel = t.id; UI.trOpen = { [t.id]: true };
+        // Toon de week waarin het verslag valt, met zijn dag open.
+        UI.trWeek = Math.min(0, trWeekVan(t.day));
+        if (UI.trDagDicht) delete UI.trDagDicht[t.day];
+      }
       render();
       const n = t ? t.acties.length : 0;
       toast(nieuw ? (n === 0 ? tr("tr_added_0") : n === 1 ? tr("tr_added_1") : tr("tr_added", n))
@@ -13362,7 +13418,25 @@ document.addEventListener("click", (e) => {
     /* Vanaf de pagina van een afspraak naar het verslag: open hem alvast en
        spring ernaartoe, anders zoek je hem in een lijst van dertig. */
     case "tr-sel": UI.trSel = id; render(); break;
+    case "tr-week": {
+      const v = el.dataset.v;
+      UI.trWeek = v === "now" ? 0 : Math.min(0, (UI.trWeek || 0) + (v === "prev" ? -1 : 1));
+      render(); break;
+    }
+    case "tr-goto": UI.trWeek = trWeekVan(el.dataset.v); render(); break;
+    case "tr-day": {
+      UI.trDagDicht = UI.trDagDicht || {};
+      if (UI.trDagDicht[el.dataset.v]) delete UI.trDagDicht[el.dataset.v];
+      else UI.trDagDicht[el.dataset.v] = true;
+      render(); break;
+    }
     case "tr-open": {
+      /* Spring naar de week van dat verslag en zet zijn dag open. */
+      const doel = (DB.transcripts || []).find((x) => x.id === id);
+      if (doel) {
+        UI.trWeek = Math.min(0, trWeekVan(doel.day));
+        if (UI.trDagDicht) delete UI.trDagDicht[doel.day];
+      }
       UI.trOpen = { [id]: true }; UI.trSel = id; UI.trFilter = "all";
       go("transcripts");
       setTimeout(() => {
