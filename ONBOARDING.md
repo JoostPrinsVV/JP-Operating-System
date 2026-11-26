@@ -101,7 +101,15 @@ Maak in **jouw eigen OneDrive voor Bedrijven**:
 
 De eerste is voor wat Copilot en Power Automate aanleveren; de tweede is waar
 de app zijn eigen back-up neerzet. Twee aparte mappen, want de app leest de
-eerste alleen en schrijft alleen in de tweede.
+eerste en schrijft in de tweede.
+
+Op één plek schrijft de app wél in de eerste map: in de submap
+`Naar Outlook`, en alleen als je een webinar goedkeurt (zie Deel 3). Maak die
+submap meteen aan:
+
+```
+/AI operating system/Agenda/Naar Outlook
+```
 
 > **Maak je eigen map.** Wijs niet de map van een collega aan, ook niet als je
 > die gedeeld hebt gekregen. In die bestanden staan hun afspraken,
@@ -120,6 +128,8 @@ beveiligde omgeving van Visser & Visser.
 | `briefing-*.json` | Copilot-briefing per afspraak |
 | `transcript-*.json` | Copilot-samenvatting van vergaderverslagen |
 | `taken-*.json` | Copilot-analyse van mogelijk vergeten taken |
+| `nieuws-*.json` | Copilot-nieuwsronde uit je nieuwsbrieven, met de aangekondigde webinars |
+| `Naar Outlook/webinar-*.json` | De app zelf, als je een webinar goedkeurt. De stroom *Webinar naar Outlook* haalt het weer weg |
 
 De app herkent ze aan die namen. Houd je er dus aan.
 
@@ -216,6 +226,65 @@ Wat de app met de lijst doet:
 - Outlook heeft 25 kleuren en de app 14. Elke kleur komt op de dichtstbijzijnde
   terecht.
 
+## Webinars naar Outlook
+
+De nieuwsronde vist ook de webinars en events uit je nieuwsbrieven (zie de
+nieuwsprompt in Deel 4). Ze staan als voorstel bovenaan **Agenda**. Klik je
+op **In agenda**, dan staat het webinar meteen in de app. De app schrijft dan
+ook een klein bestand in `/AI operating system/Agenda/Naar Outlook`. Deze
+stroom maakt daar een afspraak in Outlook van, met de link erin, en ruimt het
+bestand daarna op.
+
+De eerste keer vraagt de browser of de app in je agendamap mag schrijven.
+Geef die toestemming: zonder schrijfrecht komt het webinar alleen in de app.
+
+Maak een **Geautomatiseerde cloudstroom** met de naam `Webinar naar Outlook`:
+
+1. **Trigger:** OneDrive voor Bedrijven → **Wanneer een bestand wordt gemaakt
+   (alleen eigenschappen)**.
+   - **Map:** `/AI operating system/Agenda/Naar Outlook`
+2. **OneDrive voor Bedrijven → Bestandsinhoud ophalen**, hernoemd naar
+   `Inhoud`.
+   - **Bestand:** kies uit de dynamische inhoud van de trigger **Id**. Of via
+     `fx`: `triggerOutputs()?['body/Id']`
+3. **Samenstellen**, hernoemd naar `Webinar`. Invoer, via `fx`:
+   ```
+   json(if(contains(string(body('Inhoud')), '$content'), base64ToString(coalesce(json(string(body('Inhoud')))?['$content'], '')), string(body('Inhoud'))))
+   ```
+   Power Automate levert de inhoud van een bestand soms als tekst en soms
+   ingepakt. Deze formule werkt in beide gevallen.
+4. **Office 365 Outlook → Gebeurtenis maken (V4)**, hernoemd naar `Afspraak`.
+
+   | Veld | Waarde |
+   |---|---|
+   | Agenda-id | `Agenda`, uit de lijst |
+   | Onderwerp | via `fx`: `outputs('Webinar')?['subject']` |
+   | Begintijd | via `fx`: `outputs('Webinar')?['start']` |
+   | Eindtijd | via `fx`: `outputs('Webinar')?['end']` |
+   | Tijdzone | **(UTC) Coordinated Universal Time**, uit de lijst |
+   | Hoofdtekst | via `fx`: `outputs('Webinar')?['body']` |
+   | Locatie | via `fx`: `outputs('Webinar')?['location']` |
+
+   > **Let op bij de tijdzone.** Kies echt *Coordinated Universal Time*, niet
+   > Dublin of Londen: die hebben zomertijd. De app rekent de tijden al om
+   > naar UTC, zodat Outlook ze daarna in jouw tijd laat zien.
+5. **OneDrive voor Bedrijven → Bestand verwijderen**, hernoemd naar
+   `Opruimen`.
+   - **Bestand:** weer de **Id** van de trigger.
+
+Stap 5 is meer dan opruimen. Zodra het bestand weg is, weet de app dat de
+stroom het heeft opgepakt. Bij het webinar zie je de stand:
+
+- *Naar Outlook gestuurd*: het bestand staat klaar.
+- *Opgepakt door je stroom*: de stroom heeft er een afspraak van gemaakt.
+- *Staat in Outlook*: de afspraak kwam via de agendastroom terug en is
+  samengevoegd met die in de app. Er komt geen tweede bij.
+- *Wacht op je stroom*: na een half uur is het bestand nog niet opgepakt.
+  Kijk dan of de stroom aan staat.
+
+Test de stroom door in de app een webinar goed te keuren. Binnen een paar
+minuten staat het in Outlook.
+
 ---
 
 # Deel 4 — De prompts in Copilot (10 minuten)
@@ -223,7 +292,7 @@ Wat de app met de lijst doet:
 De stromen lezen een mail die Copilot klaarzet. Zonder die prompts blijven ze
 dus leeglopen.
 
-Er zijn drie geplande prompts. Kopieer ze **letterlijk** uit het bestaande
+Er zijn vier geplande prompts. Kopieer ze **letterlijk** uit het bestaande
 account — dat gaat sneller dan ze opnieuw schrijven en voorkomt dat het
 afgesproken formaat verschuift.
 
@@ -232,6 +301,7 @@ afgesproken formaat verschuift.
 | Briefing per afspraak | Elke werkdag 's ochtends | zoals in het origineel |
 | Vergaderverslagen van die dag | Elke werkdag 's avonds | zoals in het origineel |
 | Mogelijk vergeten taken | Maandag 07:30 | `Joost OS taken` |
+| Nieuwsronde en webinars | Ma, wo en vr 's ochtends | `Joost OS nieuws` |
 
 **Het onderwerp van de mail moet exact overeenkomen** met het onderwerpfilter
 in de bijbehorende stroom. Verandert er één letter, dan vindt de stroom niets
@@ -272,6 +342,73 @@ schrijf dan alleen: GEEN.
 Zet dit in een conceptmail aan mezelf met als onderwerp exact: Joost OS taken
 ```
 
+### De prompt voor de nieuwsronde
+
+Deze staat hier ook voluit, omdat hij de webinars meestuurt. Pas de eerste
+alinea aan op de nieuwsbrieven en de map waarin ze bij jou binnenkomen.
+
+```text
+Zoek in mijn mailbox naar e-mails van de afgelopen 3 dagen van deze
+nieuwsbrieven: The Rundown AI, Ben's Bites, Import AI, The Batch, Every,
+One Useful Thing, Last Week in AI. Neem ook andere nieuwsbrieven over AI mee
+die je in die periode tegenkomt.
+
+Beoordeel eerst per mail of hij inhoudelijk iets toevoegt. Sla over:
+- reclame, aanbiedingen en wervingsmails
+- mails die alleen naar een betaalde versie verwijzen zonder zelf inhoud te geven
+- dubbele berichten over hetzelfde onderwerp: kies dan de uitgebreidste
+- alles wat niet over AI gaat
+
+Haal uit wat overblijft de losse onderwerpen. Eén onderwerp is één item, ook
+als er in één nieuwsbrief vijf onderwerpen staan. Staat hetzelfde onderwerp in
+meerdere nieuwsbrieven, maak er dan één item van en noem beide bronnen.
+
+Beoordeel per onderwerp of het ertoe doet voor een AI-rol binnen Audit &
+Assurance bij een middelgroot accountantskantoor. Laat weg wat alleen voor
+consumenten, ontwikkelaars of durfkapitaal interessant is. Houd maximaal 12
+items over, de belangrijkste eerst.
+
+Schrijf per item exact dit formaat, zonder opsommingstekens, zonder kopjes,
+zonder inleiding of afsluiting:
+
+NIEUWS: <de kop, één zin, concreet>
+Wat: <2 tot 3 zinnen over wat er feitelijk is gebeurd of aangekondigd>
+Waarom: <1 tot 2 zinnen: wat dit betekent voor controleteams of voor mijn
+AI-rol. Wees concreet; schrijf niet "dit is interessant">
+Pijler: <één van: Kwaliteit, Adoptie, Waarde, Innovatie>
+Bron: <naam van de nieuwsbrief>, <datum van de mail als dd-mm-jjjj>
+Link: <de URL naar het oorspronkelijke bericht, of leeg als die er niet is>
+
+Kijk daarnaast in al deze mails, ook in de mails die je hierboven overslaat,
+naar aankondigingen van webinars, livestreams en events over AI die nog
+moeten plaatsvinden. Schrijf per event, na de nieuwsitems, exact dit formaat:
+
+NIEUWS: <de naam van het webinar of event>
+Soort: <Webinar, Livestream of Event>
+Datum: <dd-mm-jjjj>
+Tijd: <begintijd>-<eindtijd> <tijdzone zoals in de mail, bijvoorbeeld ET of CET>
+Locatie: <Online, of de plaats>
+Link: <de link om je aan te melden of deel te nemen, of leeg>
+Wat: <één zin waar het over gaat>
+Bron: <naam van de nieuwsbrief>, <datum van de mail als dd-mm-jjjj>
+
+Neem de tijd en de tijdzone over zoals ze in de mail staan; reken ze niet om.
+Staat er geen eindtijd, laat die dan weg. Wordt hetzelfde event in meerdere
+mails aangekondigd, noem het dan één keer. Sla events over die al voorbij zijn.
+
+Is er geen nieuws en geen event, schrijf dan alleen: GEEN.
+
+Zet dit in een conceptmail aan mezelf met als onderwerp exact: Joost OS nieuws
+```
+
+Een event begint ook met `NIEUWS:`. Zo neemt de nieuwsstroom het ongewijzigd
+mee, en hoef je die stroom niet aan te passen. De app herkent een event aan
+de regel `Soort:` en zet het op de agendapagina in plaats van bij het nieuws.
+
+De tijd rekent de app zelf om, met de zomer- en wintertijd van die dag. Achter
+de omgerekende tijd zie je wat er in de mail stond. Klopt het niet, gebruik dan
+**Aanpassen** voordat je het webinar goedkeurt.
+
 ---
 
 # Deel 5 — De map koppelen aan de app (1 minuut)
@@ -285,8 +422,9 @@ Zet dit in een conceptmail aan mezelf met als onderwerp exact: Joost OS taken
 Vanaf nu leest de app die map bij het openen, en kun je hem tussendoor
 bijwerken met **Vernieuwen** op het dashboard of op de agendapagina.
 
-> De app leest alleen. Hij schrijft niets naar die map en stuurt niets naar
-> buiten.
+> De app leest die map. Schrijven doet hij er alleen in de submap
+> `Naar Outlook`, en alleen als je een webinar goedkeurt. Naar buiten stuurt
+> hij niets.
 
 ---
 
@@ -320,6 +458,7 @@ weggeschreven.
 - [ ] Elke stroom is één keer met de hand uitgevoerd en werd groen
 - [ ] De automatische back-up staat aan en heeft één keer een bestand
       weggeschreven naar `/AI operating system/Back-ups`
+- [ ] Een goedgekeurd webinar stond binnen een paar minuten in Outlook
 
 ---
 
@@ -335,6 +474,10 @@ weggeschreven.
 | Een vergaderverslag komt leeg binnen | Copilot heeft andere kopjes gebruikt dan de prompt vraagt |
 | Van een overleg van iemand anders komt nooit een verslag | Copilot kan niet bij de transcriptie als je geen organisator bent. Laat het transcript toesturen, laat Copilot het samenvatten en plak dat via **Transcripties → Verslag toevoegen**. De knop *Copilot-prompt kopiëren* in dat venster geeft de juiste prompt |
 | Alle acties staan op jou | Je naam staat niet in **Instellingen → Profiel** |
+| Webinars uit je nieuwsbrieven verschijnen niet op de Agenda | De nieuwsprompt slaat ze nog over. Haal "webinar-uitnodigingen" uit het lijstje *Sla over* en zet het stuk over events erin (Deel 4) |
+| Een goedgekeurd webinar blijft op *Wacht op je stroom* staan | De stroom *Webinar naar Outlook* staat uit, kijkt naar een andere map dan `/AI operating system/Agenda/Naar Outlook`, of OneDrive draait niet op je laptop |
+| Een goedgekeurd webinar staat op *Alleen in de app* | De browser mocht niet in je agendamap schrijven. Klik op **Naar Outlook sturen** en geef toestemming |
+| Een webinar staat op de verkeerde tijd | Copilot heeft de tijdzone niet overgenomen. Kijk achter de tijd wat er in de mail stond en pas het aan met **Aanpassen** |
 | Een nieuwe categorie uit Outlook verschijnt niet | De categoriestappen ontbreken in de agendastroom (zie Deel 3), of de stroom liep daarna niet meer |
 
 ---
