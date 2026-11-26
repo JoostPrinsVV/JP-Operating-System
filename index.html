@@ -760,7 +760,17 @@ details > summary::-webkit-details-marker{display:none}
 .tl-r{position:relative;display:flex;align-items:center;gap:13px;padding:11px 18px;cursor:pointer;
   border-top:1px solid var(--grid);transition:background var(--t-fast) var(--ease)}
 .tl-r:hover{background:var(--surface-2)}
-.tl-r.late::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--vv-rood)}
+/* De gekleurde streep voor elke open taak, met een eigen hoverzone links
+   die zegt wat de kleur betekent. */
+.tl-bar{position:absolute;left:0;top:0;bottom:0;width:13px;cursor:help;z-index:1}
+.tl-bar::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--bar);
+  transition:width var(--t-fast) var(--ease)}
+.tl-bar:hover::before{width:5px}
+.tl-bar::after{content:attr(data-tip);position:absolute;left:12px;top:50%;transform:translateY(-50%);
+  padding:3px 9px;border-radius:7px;background:var(--navy);color:var(--navy-ink);font-size:11px;
+  font-weight:600;white-space:nowrap;opacity:0;pointer-events:none;
+  transition:opacity var(--t-fast) var(--ease)}
+.tl-bar:hover::after{opacity:1}
 .tl-ck{width:18px;height:18px;flex:0 0 auto;border-radius:50%;border:1.5px solid var(--axis);
   background:var(--surface);color:transparent;display:grid;place-items:center;padding:0;cursor:pointer;
   transition:border-color var(--t-fast) var(--ease),background var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
@@ -950,6 +960,42 @@ a.btn{text-decoration:none}
    erin houden dezelfde kolommen, dus ze schuiven als één geheel mee. */
 .cw-wrap{overflow-x:auto;overflow-y:hidden;margin:0 -2px;padding:0 2px}
 .cw{--cw-hp:46px}
+/* ---- taken in een weekkalender ---------------------------------------- */
+.tw-card{overflow:hidden}
+.tw-top{padding:14px 16px 12px;border-bottom:1px solid var(--border)}
+.tw-wrap{overflow-x:auto;padding:12px 12px 14px}
+.tw-head,.tw-body{display:grid;gap:6px}
+.tw-body{margin-top:6px;align-items:stretch}
+.tw-col{display:flex;flex-direction:column;gap:5px;min-height:150px;padding:6px;border-radius:10px;
+  background:var(--surface-2)}
+.tw-col.today{background:color-mix(in srgb,var(--primary) 7%,var(--surface-2));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--primary) 30%,transparent)}
+.tw-t{display:flex;flex-direction:column;gap:1px;width:100%;padding:7px 9px 7px 11px;border:0;
+  border-radius:8px;background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer;
+  box-shadow:inset 3px 0 0 var(--bar),0 0 0 1px var(--border);
+  transition:box-shadow var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+.tw-t:hover{box-shadow:inset 3px 0 0 var(--bar),0 0 0 1px var(--ink-3);transform:translateY(-1px)}
+.tw-tt{font-size:12px;font-weight:600;line-height:1.35;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.tw-tm{font-size:10.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tw-t.done .tw-tt{text-decoration:line-through;color:var(--ink-3);font-weight:400}
+/* Een taak op die dag toevoegen: pas zichtbaar als je erboven hangt. */
+.tw-add{margin-top:auto;align-self:center;width:26px;height:26px;border-radius:50%;border:1px dashed var(--axis);
+  background:none;color:var(--ink-3);display:grid;place-items:center;cursor:pointer;opacity:0;
+  transition:opacity var(--t-fast) var(--ease)}
+.tw-col:hover .tw-add,.tw-add:focus-visible{opacity:1}
+.tw-add:hover{color:var(--ink);border-color:var(--ink)}
+/* Wat al te laat was voor deze week begon: een strook bovenaan. */
+.tw-earlier{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 16px;
+  border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--signal) 5%,var(--surface))}
+.tw-el{font-size:11px;font-weight:700;color:var(--signal-text);margin-right:4px}
+.tw-chip{display:inline-flex;align-items:center;gap:6px;max-width:280px;padding:3px 10px 3px 9px;
+  border:0;border-radius:999px;background:var(--surface);box-shadow:inset 3px 0 0 var(--vv-rood),0 0 0 1px var(--border);
+  font:inherit;font-size:11.5px;font-weight:600;color:inherit;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tw-chip span{font-weight:400;color:var(--signal-text)}
+.tw-chip:hover{box-shadow:inset 3px 0 0 var(--vv-rood),0 0 0 1px var(--ink-3)}
+/* Taken bovenin de week van Agenda, naast de hele-dag-afspraken. */
+.cw-ad.cw-task{--cw-c:var(--bar)}
 .cw-head,.cw-allday,.cw-grid{display:grid;gap:1px}
 .cw-dh{padding:5px 4px;text-align:center;border-radius:9px 9px 0 0;background:var(--surface-2)}
 .cw-dh.wknd{background:var(--surface-3)}
@@ -2363,6 +2409,13 @@ const STR = {
   tl_next:["Next: {0}","Eerstvolgende: {0}"], tl_oldest:["Longest: {0}","Langst: {0}"],
   tl_late_on:["Overdue · {0}","Te laat · {0}"], tl_mark:["Mark as done","Afvinken"],
   tl_reopen:["Reopen","Heropenen"],
+  tb_late:["Overdue · deadline was {0}","Te laat · deadline was {0}"],
+  tb_today:["Due today","Deadline vandaag"], tb_later:["Later · deadline {0}","Later · deadline {0}"],
+  tb_nodate:["Later · no deadline","Later · geen deadline"],
+  tw_earlier:["Earlier, still open","Eerder, nog open"], tw_nodate:["No deadline","Zonder deadline"],
+  tw_n:["{0} tasks","{0} taken"], tw_n1:["1 task","1 taak"], tw_add:["Add task on this day","Taak op deze dag"],
+  ag_show_meet:["Meetings","Afspraken"], ag_show_tasks:["Tasks","Taken"], ag_show_both:["Both","Beide"],
+  tw_empty:["No deadlines this week","Geen deadlines deze week"],
   /* agenda-kaarten */
   as_today_n:["{0} today","{0} vandaag"], as_week_n:["{0} this week","{0} deze week"],
   as_book_n:["{0} to book","{0} nog te boeken"], as_act_n:["{0} open actions","{0} open actiepunten"],
@@ -4105,13 +4158,14 @@ try {
   if (s.trMineDicht === true) UI.trMineDicht = true;
   if (s.tlDicht && typeof s.tlDicht === "object") UI.tlDicht = s.tlDicht;
   if (s.fold && typeof s.fold === "object") UI.fold = s.fold;
+  if (s.agShow) UI.agShow = s.agShow;
   if (s.nwsDicht === true) UI.nwsDicht = true;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
   try {
     localStorage.setItem(KEY + ":ui", JSON.stringify({
       view: UI.view, taskView2: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
-      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht, tlDicht: UI.tlDicht, fold: UI.fold }));
+      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht, tlDicht: UI.tlDicht, fold: UI.fold, agShow: UI.agShow }));
   }
   catch (e) { /* ignore */ }
 };
@@ -4316,38 +4370,6 @@ function statusHint(t) {
   const m = meta(STATUSES, t.status);
   if (!m) return "";
   return `<span class="tsk-s"><i style="background:${STATUS_DOT[t.status] || "var(--ink-3)"}"></i>${esc(lbl(m[1]))}</span>`;
-}
-
-function taskRow(t, opts = {}) {
-  const s = scoreTask(t), [bl, bt] = band(s), done = t.status === "done";
-  const proj = t.projectId && DB.projects.find((p) => p.id === t.projectId);
-  const goal = t.goalId && DB.goals.find((g) => g.id === t.goalId);
-  const od = !done && overdue(t.dueDate);
-  /* The whole tile opens the task: clicks resolve to the nearest data-act, so
-     the tick box still toggles rather than opening. The title stays a real
-     button so there is something to tab to. */
-  // Kritiek deelt het streepje met hoog: beide zijn rood, en een vijfde kleur
-  // zou alleen maar een legenda vragen.
-  const prio = t.priority === "critical" ? "high" : t.priority;
-  return `<div class="tsk ${done ? "done" : `p-${prio}${od ? " od" : ""}`}"
-    data-act="edit-task" data-id="${t.id}">
-    <button class="chk" role="checkbox" aria-checked="${done}" data-act="toggle-task" data-id="${t.id}"
-      aria-label="${esc(t.title)}">${ico("check", "", 11)}</button>
-    <div style="min-width:0;flex:1">
-      <button class="tsk-t" data-act="edit-task" data-id="${t.id}">${esc(t.title)}</button>
-      <div class="tsk-m">
-        ${statusHint(t)}
-        ${t.dueDate ? `<span ${od ? 'style="color:var(--primary);font-weight:500"' : ""}>${od ? `${esc(tr("overdue_p"))} — ` : ""}${esc(fmtDate(t.dueDate))}</span>` : ""}
-        ${repeatTag(t)}
-        ${opts.hideProject !== true && proj ?`<span class="trunc" style="max-width:150px">${esc(proj.name)}</span>` : ""}
-        ${opts.hideGoal !== true && goal ? `<span>${esc(goal.code)}</span>` : ""}
-        ${t.status === "waiting" && t.waitingOn ? `<span>${esc(tr("waiting_on"))} ${esc(t.waitingOn)}</span>` : ""}
-      </div>
-    </div>
-    <div class="row" style="gap:5px">
-      ${t.priority !== "medium" ? badge(PRIOS, t.priority) : ""}
-      ${done ? "" : `<span class="badge ${bt}" title="${esc(tr("prio_score"))} ${s.toFixed(0)} / 100">${esc(lbl(bl))}</span>`}
-    </div></div>`;
 }
 
 const projOptions = (sel) => `<option value="">${esc(tr("dl_noproject"))}</option>` + DB.projects
@@ -5159,7 +5181,24 @@ function taskList(list) {
     </section>`;
   }).join("")}</div>`;
 }
-function taskRow(t) {
+/* De streep voor een taak zegt altijd hetzelfde, waar hij ook staat: rood is
+   te laat, oranje is vandaag, turquoise is later (of zonder deadline). Een
+   afgeronde taak heeft geen streep. Wie er met de muis op gaat, leest wat hij
+   betekent. */
+function taskBar(t) {
+  if (t.status === "done") return null;
+  if (overdue(t.dueDate)) return ["var(--vv-rood)", tr("tb_late", fmtDate(t.dueDate))];
+  if (t.dueDate === TODAY()) return ["var(--c3)", tr("tb_today")];
+  return ["var(--vv-turquoise)", t.dueDate ? tr("tb_later", fmtDate(t.dueDate)) : tr("tb_nodate")];
+}
+const taskBarEl = (t) => {
+  const b = taskBar(t);
+  return b ? `<span class="tl-bar" style="--bar:${b[0]}" data-tip="${esc(b[1])}" title="${esc(b[1])}"></span>` : "";
+};
+
+/* Eén taakregel voor de hele app: de takenlijst, maar ook onder een project,
+   een doel en op het dashboard. */
+function taskRow(t, opts = {}) {
   const done = t.status === "done", od = !done && overdue(t.dueDate);
   const p = t.projectId && DB.projects.find((x) => x.id === t.projectId);
   const g = t.goalId && DB.goals.find((x) => x.id === t.goalId);
@@ -5167,8 +5206,9 @@ function taskRow(t) {
   const apm = ap && DB.meetings.find((x) => x.id === ap.meetingId);
   const sep = `<span class="sep">·</span>`;
   const bits = [
-    p ? esc(p.name) : "",
-    g ? `<span><i class="tl-gd" style="background:${slotColor(g.slot)}"></i>${esc(g.code)}</span>` : "",
+    p && !opts.hideProject ? esc(p.name) : "",
+    g && !opts.hideGoal ? `<span><i class="tl-gd" style="background:${slotColor(g.slot)}"></i>${esc(g.code)}</span>` : "",
+    t.status === "waiting" && t.waitingOn ? esc(`${tr("waiting_on")} ${t.waitingOn}`) : "",
     t.status === "in_progress" ? esc(lbl(STATUSES.find((s) => s[0] === "in_progress")[1])) : "",
     t.energy === "deep" ? esc(tr("deep")) : "",
     apm ? `<span title="${esc(tr("ap_task_on", mtgKort(apm)))}">${ico("meetings", "", 11)} ${esc(fmtDate(String(apm.startsAt).slice(0, 10)))}</span>` : "",
@@ -5180,6 +5220,7 @@ function taskRow(t) {
     : t.dueDate === TODAY() ? `<span class="tchip">${esc(tr("tl_today"))}</span>`
     : `<span class="tchip due">${esc(fmtDate(t.dueDate))}</span>`;
   return `<article class="tl-r${od ? " late" : ""}${done ? " done" : ""}" data-act="edit-task" data-id="${t.id}">
+    ${taskBarEl(t)}
     <button class="tl-ck" role="checkbox" aria-checked="${done}" data-act="toggle-task" data-id="${t.id}"
       title="${esc(tr(done ? "tl_reopen" : "tl_mark"))}" aria-label="${esc(tr(done ? "tl_reopen" : "tl_mark"))}">${ico("check", "", 11)}</button>
     <span class="tl-b">
@@ -5279,49 +5320,82 @@ function taskTable(list) {
   }).join("")}</tbody></table></div>`;
 }
 
-function taskCalendar(list) {
-  const m = UI.calMonth, y = m.getFullYear(), mo = m.getMonth();
-  const first = new Date(y, mo, 1), startOff = (first.getDay() + 6) % 7;
-  const start = new Date(y, mo, 1 - startOff);
-  const byDate = {};
-  list.forEach((t) => { if (t.dueDate) (byDate[t.dueDate] ||= []).push(t); });
-  const undated = list.filter((t) => !t.dueDate && t.status !== "done");
-
-  let cells = "";
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(start); d.setDate(start.getDate() + i);
-    const key = iso(d), items = (byDate[key] || []).filter((t) => t.status !== "done");
-    const out = d.getMonth() !== mo;
-    cells += `<button class="cal-d ${out ? "out" : ""} ${UI.calSel === key ? "sel" : ""}" data-act="cal-day" data-d="${key}">
-      <span class="cal-n tab ${key === TODAY() ? "today" : ""}">${d.getDate()}</span>
-      ${items.slice(0, 2).map((t) => `<span class="cal-p">${esc(t.title)}</span>`).join("")}
-      ${items.length > 2 ? `<span class="xs mut">+${items.length - 2} more</span>` : ""}</button>`;
-  }
-  const sel = (byDate[UI.calSel] || []);
-
-  return `<div class="grid" style="grid-template-columns:1fr 280px;align-items:start" id="cal-grid">
-    <div class="card" style="overflow:hidden">
-      <div class="row spread" style="padding:9px 12px;border-bottom:1px solid var(--border)">
-        <b style="font-size:13px">${MONTHS[mo]} ${y}</b>
-        <span class="row" style="gap:4px">
-          <button class="btn icon sm ghost" data-act="cal-prev" aria-label="‹">‹</button>
-          <button class="btn sm ghost" data-act="cal-today">${esc(tr("today"))}</button>
-          <button class="btn icon sm ghost" data-act="cal-next" aria-label="›">›</button>
-        </span>
-      </div>
-      <div class="cal">${WEEKDAYS.map((d) => `<div class="cal-hd">${esc(d)}</div>`).join("")}${cells}</div>
-    </div>
-    <div class="grid">
-      ${card(UI.calSel ? fmtDate(UI.calSel) : tr("pick_day"),
-        sel.length ? `<div>${sel.map((x) => taskRow(x)).join("")}</div>` : `<p class="xs mut">${esc(tr("nothing_sched"))}</p>`)}
-      ${undated.length ? `<div class="empty" style="align-items:stretch;text-align:left">
-        <b>${esc(tr("no_date_n"))} (${undated.length})</b>
-        <span class="xs">${esc(tr("no_date_d"))}</span>
-        <ul style="margin-top:6px">${undated.slice(0, 8).map((x) =>
-          `<li><button class="tsk-t xs mut trunc" data-act="edit-task" data-id="${x.id}">${esc(x.title)}</button></li>`).join("")}</ul>
-      </div>` : ""}
-    </div></div>`;
+/* ---- taken in een weekkalender ---------------------------------------------
+   Net zo rustig als de week in Agenda: een kolom per dag, de taken met
+   deadline op die dag eronder, elk met dezelfde gekleurde streep als in de
+   lijst. Zaterdag en zondag doen alleen mee als er iets staat. Hij wordt
+   gebruikt onder Taken > Kalender en in Agenda bij "Taken".
+------------------------------------------------------------------------- */
+function taskWeekHtml(monday, list) {
+  const week = Array.from({ length: 7 }, (_, i) => addDays(i, parseD(monday)));
+  const by = {};
+  week.forEach((d) => { by[d] = []; });
+  list.forEach((t) => { if (t.dueDate && by[t.dueDate]) by[t.dueDate].push(t); });
+  const shown = week.filter((d, i) => i < 5 || by[d].length);
+  const cols = `grid-template-columns:repeat(${shown.length},minmax(0,1fr))`;
+  const today = TODAY();
+  const item = (t) => {
+    const b = taskBar(t);
+    const p = t.projectId && DB.projects.find((x) => x.id === t.projectId);
+    return `<button class="tw-t${t.status === "done" ? " done" : ""}" data-act="edit-task" data-id="${t.id}"
+      style="--bar:${b ? b[0] : "var(--success)"}" title="${esc(b ? `${t.title} — ${b[1]}` : t.title)}">
+      <span class="tw-tt">${esc(t.title)}</span>
+      ${p ? `<span class="tw-tm">${esc(p.name)}</span>` : ""}</button>`;
+  };
+  return `<div class="tw" style="min-width:${shown.length * 120}px">
+    <div class="tw-head" style="${cols}">${shown.map((d) => {
+      const dt = parseD(d), wknd = dt.getDay() === 0 || dt.getDay() === 6;
+      return `<div class="cw-dh${d === today ? " today" : ""}${wknd ? " wknd" : ""}">
+        <span class="cw-dn">${esc(dayName((dt.getDay() + 6) % 7, false))}</span>
+        <span class="cw-dd">${dt.getDate()}</span></div>`;
+    }).join("")}</div>
+    <div class="tw-body" style="${cols}">${shown.map((d) => `<div class="tw-col${d === today ? " today" : ""}">
+      ${by[d].sort((a, b) => (a.status === "done") - (b.status === "done") || scoreTask(b) - scoreTask(a)).map(item).join("")}
+      <button class="tw-add" data-act="new-task" data-due="${d}" title="${esc(tr("tw_add"))}"
+        aria-label="${esc(tr("tw_add"))}">${ico("plus", "", 12)}</button>
+    </div>`).join("")}</div>
+  </div>`;
 }
+
+/* Weekknoppen, hetzelfde rijtje als bij Urenregistratie en Transcripties. */
+function weekNavHtml(act, offset, monday, extra = "") {
+  const van = parseD(monday), tot = parseD(addDays(6, van));
+  return `<div class="row wrap" style="gap:8px">
+    <div class="row" style="gap:4px">
+      <button class="btn icon sm outline" data-act="${act}" data-v="prev" aria-label="${esc(tr("h_prevweek"))}">‹</button>
+      <button class="btn sm outline" data-act="${act}" data-v="now" aria-pressed="${offset === 0}">${esc(tr("h_thisweek"))}</button>
+      <button class="btn icon sm outline" data-act="${act}" data-v="next" aria-label="${esc(tr("h_nextweek"))}">›</button>
+    </div>
+    <b style="font-size:13px">${esc(tr("h_wk"))} ${isoWeekNo(monday)} · ${van.getDate()} ${MONTHS[van.getMonth()].toLowerCase()} – ${
+      tot.getDate()} ${MONTHS[tot.getMonth()].toLowerCase()}</b>${extra}
+  </div>`;
+}
+
+function taskCalendar(list) {
+  const wk = UI.taskWeek || 0;
+  const monday = addDays(wk * 7, parseD(mondayOf()));
+  const zo = addDays(6, parseD(monday));
+  const inWeek = list.filter((t) => t.dueDate && t.dueDate >= monday && t.dueDate <= zo);
+  /* In deze week hoort wat al te laat is er ook bij: dat moet nog steeds. */
+  const eerder = wk === 0 ? list.filter((t) => t.status !== "done" && t.dueDate && t.dueDate < monday)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate)) : [];
+  const undated = list.filter((t) => !t.dueDate && t.status !== "done")
+    .sort((a, b) => scoreTask(b) - scoreTask(a));
+
+  return `<section class="card tw-card">
+      <div class="tw-top">${weekNavHtml("task-week", wk, monday,
+        `<span class="xs mut">${esc(inWeek.length === 1 ? tr("tw_n1") : tr("tw_n", inWeek.length))}</span>`)}</div>
+      ${eerder.length ? `<div class="tw-earlier">
+        <span class="tw-el">${esc(tr("tw_earlier"))}</span>
+        ${eerder.map((t) => `<button class="tw-chip" data-act="edit-task" data-id="${t.id}"
+          title="${esc(tr("tb_late", fmtDate(t.dueDate)))}">${esc(t.title)}<span>${esc(fmtDate(t.dueDate))}</span></button>`).join("")}
+      </div>` : ""}
+      <div class="tw-wrap">${taskWeekHtml(monday, list)}</div>
+    </section>
+    ${undated.length ? `<div style="margin-top:14px">${cardF("tw-undated",
+      `${tr("tw_nodate")} (${undated.length})`, `<div>${undated.map((t) => taskRow(t)).join("")}</div>`, tr("no_date_d"))}</div>` : ""}`;
+}
+
 
 /* ---- goals ------------------------------------------------------------- */
 const GSTAT = [["active",["On track","Op koers"],"success"],["at_risk",["At risk","Risicovol"],"warning"],
@@ -5815,11 +5889,20 @@ function layoutDay(items) {
   return out;
 }
 
-function weekGrid(monday) {
+/* Een taak in de strook bovenaan de week: hetzelfde blokje als een
+   hele-dag-afspraak, met de kleur van zijn streep en een vinkje ervoor. */
+const cwTask = (t) => {
+  const b = taskBar(t) || ["var(--success)", ""];
+  return `<button class="cw-ad cw-task" data-act="edit-task" data-id="${t.id}" style="--bar:${b[0]}"
+    title="${esc(`${t.title} — ${b[1]}`)}">${esc(t.title)}</button>`;
+};
+function weekGrid(monday, taken = []) {
   const week = [];
   for (let i = 0; i < 7; i++) week.push(addDays(i, parseD(monday)));
   const byDay = {};
-  week.forEach((d) => { byDay[d] = { all: [], timed: [] }; });
+  week.forEach((d) => { byDay[d] = { all: [], timed: [], tasks: [] }; });
+  // Taken met een deadline in deze week, voor de strook bovenaan.
+  taken.forEach((t) => { if (byDay[t.dueDate]) byDay[t.dueDate].tasks.push(t); });
 
   let total = 0;
   DB.meetings.forEach((m) => {
@@ -5839,7 +5922,7 @@ function weekGrid(monday) {
   /* Bij de werkdag-weergaven doen zaterdag en zondag alleen mee als er iets
      staat; anders houden de vijf werkdagen de breedte. */
   const [, , vasteDagen, vanaf, tot] = agendaView();
-  const shown = week.filter((d, i) => i < vasteDagen || byDay[d].all.length || byDay[d].timed.length);
+  const shown = week.filter((d, i) => i < vasteDagen || byDay[d].all.length || byDay[d].timed.length || byDay[d].tasks.length);
   const cols = `grid-template-columns:46px repeat(${shown.length},minmax(0,1fr))`;
   const today = TODAY();
 
@@ -5883,11 +5966,13 @@ function weekGrid(monday) {
   /* De strook bovenaan draagt twee dingen: hele-dag-afspraken en wat buiten de
      gekozen uren valt. Staat er iets van het tweede soort bij, dan zegt het
      label dat ook - "Hele dag" zou dan niet kloppen. */
-  const anyAllDay = shown.some((d) => byDay[d].all.length);
-  const stripLabel = buiten ? tr("m_wk_outside") : tr("m_wk_allday");
+  const anyAllDay = shown.some((d) => byDay[d].all.length || byDay[d].tasks.length);
+  /* Staan er alleen taken in de strook, dan heet hij ook zo. */
+  const alleenTaken = !buiten && !shown.some((d) => byDay[d].all.length);
+  const stripLabel = buiten ? tr("m_wk_outside") : alleenTaken ? tr("ag_show_tasks") : tr("m_wk_allday");
   const allDayRow = anyAllDay ? `<div class="cw-allday" style="${cols}">
     <span class="cw-adl" title="${esc(buiten ? tr("m_wk_outside_t") : tr("m_wk_allday"))}">${esc(stripLabel)}</span>
-    ${shown.map((d) => `<div class="cw-adc">${byDay[d].all.map((m) => {
+    ${shown.map((d) => `<div class="cw-adc">${byDay[d].tasks.map(cwTask).join("")}${byDay[d].all.map((m) => {
       const heel = isAllDay(m);
       const tekst = heel ? m.title : `${fmtTime(m.startsAt)} ${m.title}`;
       return `<button class="cw-ad" data-act="peek-meeting" data-id="${m.id}"
@@ -6146,15 +6231,28 @@ function viewMeetings() {
     const monday = addDays(UI.meetWeek * 7, parseD(mondayOf()));
     const end = parseD(addDays(6, parseD(monday)));
     const from = parseD(monday);
-    const grid = weekGrid(monday);
+    /* Wat de week laat zien: je afspraken, je taken met hun deadline, of
+       allebei - dan staan de taken bovenin bij de hele-dag-afspraken. */
+    const toon = viewOn("tasks") ? (UI.agShow || "meet") : "meet";
+    const zo = addDays(6, parseD(monday));
+    const taken = toon === "meet" ? [] : DB.tasks.filter((t) => t.status !== "done" && t.dueDate
+      && t.dueDate >= monday && t.dueDate <= zo);
+    const grid = toon === "tasks" ? null : weekGrid(monday, taken);
+    const nTaken = taken.length === 1 ? tr("tw_n1") : tr("tw_n", taken.length);
+    const nAfspr = grid ? (grid.total === 1 ? tr("m_n_meeting") : tr("m_wk_of", grid.total)) : "";
+    const toonSeg = viewOn("tasks") ? `<div class="seg">${[["meet", "ag_show_meet"], ["tasks", "ag_show_tasks"], ["both", "ag_show_both"]]
+      .map(([v, k]) => `<button data-act="ag-show" data-v="${v}" aria-pressed="${toon === v}">${esc(tr(k))}</button>`).join("")}</div>` : "";
     return head + card(
       `${tr("m_week")} ${isoWeekNo(monday)}`,
-      grid.total ? grid.html : empty(tr("m_wk_empty"), tr("m_wk_empty_d")),
+      toon === "tasks"
+        ? `<div class="tw-wrap" style="padding:0">${taskWeekHtml(monday, DB.tasks.filter((t) => t.status !== "done"))}</div>`
+        : (grid.total || taken.length) ? grid.html : empty(tr("m_wk_empty"), tr("m_wk_empty_d")),
       `${from.getDate()} ${MONTHS[from.getMonth()].toLowerCase()} – ${end.getDate()} ${MONTHS[end.getMonth()].toLowerCase()} · ${
-        grid.total === 1 ? tr("m_n_meeting") : tr("m_wk_of", grid.total)}`,
+        toon === "tasks" ? nTaken : toon === "both" ? `${nAfspr} · ${nTaken}` : nAfspr}`,
       `<div class="row wrap" style="gap:6px">
-         <div class="seg">${AGENDA_VIEWS.map(([k, naam]) => `<button data-act="agenda-view" data-v="${k}"
-           aria-pressed="${agendaView()[0] === k}">${esc(lbl(naam))}</button>`).join("")}</div>
+         ${toonSeg}
+         ${toon === "tasks" ? "" : `<div class="seg">${AGENDA_VIEWS.map(([k, naam]) => `<button data-act="agenda-view" data-v="${k}"
+           aria-pressed="${agendaView()[0] === k}">${esc(lbl(naam))}</button>`).join("")}</div>`}
          <button class="btn icon sm outline" data-act="meet-week" data-v="-1"
            aria-label="${esc(tr("m_wk_prev"))}" title="${esc(tr("m_wk_prev"))}">${ico("back", "", 13)}</button>
          <button class="btn sm outline" data-act="meet-week" data-v="0"
@@ -11477,7 +11575,7 @@ function taskDialog(task, defaults = {}) {
   const t = task || {
     // Een voorgestelde taak komt met zijn tekst al ingevuld binnen.
     title: defaults.title || "", notes: "", status: defaults.status || "inbox", priority: "medium", energy: "shallow",
-    dueDate: "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "",
+    dueDate: defaults.dueDate || "", estimate: "", projectId: defaults.projectId || "", goalId: defaults.goalId || "",
     subId: defaults.subId || "", waitingOn: defaults.waitingOn || "",
   };
   // Op welke agenda deze taak nu staat, als hij nog besproken moet worden.
@@ -13904,7 +14002,14 @@ document.addEventListener("click", (e) => {
   const task = () => DB.tasks.find((x) => x.id === id);
 
   switch (act) {
-    case "new-task": taskDialog(null, { status: el.dataset.status, projectId: el.dataset.project }); break;
+    case "new-task": taskDialog(null, { status: el.dataset.status || (el.dataset.due ? "planned" : undefined),
+      projectId: el.dataset.project, dueDate: el.dataset.due }); break;
+    case "task-week": {
+      const v = el.dataset.v;
+      UI.taskWeek = v === "now" ? 0 : (UI.taskWeek || 0) + (v === "prev" ? -1 : 1);
+      render(); break;
+    }
+    case "ag-show": UI.agShow = el.dataset.v; saveUI(); render(); break;
     case "edit-task": taskDialog(task()); break;
     case "toggle-task": {
       const t = task(); if (!t) break;
