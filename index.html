@@ -724,7 +724,13 @@ details > summary::-webkit-details-marker{display:none}
 .tchip.ok{background:var(--success-soft);color:var(--success)}
 .tlist{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-block);overflow:hidden}
 .tl-g + .tl-g{border-top:1px solid var(--border)}
-.tl-gh{display:flex;align-items:center;gap:9px;padding:14px 18px 8px;font-size:12.5px;font-weight:700}
+.tl-gh{display:flex;align-items:center;gap:9px;padding:6px 10px 2px 8px;font-size:12.5px;font-weight:700}
+.tl-g.dicht .tl-gh{padding-bottom:6px}
+.tl-fold{display:flex;align-items:center;gap:9px;flex:1;min-width:0;padding:8px 10px;border:0;
+  border-radius:9px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;
+  transition:background var(--t-fast) var(--ease)}
+.tl-fold:hover{background:var(--surface-2)}
+.tl-chev{display:grid;place-items:center;color:var(--ink-3);flex:0 0 auto}
 .tl-pil{width:20px;height:5px;border-radius:9px;flex:0 0 auto;background:var(--pil,var(--axis))}
 .tl-n{font-weight:400;color:var(--ink-3);font-variant-numeric:tabular-nums}
 .tl-more{margin-left:auto;border:0;background:none;font:inherit;font-size:12px;font-weight:600;
@@ -757,7 +763,7 @@ details > summary::-webkit-details-marker{display:none}
   .tsum-d{-webkit-line-clamp:1}
   .tl-go{display:none}
   .tl-r{padding:11px 14px;gap:11px}
-  .tl-gh{padding-inline:14px}
+  .tl-gh{padding-inline:4px 6px}
 }
 /* Op een telefoon blijft alleen de datum staan, en wat te laat is: "Vandaag"
    en de prioriteit zeggen de groep en de rode streep al. */
@@ -3982,13 +3988,14 @@ try {
   if (s.pastOpen === false) UI.pastOpen = false;
   if (s.trDicht && typeof s.trDicht === "object") UI.trDicht = s.trDicht;
   if (s.trMineDicht === true) UI.trMineDicht = true;
+  if (s.tlDicht && typeof s.tlDicht === "object") UI.tlDicht = s.tlDicht;
   if (s.nwsDicht === true) UI.nwsDicht = true;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
   try {
     localStorage.setItem(KEY + ":ui", JSON.stringify({
       view: UI.view, taskView2: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
-      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht }));
+      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht, tlDicht: UI.tlDicht }));
   }
   catch (e) { /* ignore */ }
 };
@@ -4988,14 +4995,22 @@ function taskList(list) {
     ["done", "tl_done", "var(--success)"],
   ];
   UI.tlAll = UI.tlAll || {};
+  UI.tlDicht = UI.tlDicht || {};
+  /* De hele kopregel klapt een groep dicht. Dicht zie je nog hoeveel erin
+     zit, en het blijft dicht tot je hem zelf weer opent - ook na herladen. */
   return `<div class="tlist">${meta.filter(([k]) => groups[k].length).map(([k, key, pil]) => {
     const items = groups[k], all = UI.tlAll[k] || items.length <= TL_KORT;
-    return `<section class="tl-g">
-      <header class="tl-gh"><span class="tl-pil" style="--pil:${pil}"></span>${esc(tr(key))}
-        <span class="tl-n">${items.length}</span>
-        ${items.length > TL_KORT ? `<button class="tl-more" data-act="tl-more" data-v="${k}">
+    const dicht = Boolean(UI.tlDicht[k]);
+    return `<section class="tl-g${dicht ? " dicht" : ""}">
+      <header class="tl-gh">
+        <button class="tl-fold" data-act="tl-fold" data-v="${k}" aria-expanded="${!dicht}">
+          <span class="tl-chev">${ico(dicht ? "chevdown" : "chevup", "", 13)}</span>
+          <span class="tl-pil" style="--pil:${pil}"></span>${esc(tr(key))}
+          <span class="tl-n">${items.length}</span>
+        </button>
+        ${!dicht && items.length > TL_KORT ? `<button class="tl-more" data-act="tl-more" data-v="${k}">
           ${esc(UI.tlAll[k] ? tr("tl_less") : tr("tl_all", items.length))}</button>` : ""}</header>
-      ${(all ? items : items.slice(0, TL_KORT)).map(taskRow).join("")}
+      ${dicht ? "" : (all ? items : items.slice(0, TL_KORT)).map(taskRow).join("")}
     </section>`;
   }).join("")}</div>`;
 }
@@ -13051,6 +13066,12 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "task-view": UI.taskView = el.dataset.v; saveUI(); render(); break;
+    case "tl-fold": {
+      UI.tlDicht = UI.tlDicht || {};
+      if (UI.tlDicht[el.dataset.v]) delete UI.tlDicht[el.dataset.v];
+      else UI.tlDicht[el.dataset.v] = true;
+      saveUI(); render(); break;
+    }
     case "tl-more": {
       UI.tlAll = UI.tlAll || {};
       UI.tlAll[el.dataset.v] = !UI.tlAll[el.dataset.v];
