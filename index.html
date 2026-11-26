@@ -1055,6 +1055,50 @@ a.btn{text-decoration:none}
   background:none;border:0;font:inherit;font-size:12px;color:var(--ink-2);cursor:pointer;text-align:left}
 .tr-others:hover{color:var(--ink)}
 .tr-open-meta{display:none}
+
+/* ---- verslagen naast elkaar (breed scherm) ------------------------------
+   Links een smalle lijst per dag, rechts het gekozen verslag. De kop van het
+   verslag is donkerblauw, net als de timerband, en draagt dezelfde knoppen. */
+.trl-grid{display:grid;grid-template-columns:minmax(250px,.8fr) minmax(0,1.9fr);gap:16px;
+  align-items:start;margin-bottom:16px}
+.trl{position:sticky;top:76px;max-height:calc(100dvh - 96px);overflow:auto;scrollbar-width:thin;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-block);padding:6px}
+.trl-d{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-2);padding:10px 10px 4px}
+.trl-i{display:flex;flex-direction:column;gap:2px;width:100%;padding:10px 11px;border-radius:11px;
+  border:1px solid transparent;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;
+  transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
+.trl-i:hover{background:var(--surface-2)}
+.trl-i[aria-current="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+.trl-h{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.trl-t{font-size:13px;font-weight:600;line-height:1.35;min-width:0;overflow-wrap:anywhere}
+.trl-m{font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trd{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-block);overflow:hidden;
+  animation:fade var(--t-base) var(--ease)}
+.trd-h{background:var(--navy);color:var(--navy-ink);padding:18px 22px}
+.trd-e{display:block;font-size:11.5px;font-weight:700;color:var(--vv-turquoise);letter-spacing:.02em}
+.trd-t{font-size:20px;font-weight:700;letter-spacing:-.018em;line-height:1.25;margin-top:3px}
+.trd-s{display:block;font-size:12.5px;color:var(--navy-muted);margin-top:3px}
+.trd-s .cat-dot{vertical-align:middle}
+.trd-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.trd-acts .tb-btn{height:32px;padding:0 14px 0 12px;text-decoration:none}
+.trd-acts .trd-ghost{border-color:transparent;color:var(--navy-muted)}
+.trd-acts .trd-ghost:hover{color:var(--navy-ink);border-color:transparent}
+.trd-b{padding:18px 22px 20px}
+.trd-ks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.trd-k{display:flex;flex-direction:column;align-items:center;padding:11px 8px;border-radius:11px;
+  border:1px solid var(--border);background:var(--surface)}
+.trd-n{font-size:22px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+.trd-n.sig{color:var(--signal)}
+.trd-l{font-size:11.5px;color:var(--ink-2)}
+/* In het verslag zijn de sectiekoppen turquoise en de opsommingen rond, zoals
+   de huisstijl voorschrijft. */
+.tr-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--accent);
+  transform:translateY(-1px)}
+.trd .tr-sec{margin-bottom:16px}
+.trd .tr-sec-h .lbl{font-size:12.5px;font-weight:700;color:var(--accent-text);letter-spacing:0;
+  text-transform:none}
+.trd .tr-sec-h{color:var(--accent-text)}
 /* Op een telefoon past naast een lange titel geen label én een knop: het
    aantal open acties schuift dan naar de regel eronder. */
 @media (max-width:520px){
@@ -1306,6 +1350,9 @@ const STR = {
   tr_who_me:["Actie staat nu op jou","Actie staat nu op jou"],
   tr_no_meeting:["afspraak niet gevonden","afspraak niet gevonden"],
   tr_untitled:["Zonder titel","Zonder titel"],
+  tr_detail_e:["Notes · {0}, {1}","Verslag · {0}, {1}"], tr_min:["{0} min","{0} min"],
+  tr_people:["{0} people","{0} deelnemers"], tr_k_dec:["Decisions","Besluiten"],
+  tr_k_mine:["Open for you","Open voor jou"],
   sg_head:["Copilot-analyse","Copilot-analyse"],
   sg_sub:["Mogelijk nog op te pakken taken","Mogelijk nog op te pakken taken"],
   sg_d:["Every Monday Copilot reads back thirty days of mail and Teams. Whatever you decide here — make a task, put it on a meeting's agenda, already done or not yours — does not come back.",
@@ -6804,7 +6851,8 @@ function viewTranscripts() {
       <span>${esc(tr("tr_n_act", totaalActies, totaalOpen))}</span>
     </p>` : "") +
   trMijnBlok(all) +
-  (lijst.length ? byDay.map((g) => `<div class="dayhead" style="padding-left:0">
+  (lijst.length && trBreed() ? trTweeluik(lijst) :
+   lijst.length ? byDay.map((g) => `<div class="dayhead" style="padding-left:0">
       <span class="dayhead-t">${esc(dayHeading(g.day))}</span>
       <span class="xs mut">${g.items.length}</span>
     </div>
@@ -6882,8 +6930,8 @@ function trText(tekst) {
   const bullets = regels.filter((r) => /^\s*[-*•]/.test(r));
   if (bullets.length >= 2 && bullets.length === regels.length) {
     return `<ul class="grid" style="gap:4px">${regels.map((r) =>
-      `<li class="row" style="gap:8px;align-items:baseline">
-        <span class="mut" style="flex:0 0 auto">·</span>
+      `<li class="row" style="gap:9px;align-items:baseline">
+        <span class="tr-dot" aria-hidden="true"></span>
         <span class="sm2" style="flex:1;min-width:0;line-height:1.6">${esc(r.replace(/^\s*[-*•]\s*/, ""))}</span>
       </li>`).join("")}</ul>`;
   }
@@ -6974,16 +7022,6 @@ const trGroep = (t, wie, lijst, kleur) => `<div style="margin-bottom:9px">
 
 function trCard(t) {
   const m = trMeeting(t);
-  /* Jouw acties eerst. Wat anderen moeten doen is goed om te weten, maar
-     zelden de reden dat je een verslag openklapt: dat staat er ingeklapt
-     onder, per persoon. Je volledige naam telt ook als "voor mij". */
-  const mijn = t.acties.filter((a) => isMij(a.person));
-  const perPersoon = new Map();
-  t.acties.filter((a) => !isMij(a.person)).forEach((a) => {
-    if (!perPersoon.has(a.person)) perPersoon.set(a.person, []);
-    perPersoon.get(a.person).push(a);
-  });
-
   const open = UI.trOpen && UI.trOpen[t.id];
   const nogOpen = trOpenActies(t).length;
   const voorproef = open ? "" : trVoorproef(t);
@@ -7012,17 +7050,49 @@ function trCard(t) {
     return `<section class="card" id="tr-${t.id}">${rij}</section>`;
   }
 
+  return `<section class="card" id="tr-${t.id}">
+    ${rij}
+    <div class="card-b" style="padding-top:0">
+    ${trSecties(t)}
+    ${trActiesBlok(t)}
+    <div class="row wrap" style="gap:8px;margin-top:12px">${trKnoppen(t, "btn sm outline", "btn sm ghost")}</div>
+    </div></section>`;
+}
+
+/* Samenvatting en besluiten, elk apart dicht te klappen. */
+const trSecties = (t) => TR_SECTIES.map(([k, label]) => t.secties[k]
+  ? trSectie(k, lbl(label), trText(t.secties[k])) : "").join("");
+
+/* Naar het origineel in Teams, en de afspraak zelf aanwijzen. De klassen
+   verschillen per plek: op de donkere kop van het verslag zijn het de knoppen
+   van de timerband. */
+function trKnoppen(t, cls, clsGhost) {
+  const m = trMeeting(t);
   const chat = m ? teamsChatUrl(m.onlineUrl) : null;
   const url = t.link || chat;
   /* Zelf koppelen kan alleen als er op die dag iets te kiezen valt. */
   const kiesbaar = trDagAfspraken(t).length > (m ? 1 : 0);
+  /* Het origineel staat in Teams: opname, samenvatting en de volledige
+     transcriptie zitten bij elkaar in de vergaderchat. Levert Copilot zelf een
+     link mee, dan wint die - die wijst preciezer. */
+  return `${url ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
+      ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : ""}
+    ${kiesbaar ? `<button class="${clsGhost}" data-act="tr-link" data-id="${t.id}">
+      ${ico("meetings", "", 13)} ${esc(m ? tr("tr_relink") : tr("tr_link"))}</button>` : ""}`;
+}
 
-  return `<section class="card" id="tr-${t.id}">
-    ${rij}
-    <div class="card-b" style="padding-top:0">
-    ${TR_SECTIES.map(([k, label]) => t.secties[k]
-      ? trSectie(k, lbl(label), trText(t.secties[k])) : "").join("")}
-    ${t.acties.length ? trSectie("acties", tr("tr_actions"), `
+/* Jouw acties eerst. Wat anderen moeten doen is goed om te weten, maar
+   zelden de reden dat je een verslag opent: dat staat er ingeklapt onder,
+   per persoon. Je volledige naam telt ook als "voor mij". */
+function trActiesBlok(t) {
+  const mijn = t.acties.filter((a) => isMij(a.person));
+  const perPersoon = new Map();
+  t.acties.filter((a) => !isMij(a.person)).forEach((a) => {
+    if (!perPersoon.has(a.person)) perPersoon.set(a.person, []);
+    perPersoon.get(a.person).push(a);
+  });
+  const nogOpen = trOpenActies(t).length;
+  return t.acties.length ? trSectie("acties", tr("tr_actions"), `
       ${mijn.length ? trGroep(t, tr("tr_me"), mijn, "var(--info)") : ""}
       ${perPersoon.size ? (() => {
         /* Heb je zelf niets uit dit overleg, dan valt er niets weg te klappen:
@@ -7041,18 +7111,95 @@ function trCard(t) {
       /* Dicht moet je nog zien dat er iets openstaat, anders vergeet je het. */
       `${t.acties.length === 1 ? tr("tr_card_1") : tr("tr_card_n", t.acties.length)}${
         nogOpen ? ` · ${tr("tr_card_open_n", nogOpen)}` : ""}`)
-    : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`}
-    <div class="row wrap" style="gap:8px;margin-top:12px">
-      ${/* Het origineel staat in Teams: opname, samenvatting en de volledige
-           transcriptie zitten bij elkaar in de vergaderchat. Levert Copilot
-           zelf een link mee, dan wint die - die wijst preciezer. */
-        url ? `<a class="btn sm outline" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
-        ${ico("video", "", 13)} ${esc(t.link ? tr("tr_open_transcript") : tr("tr_open_chat"))}</a>` : ""}
-      ${kiesbaar ? `<button class="btn sm ghost" data-act="tr-link" data-id="${t.id}">
-        ${ico("meetings", "", 13)} ${esc(m ? tr("tr_relink") : tr("tr_link"))}</button>` : ""}
-    </div>
-    </div></section>`;
+    : `<p class="xs mut">${esc(tr("tr_no_actions"))}</p>`;
 }
+
+/* ---- verslagen naast elkaar ---------------------------------------------
+   Op een breed scherm leest Transcripties als een inbox: links de verslagen
+   per dag, rechts het verslag dat je kiest, met een donkerblauwe kop, drie
+   kerncijfers en dan pas de tekst. Op een smal scherm is daar geen plek
+   voor en blijven het de uitklapkaarten hierboven.
+------------------------------------------------------------------------- */
+const TR_BREED = "(min-width:1000px)";
+const trBreed = () => window.matchMedia(TR_BREED).matches;
+
+/* Welk verslag rechts staat: wat je koos, anders het nieuwste met iets open
+   voor jou, anders gewoon het nieuwste. */
+function trGekozen(lijst) {
+  const sel = lijst.find((t) => t.id === UI.trSel);
+  if (sel) return sel;
+  return lijst.find((t) => trOpenActies(t).some((a) => isMij(a.person))) || lijst[0] || null;
+}
+
+/* Besluiten tellen: Copilot schrijft ze als opsomming, één per regel. */
+const trTelRegels = (s) => String(s || "").split("\n").filter((r) => r.trim()).length;
+
+function trLijstItem(t, actief) {
+  const m = trMeeting(t);
+  const mijnOpen = trOpenActies(t).filter((a) => isMij(a.person)).length;
+  const p = m && m.projectId && DB.projects.find((x) => x.id === m.projectId);
+  return `<button class="trl-i" data-act="tr-sel" data-id="${t.id}" aria-current="${actief}">
+    <span class="trl-h"><span class="trl-t">${esc(t.title || tr("tr_untitled"))}</span>
+      ${mijnOpen ? `<span class="tchip sig" title="${esc(tr("tr_mine_t"))}">${mijnOpen}</span>` : ""}</span>
+    <span class="trl-m">${esc(fmtTime(`${t.day}T${t.time}`))}${m ? ` · ${esc(tr("tr_min", meetingMinutes(m)))}` : ""}${
+      p ? ` · ${esc(p.name)}` : ""}</span>
+  </button>`;
+}
+
+function trDetail(t) {
+  const m = trMeeting(t);
+  const mijnOpen = trOpenActies(t).filter((a) => isMij(a.person)).length;
+  const besluiten = trTelRegels(t.secties && t.secties.besluiten);
+  const tegel = (n, label, cls = "") => `<div class="trd-k"><span class="trd-n ${cls}">${n}</span>
+    <span class="trd-l">${esc(label)}</span></div>`;
+  return `<section class="trd" id="tr-${t.id}">
+    <header class="trd-h">
+      <span class="trd-e">${esc(tr("tr_detail_e", dayHeading(t.day), t.time || ""))}</span>
+      <h2 class="trd-t">${esc(t.title || tr("tr_untitled"))}</h2>
+      <span class="trd-s">${m ? esc([m.location, tr("tr_min", meetingMinutes(m)),
+        (m.attendees || []).length ? tr("tr_people", m.attendees.length) : ""].filter(Boolean).join(" · "))
+        : esc(tr("tr_no_meeting"))}${trLabels(m)}</span>
+      <div class="trd-acts">
+        ${m ? `<button class="tb-btn" data-act="peek-meeting" data-id="${m.id}">${ico("meetings", "", 13)}
+          <span>${esc(tr("tr_open_meeting"))}</span></button>` : ""}
+        ${trKnoppen(t, "tb-btn", "tb-btn trd-ghost")}
+      </div>
+    </header>
+    <div class="trd-b">
+      <div class="trd-ks">
+        ${tegel(besluiten, tr("tr_k_dec"))}
+        ${tegel(t.acties.length, tr("tr_actions"))}
+        ${tegel(mijnOpen, tr("tr_k_mine"), mijnOpen ? "sig" : "")}
+      </div>
+      ${trActiesBlok(t)}
+      ${trSecties(t)}
+    </div>
+  </section>`;
+}
+
+function trTweeluik(lijst) {
+  const gekozen = trGekozen(lijst);
+  const byDay = [];
+  lijst.forEach((t) => {
+    const last = byDay[byDay.length - 1];
+    if (last && last.day === t.day) last.items.push(t);
+    else byDay.push({ day: t.day, items: [t] });
+  });
+  return `<div class="trl-grid">
+    <nav class="trl" aria-label="${esc(tr("nav_transcripts"))}">${byDay.map((g) => `
+      <p class="trl-d">${esc(dayHeading(g.day))}</p>
+      ${g.items.map((t) => trLijstItem(t, gekozen && t.id === gekozen.id)).join("")}`).join("")}
+    </nav>
+    ${gekozen ? trDetail(gekozen) : ""}
+  </div>`;
+}
+/* Wordt het venster smaller of breder dan de grens, dan wisselt de indeling
+   mee in plaats van te wachten op je volgende klik. */
+try {
+  window.matchMedia(TR_BREED).addEventListener("change", () => {
+    if (UI.view === "transcripts" && !UI.detail) render();
+  });
+} catch (e) { /* ignore */ }
 
 /* Vindt de app de afspraak niet, of pakt hij de verkeerde, dan wijs je hem
    zelf aan. Dat wint daarna altijd van het zoeken. */
@@ -12998,8 +13145,9 @@ document.addEventListener("click", (e) => {
     }
     /* Vanaf de pagina van een afspraak naar het verslag: open hem alvast en
        spring ernaartoe, anders zoek je hem in een lijst van dertig. */
+    case "tr-sel": UI.trSel = id; render(); break;
     case "tr-open": {
-      UI.trOpen = { [id]: true }; UI.trFilter = "all";
+      UI.trOpen = { [id]: true }; UI.trSel = id; UI.trFilter = "all";
       go("transcripts");
       setTimeout(() => {
         const el2 = document.getElementById(`tr-${id}`);
