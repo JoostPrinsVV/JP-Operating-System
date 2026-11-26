@@ -271,6 +271,21 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 .card-t{font-size:13.5px;font-weight:600;letter-spacing:-.012em}
 .card-d{font-size:11.5px;color:var(--ink-2);margin-top:3px;line-height:1.5}
 .card-b{padding:0 18px 18px}
+/* Een inklapbare kaart: de kop is de knop, met een pijltje rechts. Dicht
+   houdt hij alleen zijn kop over. */
+.card-fold{display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0;margin:-6px -8px;
+  padding:6px 8px;border:0;border-radius:10px;background:none;color:inherit;font:inherit;
+  text-align:left;cursor:pointer;transition:background var(--t-fast) var(--ease)}
+.card-fold > span:first-child{flex:1}
+.card-fold:hover{background:var(--surface-2)}
+.card-chev{display:grid;place-items:center;flex:0 0 auto;color:var(--ink-3);padding-top:2px}
+.card-fold:hover .card-chev,.fold-kop:hover .card-chev{color:var(--ink)}
+.card.dicht .card-h{padding-bottom:17px}
+.fold-kop{display:flex;align-items:center;gap:9px;width:100%;margin:0 0 11px -6px;padding:5px 6px;
+  border:0;border-radius:9px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;
+  transition:background var(--t-fast) var(--ease)}
+.fold-kop:hover{background:var(--surface-2)}
+.fold-kop[aria-expanded="false"]{margin-bottom:0}
 /* Only things you can act on lift on hover. */
 .card.lift:hover{border-color:var(--ink-3)}
 
@@ -4030,13 +4045,14 @@ try {
   if (s.trDicht && typeof s.trDicht === "object") UI.trDicht = s.trDicht;
   if (s.trMineDicht === true) UI.trMineDicht = true;
   if (s.tlDicht && typeof s.tlDicht === "object") UI.tlDicht = s.tlDicht;
+  if (s.fold && typeof s.fold === "object") UI.fold = s.fold;
   if (s.nwsDicht === true) UI.nwsDicht = true;
 } catch (e) { /* ignore */ }
 const saveUI = () => {
   try {
     localStorage.setItem(KEY + ":ui", JSON.stringify({
       view: UI.view, taskView2: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
-      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht, tlDicht: UI.tlDicht }));
+      trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht, tlDicht: UI.tlDicht, fold: UI.fold }));
   }
   catch (e) { /* ignore */ }
 };
@@ -4187,13 +4203,42 @@ function renameViewDialog(v) {
    plaats van als zes blokken. */
 let CARD_PIL = 0;
 const PIL_KLEUREN = ["var(--accent)", "var(--c1)", "var(--vv-petrolblauw)", "var(--signal)"];
-const card = (title, body, desc = "", actions = "") => {
+/* `fold` maakt een kaart inklapbaar: een sleutel ("prj-done"), of
+   { key, closed: true } als hij standaard dicht hoort. De hele kop is dan de
+   knop. Wat je kiest wordt onthouden, per soort kaart en niet per project:
+   wie de afgeronde taken bij het ene project wegklapt, wil dat bij het
+   volgende ook. */
+const FOLD_DEFAULT = {};
+const foldDicht = (key) => {
+  const s = (UI.fold || {})[key];
+  return s ? s === "dicht" : Boolean(FOLD_DEFAULT[key]);
+};
+const card = (title, body, desc = "", actions = "", fold = null) => {
   const kleur = PIL_KLEUREN[CARD_PIL++ % PIL_KLEUREN.length];
-  return `<section class="card">
-  <div class="card-h"><div><span class="pilaar" style="--pil:${kleur}"></span>
+  const f = typeof fold === "string" ? { key: fold } : fold;
+  if (f && f.closed) FOLD_DEFAULT[f.key] = true;
+  const dicht = f ? foldDicht(f.key) : false;
+  const kop = `<span class="pilaar" style="--pil:${kleur}"></span>
   <h2 class="card-t">${esc(title)}</h2>
-  ${desc ? `<p class="card-d">${esc(desc)}</p>` : ""}</div>${actions}</div>
-  <div class="card-b">${body}</div></section>`;
+  ${desc ? `<p class="card-d">${esc(desc)}</p>` : ""}`;
+  return `<section class="card${dicht ? " dicht" : ""}">
+  <div class="card-h">${f
+    ? `<button class="card-fold" data-act="card-fold" data-v="${esc(f.key)}" aria-expanded="${!dicht}">
+        <span style="min-width:0">${kop}</span>
+        <span class="card-chev">${ico(dicht ? "chevdown" : "chevup", "", 14)}</span></button>`
+    : `<div>${kop}</div>`}${actions}</div>
+  ${dicht ? "" : `<div class="card-b">${body}</div>`}</section>`;
+};
+/* Dezelfde kaart, met de vouwsleutel vooraan: zo staat bij elke aanroep
+   meteen zichtbaar dat hij dicht kan. */
+const cardF = (fold, title, body, desc = "", actions = "") => card(title, body, desc, actions, fold);
+/* Hetzelfde voor een kopje boven een groep zonder kaart eromheen, zoals de
+   domeinen op Projecten. */
+const foldKop = (key, inner, closed = false) => {
+  if (closed) FOLD_DEFAULT[key] = true;
+  const dicht = foldDicht(key);
+  return `<button class="fold-kop" data-act="card-fold" data-v="${esc(key)}" aria-expanded="${!dicht}">
+    <span class="card-chev">${ico(dicht ? "chevdown" : "chevup", "", 13)}</span>${inner}</button>`;
 };
 const empty = (title, desc = "", action = "") =>
   `<div class="empty"><b>${esc(title)}</b>${desc ? `<span class="xs">${esc(desc)}</span>` : ""}${action}</div>`;
@@ -5382,13 +5427,13 @@ function viewProjects() {
         aria-pressed="${f.status === v}">${esc(l)}</button>`).join("")}</div>
     <span class="xs mut" style="margin-left:auto">${zichtbaar.length} ${esc(tr("pr_count"))}</span>
   </div>` +
+  /* Elk domein klapt dicht met een klik op zijn naam. */
   (groepen.length ? groepen.map((grp) => `<section style="margin-bottom:26px">
-      <div class="row" style="gap:9px;margin-bottom:11px;align-items:center">
+      ${foldKop(`prj-dom-${grp.k || "geen"}`, `
         <span class="prj-dot" style="background:${pDomainColor(grp.k)}"></span>
         <h2 class="card-t">${esc(grp.naam)}</h2>
-        <span class="xs mut tab">${grp.items.length}</span>
-      </div>
-      <div class="grid cards">${grp.items.map(projectTile).join("")}</div>
+        <span class="xs mut tab">${grp.items.length}</span>`)}
+      ${foldDicht(`prj-dom-${grp.k || "geen"}`) ? "" : `<div class="grid cards">${grp.items.map(projectTile).join("")}</div>`}
     </section>`).join("")
     : empty(tr("pr_none"), tr("pr_none_d"),
         `<button class="btn sm" data-act="new-project" style="margin-top:10px">${ico("plus")} ${esc(tr("pr_new"))}</button>`));
@@ -5912,7 +5957,7 @@ document.addEventListener("pointercancel", () => {
    kleuren; die kleur is meteen de kleur op de rijen en in het weekrooster. */
 function categoryCard() {
   const cats = allCategories();
-  return card(tr("m_cats"), (cats.length ? `<div class="row wrap" style="gap:6px">
+  return cardF("m-cats", tr("m_cats"), (cats.length ? `<div class="row wrap" style="gap:6px">
     ${cats.map((c) => `<button class="cat-chip" data-act="cat-edit" data-id="${c.id}"
       title="${esc(c.count === 1 ? tr("m_cat_1") : tr("m_cat_n", c.count))}">
       <span class="cat-dot" style="background:${catHex(c.color)}"></span>${esc(c.name)}
@@ -6085,7 +6130,7 @@ function viewMeetings() {
         return card(tr("m_past"), body, "", eerder.length ? knop : "");
       })()}
     </div>
-    <div class="grid">${card(`Open follow-ups (${openActions.length})`, openActions.length
+    <div class="grid">${cardF("m-follow", `Open follow-ups (${openActions.length})`, openActions.length
       ? `<ul class="divide">${openActions.map((a) => {
         const m = DB.meetings.find((x) => x.id === a.meetingId);
         return `<li><button class="tsk-t" data-act="open-meeting" data-id="${a.meetingId}" style="padding:9px 0">
@@ -6165,13 +6210,13 @@ function viewMeetingDetail(id) {
       ${transcriptCard(m) || trAddCard(m)}
       ${mailCard(m)}
       ${attendeeCard(m)}
-      ${m.agenda ? card(tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
-      ${card(tr("m_notes"), m.notes ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.notes)}</p>`
+      ${m.agenda ? cardF("md-agenda", tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
+      ${cardF("md-notes", tr("m_notes"), m.notes ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.notes)}</p>`
         : `<p class="xs mut">${esc(tr("m_nonotes"))}</p>`)}
-      ${card(tr("m_decisions"), m.decisions ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`
+      ${cardF("md-dec", tr("m_decisions"), m.decisions ? `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`
         : `<p class="xs mut">${esc(tr("m_nodec"))}</p>`)}
     </div>
-    ${card(tr("m_actions"), (acts.length ? `<ul class="divide">${acts.map((a) => {
+    ${cardF("md-acts", tr("m_actions"), (acts.length ? `<ul class="divide">${acts.map((a) => {
       const done = a.status === "done" || a.status === "cancelled";
       return `<li class="row" style="gap:9px;padding:9px 0;align-items:flex-start">
         <button class="chk" role="checkbox" aria-checked="${a.status === "done"}" data-act="toggle-action" data-id="${a.id}"
@@ -6514,7 +6559,7 @@ function attendeeCard(m) {
   };
   const extern = list.filter((a) => attEmail(a) && !mine(a)).length;
 
-  return card(tr("dl_attendees"), `<ul class="grid" style="gap:1px">
+  return cardF("md-att", tr("dl_attendees"), `<ul class="grid" style="gap:1px">
     ${list.map((a) => {
       const naam = attName(a), mail = attEmail(a);
       return `<li class="row" style="gap:9px;padding:5px 0;align-items:baseline">
@@ -6542,12 +6587,12 @@ function mailCard(m) {
   const r = mailFor(m);
   if (!r) return "";                               // geen mailbestand gelezen
   if (!r.hits.length) {
-    return card(tr("ml_title"),
+    return cardF("md-mail", tr("ml_title"),
       `<p class="xs mut">${esc(r.people ? tr("ml_none", r.people) : tr("ml_nopeople"))}</p>`,
       tr("ml_sub", MAIL.messages.length));
   }
 
-  return card(tr("ml_title"), `<ul class="grid" style="gap:1px">
+  return cardF("md-mail", tr("ml_title"), `<ul class="grid" style="gap:1px">
     ${r.hits.map(({ msg, reasons, count, after }) => `<li class="src${msg.webLink ? " ml-row" : ""}" style="padding:8px 6px">
       <span class="ml-dot ${msg.folder === "sent" ? "sent" : ""}"
         title="${esc(msg.folder === "sent" ? tr("ml_sent") : tr("ml_inbox"))}"></span>
@@ -7102,7 +7147,7 @@ function transcriptCard(m) {
   const chat = teamsChatUrl(m.onlineUrl);
   const url = t.link || chat;
 
-  return card(tr("tr_card"),
+  return cardF("md-tr", tr("tr_card"),
     `${kort ? `<p class="sm2" style="line-height:1.6">${esc(truncate(kort.split("\n")
        .map((r) => r.replace(/^\s*[-*•]\s*/, "").trim()).filter(Boolean).join(" · "), 260))}</p>` : ""}
      <div class="row wrap" style="gap:8px;margin-top:${kort ? "11px" : "0"}">
@@ -7952,7 +7997,7 @@ function briefingCard(m) {
     <p class="xs mut" style="margin-top:2px">${esc(tr("m_brief_ai_note"))}</p>
   </div>`;
 
-  return card(tr("m_brief"), `
+  return cardF("md-brief", tr("m_brief"), `
     ${punten}
     ${copBlok}
     ${prev ? line(tr("m_brief_prev", fmtDate(prev.startsAt.slice(0, 10))),
@@ -8104,7 +8149,7 @@ function viewDevelopment() {
     <div class="grid">${LTYPES.map(([tv, tl]) => {
       const items = DB.learning.filter((l) => l.type === tv && matches(l));
       if (!items.length) return "";
-      return card(`${lbl(tl)} (${items.length})`, `<ul class="divide">${items.map((l) => {
+      return cardF(`dev-${tv}`, `${lbl(tl)} (${items.length})`, `<ul class="divide">${items.map((l) => {
         const od = l.status !== "completed" && overdue(l.target);
         return `<li style="padding:10px 0">
           <div class="row spread" style="align-items:flex-start;gap:8px">
@@ -8128,18 +8173,18 @@ function viewDevelopment() {
       df === "all" ? "Add the certifications and courses you are working towards this year." : "")}</div>
 
     <div class="grid">
-      ${card("Study hours per month",
+      ${cardF("dev-chart", "Study hours per month",
         `<p class="legend" style="margin-bottom:6px"><span><i style="background:var(--c1)"></i>Study hours</span></p>` +
         seriesChart({ points: buckets, color: "var(--c1)", unit: "h", type: "bar", h: 140 }),
         "Logged sessions across the last 12 months")}
-      ${card(tr("d_recent"), DB.sessions.length
+      ${cardF("dev-recent", tr("d_recent"), DB.sessions.length
         ? `<ul class="divide">${[...DB.sessions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10).map((s) =>
           `<li class="row" style="gap:10px;padding:6px 0">
             <span class="xs mut tab" style="width:60px;flex:0 0 auto">${esc(fmtDate(s.date))}</span>
             <span class="sm2 trunc" style="flex:1">${esc(s.topic || tr("d_study"))}</span>
             <span class="sm2 tab" style="font-weight:500">${Math.round(s.minutes / 6) / 10}h</span></li>`).join("")}</ul>`
         : empty(tr("d_nostudy")))}
-      ${doneItems.length ? card(`Completed (${doneItems.length})`, `<ul class="grid" style="gap:5px">${doneItems.map((l) =>
+      ${doneItems.length ? cardF({ key: "dev-done", closed: true }, `Completed (${doneItems.length})`, `<ul class="grid" style="gap:5px">${doneItems.map((l) =>
         `<li class="row sm2" style="gap:7px"><span style="color:var(--success)">${ico("award", "", 13)}</span>
         <span class="trunc">${esc(l.title)}</span></li>`).join("")}</ul>`) : ""}
     </div></div>`;
@@ -8260,7 +8305,7 @@ function viewSettings() {
           style="padding:7px 16px;font-size:13px">${l}</button>`).join("")}
     </div>`, tr("s_lang_d"))}
 
-    ${card(tr("s_profile"), `<form id="profile-form" class="grid" style="gap:11px">
+    ${cardF("set-s_profile", tr("s_profile"), `<form id="profile-form" class="grid" style="gap:11px">
       <div class="f2">
         <label class="field"><span class="lbl">${esc(tr("s_name"))}</span><input class="inp" name="name" value="${esc(p.name)}"></label>
         <label class="field"><span class="lbl">${esc(tr("s_role"))}</span><input class="inp" name="role" value="${esc(p.role)}"></label>
@@ -8271,7 +8316,7 @@ function viewSettings() {
       <div class="row" style="justify-content:flex-end"><button class="btn sm" type="submit">${esc(tr("s_save"))}</button></div>
     </form>`, tr("s_cap_d"))}
 
-    ${card(tr("s_pattern"), (() => {
+    ${cardF("set-s_pattern", tr("s_pattern"), (() => {
       const w = Array.isArray(p.workDays) ? p.workDays : [0, 1, 2, 3, 4];
       const fte = Number(p.fte ?? 1);
       const freeCount = Math.round((1 - fte) * 5 * 10) / 10;
@@ -8312,7 +8357,7 @@ function viewSettings() {
       </form>`;
     })(), tr("s_pattern_d"))}
 
-    ${card(tr("s_agenda"), `<div class="seg" role="group" aria-label="${esc(tr("s_agenda"))}">
+    ${cardF("set-s_agenda", tr("s_agenda"), `<div class="seg" role="group" aria-label="${esc(tr("s_agenda"))}">
       ${AGENDA_VIEWS.map(([k, naam]) => `<button type="button" data-act="agenda-view" data-v="${k}"
         aria-pressed="${agendaView()[0] === k}" style="padding:7px 15px;font-size:13px">${esc(lbl(naam))}</button>`).join("")}
     </div>
@@ -8325,7 +8370,7 @@ function viewSettings() {
     </dl>
     <p class="xs mut" style="margin-top:11px">${esc(tr("s_agenda_note"))}</p>`, tr("s_agenda_d"))}
 
-    ${card(tr("s_tabs"), `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:2px 16px">
+    ${cardF("set-s_tabs", tr("s_tabs"), `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:2px 16px">
       ${switchableViews().map(([v, l, i]) => {
         const on = viewOn(v);
         return `<label class="row" style="gap:9px;padding:6px 0;cursor:pointer">
@@ -8338,7 +8383,7 @@ function viewSettings() {
     </div>
     <p class="xs mut" style="margin-top:10px">${esc(tr("s_tabs_note"))}</p>`, tr("s_tabs_d"))}
 
-    ${card(tr("s_scoring"), `<dl class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+    ${cardF("set-s_scoring", tr("s_scoring"), `<dl class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
       ${[["s_w_urg", W.urgency, "s_w_urg_d"], ["s_w_flag", W.flag, "s_w_flag_d"],
          ["s_w_str", W.strategic, "s_w_str_d"], ["s_w_goal", W.goal, "s_w_goal_d"],
          ["s_w_mom", W.momentum, "s_w_mom_d"]].map(([l, w2, h]) =>
@@ -8348,7 +8393,7 @@ function viewSettings() {
     </dl>
     <p class="xs mut" style="margin-top:10px">${esc(tr("s_noage"))}</p>`, tr("s_scoring_d"))}
 
-    ${card(tr("s_data"), `<p class="sm2 mut" style="line-height:1.6">${esc(tr("s_data_note"))}</p>
+    ${cardF("set-s_data", tr("s_data"), `<p class="sm2 mut" style="line-height:1.6">${esc(tr("s_data_note"))}</p>
       <p class="sm2 row" style="gap:7px;margin-top:12px;font-weight:500;
         color:${backupStale() ? "var(--warning)" : "var(--success)"}">
         ${ico(backupStale() ? "alert" : "check", "", 14)}
@@ -8372,7 +8417,7 @@ function viewSettings() {
       <p class="xs mut">${esc(tr("s_counts", DB.tasks.length, DB.projects.length, DB.ideas.length,
         DB.meetings.length, DB.sessions.length))}</p>`, tr("s_data_d"))}
 
-    ${card(tr("s_about"), `<p class="sm2 mut" style="line-height:1.6">${esc(tr("s_about_d"))}</p>
+    ${cardF("set-s_about", tr("s_about"), `<p class="sm2 mut" style="line-height:1.6">${esc(tr("s_about_d"))}</p>
       <p class="xs mut" style="margin-top:10px">${esc(tr("s_keys"))}
         <kbd>⌘K</kbd> ${esc(tr("s_k_jump"))} · <kbd>⌘B</kbd> ${esc(tr("s_k_menu"))} ·
         <kbd>⌘⇧N</kbd> ${esc(tr("s_k_new"))} · <kbd>Esc</kbd> ${esc(tr("s_k_close"))}</p>`)}
@@ -8718,12 +8763,12 @@ function viewHours() {
   </div>
 
   <div class="grid cols2" style="margin-bottom:16px">
-    ${card(tr("h_perday"),
+    ${cardF("h-day", tr("h_perday"),
       `<p class="legend" style="margin-bottom:6px"><span><i style="background:var(--c1)"></i>${esc(tr("nav_hours"))}</span></p>` +
       seriesChart({ points: dayPoints, color: "var(--c1)", unit: LANG === "nl" ? "u" : "h",
         type: "bar", h: 150, target: Math.round((cap / 5) * 10) / 10 }), tr("h_perday_d"))}
 
-    ${card(tr("h_perclient"), (perClient.length || internalMin) ? `<ul class="grid" style="gap:4px">
+    ${cardF("h-client", tr("h_perclient"), (perClient.length || internalMin) ? `<ul class="grid" style="gap:4px">
       ${perClient.map(({ c, min }) => `<li><button class="tsk-t" data-act="hours-client" data-v="${c.id}"
           aria-pressed="${hf.client === c.id}" style="padding:5px 6px;border-radius:9px">
         <span class="row spread" style="align-items:baseline;gap:8px">
@@ -8744,7 +8789,7 @@ function viewHours() {
        here beats retyping a time you already agreed to in your calendar. */
     const todo = unbookedMeetings(monday);
     if (!todo.length) return "";
-    return card(tr("h_book_card"), `<ul class="grid" style="gap:4px">
+    return cardF("h-book", tr("h_book_card"), `<ul class="grid" style="gap:4px">
       ${todo.slice(0, 12).map((m) => {
         const c = guessClient(m);
         return `<li><button class="tsk-t" data-act="book-meeting" data-id="${m.id}"
@@ -8797,7 +8842,7 @@ function viewHours() {
   }).join("")}</div>`
     : empty(tr("h_noentries"), tr("h_noentries_d"))}
 
-  ${card(tr("h_afas"), afasBlock(days), tr("h_afas_d"),
+  ${cardF("h-afas", tr("h_afas"), afasBlock(days), tr("h_afas_d"),
     `<button class="btn sm outline" data-act="copy-afas">${ico("copy", "", 13)} ${esc(tr("h_afas_copy"))}</button>`)}
 
   <div style="margin-top:16px">${clientsCard()}</div>`;
@@ -8811,7 +8856,7 @@ function clientsCard() {
     weeks: DB.planning.filter((p) => p.clientId === c.id).length,
   })).sort((a, b) => b.min - a.min || a.c.name.localeCompare(b.c.name));
 
-  return card(tr("h_clientlist"), rows.length ? `<div class="tbl-wrap"><table>
+  return cardF("h-clients", tr("h_clientlist"), rows.length ? `<div class="tbl-wrap"><table>
     <thead><tr><th>${esc(tr("p_client"))}</th><th>${esc(tr("h_sector"))}</th>
       <th style="text-align:right">${esc(tr("h_booked_total"))}</th>
       <th style="text-align:right">${esc(tr("h_weeks_planned"))}</th></tr></thead>
@@ -9197,7 +9242,7 @@ function viewPlanning() {
   ${stripCard(all)}
 
   ${!perClient.length ? "" : `<div style="margin:16px 0">
-    ${card(tr("p_perclient"),
+    ${cardF("p-client", tr("p_perclient"),
       `<ul class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:4px 18px">${perClient.map(({ c, n }) =>
       `<li><button class="tsk-t" data-act="plan-client" data-v="${c.id}"
           aria-pressed="${f.client === c.id}" style="padding:5px 6px;border-radius:9px"
@@ -9438,7 +9483,8 @@ function viewGoalDetail(id) {
         `<button class="btn sm" data-act="edit-goal" data-id="${g.id}" style="margin-top:10px">${ico("pencil", "", 13)} ${esc(tr("g_smart_write"))}</button>`),
     tr("g_smart_of", filled),
     filled && filled < 5
-      ? `<button class="btn sm ghost" data-act="edit-goal" data-id="${g.id}">${esc(tr("g_smart_finish"))}</button>` : "") +
+      ? `<button class="btn sm ghost" data-act="edit-goal" data-id="${g.id}">${esc(tr("g_smart_finish"))}</button>` : "",
+    "g-smart") +
 
   `<div class="grid split" style="margin-top:12px">
     ${card(tr("g_progress"), `<p class="tab" style="font-size:30px;font-weight:600;letter-spacing:-.03em;line-height:1">${p}%</p>
@@ -9446,7 +9492,7 @@ function viewGoalDetail(id) {
       <p class="xs mut">${g.manualProgress !== null && g.manualProgress !== undefined
         ? tr("g_manual_d")
         : tr("g_calc")}</p>`)}
-    ${card(tr("g_milestones"), milestoneList(g.id))}
+    ${card(tr("g_milestones"), milestoneList(g.id), "", "", "g-miles")}
   </div>
   <div class="grid cols2" style="margin-top:12px">
     ${card(tr("g_kpis"), kpis.length ? `<ul class="grid" style="gap:11px">${kpis.map((k) => {
@@ -9455,7 +9501,7 @@ function viewGoalDetail(id) {
         <span class="xs trunc">${esc(k.name)}</span>
         <span class="xs tab" style="font-weight:500">${num(ytd)}<span class="mut" style="font-weight:400"> / ${num(k.target)} ${esc(k.unit)}</span></span>
       </div><div style="margin-top:4px">${meterEl(att, slotColor(k.slot))}</div></li>`;
-    }).join("")}</ul>` : empty(tr("g_nokpi")))}
+    }).join("")}</ul>` : empty(tr("g_nokpi")), "", "", "g-kpis")}
 
     ${card(tr("g_projects"), projects.length ? `<ul class="divide">${projects.map((pr) =>
       `<li><button class="tsk-t" data-act="open-project" data-id="${pr.id}" style="padding:9px 0;display:flex;gap:10px;align-items:center">
@@ -9463,11 +9509,11 @@ function viewGoalDetail(id) {
         <span class="tsk-m"><span>${esc(tr("s_w_str"))} ${pr.strategicValue}/5</span>
         ${pr.deadline ? `<span>${esc(fmtDate(pr.deadline))}</span>` : ""}</span></span>
         ${badge(PSTAT, pr.status)}</button></li>`).join("")}</ul>`
-      : empty(tr("g_noproj")))}
+      : empty(tr("g_noproj")), "", "", "g-projs")}
   </div>
   <div style="margin-top:12px">${card(`${tr("g_opentasks")} (${tasks.length})`,
     tasks.length ? `<div>${tasks.map((t) => taskRow(t, { hideGoal: true })).join("")}</div>`
-      : empty(tr("g_notasks"), tr("g_notasks_d")))}</div>`;
+      : empty(tr("g_notasks"), tr("g_notasks_d")), "", "", "g-tasks")}</div>`;
 }
 
 /* ---- project detail ---------------------------------------------------- */
@@ -9512,7 +9558,7 @@ function projectTimeline(p) {
       ${x.note ? `<span class="tl-n">${esc(truncate(x.note, 220))}</span>` : ""}
     </${s.act ? "button" : "span"}>`;
   };
-  return card(tr("pr_timeline"), `<div class="tl">${items.map(rij).join("")}</div>`, tr("pr_timeline_d"));
+  return card(tr("pr_timeline"), `<div class="tl">${items.map(rij).join("")}</div>`, tr("pr_timeline_d"), "", "prj-tl");
 }
 
 /* De onderdelen van een project, elk met zijn eigen taken eronder. Dichtgeklapt
@@ -9566,7 +9612,8 @@ function subprojectCard(p) {
     (los.length ? `<p class="xs mut" style="margin-top:11px;padding-top:9px;border-top:1px solid var(--border)">
       ${esc(tr("sp_loose", los.length))}</p>` : ""),
     tr("sp_d"),
-    `<button class="btn sm ghost" data-act="new-sub" data-id="${p.id}">${ico("plus", "", 13)} ${esc(tr("sp_new"))}</button>`);
+    `<button class="btn sm ghost" data-act="new-sub" data-id="${p.id}">${ico("plus", "", 13)} ${esc(tr("sp_new"))}</button>`,
+    "prj-subs");
 }
 
 function subDialog(sub, projectId) {
@@ -9639,20 +9686,25 @@ function viewProjectDetail(id) {
       ${card(`${tr("g_opentasks")} (${open.length})`, open.length
         ? `<div>${open.map((t) => taskRow(t, { hideProject: true })).join("")}</div>`
         : empty(tr("pr_notasks"), tr("pr_notasks_d")),
-        "", `<button class="btn sm ghost" data-act="new-task" data-project="${p.id}">${ico("plus", "", 13)} ${esc(tr("pr_addtask"))}</button>`)}
+        "", `<button class="btn sm ghost" data-act="new-task" data-project="${p.id}">${ico("plus", "", 13)} ${esc(tr("pr_addtask"))}</button>`,
+        "prj-open")}
       ${subprojectCard(p)}
       ${projectTimeline(p)}
-      ${done.length ? card(`${tr("pr_completed")} (${done.length})`,
-        `<div>${done.slice(0, 15).map((t) => taskRow(t, { hideProject: true })).join("")}</div>`) : ""}
+      ${/* Afgerond is geschiedenis: standaard dicht, en open zie je ze allemaal,
+           het nieuwste eerst. */
+        done.length ? card(`${tr("pr_completed")} (${done.length})`,
+        `<div>${[...done].sort((a, b) => String(b.completedAt || "").localeCompare(String(a.completedAt || "")))
+          .map((t) => taskRow(t, { hideProject: true })).join("")}</div>`, "", "", { key: "prj-done", closed: true }) : ""}
     </div>
     <div class="grid">
-      ${p.description ? card(tr("pr_desc"), `<p class="xs mut" style="white-space:pre-wrap;line-height:1.6">${esc(p.description)}</p>`) : ""}
+      ${p.description ? card(tr("pr_desc"), `<p class="xs mut" style="white-space:pre-wrap;line-height:1.6">${esc(p.description)}</p>`, "", "", "prj-desc") : ""}
       ${card(tr("pr_risks"), `
         <p class="eyebrow">${esc(tr("pr_risk"))}</p>
         <p class="xs mut" style="white-space:pre-wrap;line-height:1.6;margin:3px 0 10px">${esc(p.risks) || tr("pr_none_rec")}</p>
         <p class="eyebrow">${esc(tr("pr_dep"))}</p>
         <p class="xs mut" style="white-space:pre-wrap;line-height:1.6;margin:3px 0 0">${esc(p.dependencies) || tr("pr_none_rec")}</p>
-        ${p.owner ? `<p class="eyebrow" style="margin-top:10px">${esc(tr("pr_owner"))}</p><p class="xs">${esc(p.owner)}</p>` : ""}`)}
+        ${p.owner ? `<p class="eyebrow" style="margin-top:10px">${esc(tr("pr_owner"))}</p><p class="xs">${esc(p.owner)}</p>` : ""}`,
+        "", "", "prj-risks")}
       ${uren.length ? card(tr("pr_hours"), `<ul class="divide">${uren
         .sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((e) =>
         `<li class="row spread" style="gap:10px;padding:7px 0">
@@ -9661,9 +9713,9 @@ function viewProjectDetail(id) {
             ${e.description ? ` · ${esc(truncate(e.description, 48))}` : ""}</span>
           <span class="xs tab" style="flex:0 0 auto">${esc(fmtH(e.minutes))}</span>
         </li>`).join("")}</ul>
-        <p class="xs mut" style="margin-top:9px">${esc(tr("pr_hours_total", fmtH(minuten)))}</p>`) : ""}
+        <p class="xs mut" style="margin-top:9px">${esc(tr("pr_hours_total", fmtH(minuten)))}</p>`, "", "", "prj-hours") : ""}
       ${ideas.length ? card(tr("pr_ideas"), `<ul class="grid" style="gap:5px">${ideas.map((i) =>
-        `<li class="xs">${esc(i.title)}</li>`).join("")}</ul>`) : ""}
+        `<li class="xs">${esc(i.title)}</li>`).join("")}</ul>`, "", "", "prj-ideas") : ""}
     </div></div>`;
 }
 
@@ -9741,7 +9793,7 @@ function viewTips() {
     ${tile(tr("ti_t_sent"), sentThisYear, "", tr("ti_t_sent_h", year), "check", "var(--success)")}
   </div>
 
-  ${card(tr("ti_slots"), `<ul class="grid" style="gap:3px">${slots.map((d, i) => {
+  ${cardF("ti-slots", tr("ti_slots"), `<ul class="grid" style="gap:3px">${slots.map((d, i) => {
     const here = tipsOn(d);
     const soon = daysUntil(d);
     const te_laat = d < TODAY() && here.length > 0;
@@ -9784,7 +9836,7 @@ function viewTips() {
       </select>
     </div>`)}
 
-  ${drafts.length ? `<div style="margin-top:14px">${card(tr("ti_drafts"),
+  ${drafts.length ? `<div style="margin-top:14px">${cardF("ti-drafts", tr("ti_drafts"),
     `<div>${drafts.map((t) => tipRow(t, { hideStatus: true })).join("")}</div>`, tr("ti_drafts_d"))}</div>` : ""}
 
   ${!DB.tips.length ? empty(tr("ti_none"), tr("ti_none_d"),
@@ -10229,7 +10281,7 @@ function viewKnowledge() {
     body = `<div class="grid" style="gap:14px">
       ${newsAnalysisCard()}
       ${SRC_GROUPS.map(([key]) => srcGroupCard(key, done)).join("")}
-      ${card(tr("n_days"), `<div class="row wrap" style="gap:5px">
+      ${cardF("n-days", tr("n_days"), `<div class="row wrap" style="gap:5px">
           ${DAY_KEYS.map((_, i) => `<button class="btn sm ${newsPlan().days.includes(i) ? "" : "outline"}"
             data-act="news-day" data-v="${i}" aria-pressed="${newsPlan().days.includes(i)}"
             style="min-width:46px">${esc(dayName(i))}</button>`).join("")}
@@ -10240,7 +10292,7 @@ function viewKnowledge() {
       ${done.length ? `<div class="row wrap" style="gap:8px">
         <button class="btn sm ghost" data-act="round-reset">${esc(tr("n_reset"))}</button>
       </div>` : ""}
-      ${card(tr("n_filter"), `<ol class="grid xs" style="gap:8px;margin:0;padding-left:18px;list-style:decimal">
+      ${cardF("n-filter", tr("n_filter"), `<ol class="grid xs" style="gap:8px;margin:0;padding-left:18px;list-style:decimal">
         ${PILLARS.filter(([k]) => k !== "overig").map(([k, l]) =>
           `<li><b>${esc(lbl(l))}</b> — ${esc(tr(`n_pillar_${k}`))}</li>`).join("")}
       </ol>
@@ -10503,9 +10555,9 @@ function viewExpenses() {
   </div>` +
 
   (openAll.length ? `<div class="grid" style="gap:14px;margin-bottom:16px">
-    ${todo.length ? card(tr("x_l_todo"), `<div>${todo.map(expenseRow).join("")}</div>`,
+    ${todo.length ? cardF("x-todo", tr("x_l_todo"), `<div>${todo.map(expenseRow).join("")}</div>`,
       tr("x_l_todo_d"), `<span class="sm2 tab" style="font-weight:600">${esc(eur(expenseSum(todo)))}</span>`) : ""}
-    ${sub.length ? card(tr("x_l_sub"), `<div>${sub.map(expenseRow).join("")}</div>`,
+    ${sub.length ? cardF("x-sub", tr("x_l_sub"), `<div>${sub.map(expenseRow).join("")}</div>`,
       tr("x_l_sub_d"), `<span class="sm2 tab" style="font-weight:600">${esc(eur(owed))}</span>`) : ""}
   </div>`
     : empty(tr("x_none"), tr("x_none_d"),
@@ -12604,7 +12656,7 @@ async function agendaAutoSync() {
 function agendaCard() {
   const s = agendaSync();
   if (!FS_OK) {
-    return card(tr("ag_title"),
+    return cardF("ag-map", tr("ag_title"),
       `<p class="sm2 mut">${esc(tr("ag_unsupported_d"))}</p>`, tr("ag_sub"));
   }
   const linked = Boolean(AGENDA_DIR);
@@ -12616,7 +12668,7 @@ function agendaCard() {
      als er iets te beslissen valt - nog geen map, of toestemming nodig -
      neemt hij de ruimte die daarbij hoort. */
   if (!linked) {
-    return card(tr("ag_title"),
+    return cardF("ag-map", tr("ag_title"),
       `<p class="sm2 mut" style="line-height:1.6">${esc(tr("ag_none_d"))}</p>
        <button class="btn sm" data-act="agenda-pick" style="margin-top:10px">
          ${ico("folder", "", 13)} ${esc(tr("ag_link"))}</button>`,
@@ -13314,6 +13366,12 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "task-view": UI.taskView = el.dataset.v; saveUI(); render(); break;
+    case "card-fold": {
+      const k = el.dataset.v;
+      UI.fold = UI.fold || {};
+      UI.fold[k] = foldDicht(k) ? "open" : "dicht";
+      saveUI(); render(); break;
+    }
     case "tl-fold": {
       UI.tlDicht = UI.tlDicht || {};
       if (UI.tlDicht[el.dataset.v]) delete UI.tlDicht[el.dataset.v];
