@@ -769,9 +769,12 @@ details > summary::-webkit-details-marker{display:none}
    vanuit je ooghoek op elke pagina. Links wat je doet en voor wie, rechts de
    klok en de knoppen. Een klik op de tekst brengt je naar de urenregistratie.
 ------------------------------------------------------------------------- */
-.tbar{display:flex;align-items:center;gap:18px;min-height:60px;padding:9px 20px;
-  background:var(--navy);color:var(--navy-ink);border-bottom:1px solid var(--navy-border);
-  animation:tbar-in var(--t-slow) var(--ease)}
+/* De band zweeft: even breed als de inhoud eronder, met ronde hoeken en wat
+   lucht rondom, zodat hij als een eigen vlak boven de pagina ligt. */
+.tbar{display:flex;align-items:center;gap:18px;min-height:60px;padding:9px 16px 9px 20px;
+  width:calc(100% - 40px);max-width:1320px;margin:10px auto 0;
+  background:var(--navy);color:var(--navy-ink);border:1px solid var(--navy-border);
+  border-radius:var(--r-block);animation:tbar-in var(--t-slow) var(--ease)}
 @keyframes tbar-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .tb-main{display:flex;align-items:center;gap:13px;flex:1;min-width:0;margin-left:-8px;
   padding:6px 10px 6px 8px;border:0;border-radius:11px;background:none;color:inherit;
@@ -826,7 +829,7 @@ details > summary::-webkit-details-marker{display:none}
   .tb-today{display:none}
 }
 @media (max-width:700px){
-  .tbar{padding:8px 14px;gap:10px;min-height:56px}
+  .tbar{padding:8px 10px 8px 14px;gap:10px;min-height:56px;width:calc(100% - 28px);margin-top:8px}
   .tb-acts{padding-left:0;border-left:0;gap:5px}
   .tb-btn{width:36px;padding:0}
   .tb-lbl{display:none}
