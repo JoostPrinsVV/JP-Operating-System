@@ -1950,8 +1950,16 @@ const STR = {
   m_totask:["To task","Naar taak"], m_tracked:["Tracked as a task","Wordt als taak gevolgd"],
   m_addact:["Add action item","Actiepunt toevoegen"], m_back:["All appointments","Alle afspraken"],
   m_promoted:["Added to your task board","Toegevoegd aan je takenbord"],
-  m_outlook:["Not linked to an Outlook event — sync is prepared in the full app's schema but not wired up here.",
-             "Niet gekoppeld aan een Outlook-afspraak — synchronisatie is voorbereid in het schema van de volledige app, maar hier niet aangesloten."],
+  m_outlook:["Only in this app, not in Outlook.","Staat alleen in de app, niet in Outlook."],
+  ol_toggle:["To Outlook","Naar Outlook"],
+  ol_toggle_d:["Appointments you make here also go to Outlook, through the flow Afspraken naar Outlook",
+               "Afspraken die je hier maakt, gaan via de stroom Afspraken naar Outlook ook naar Outlook"],
+  ol_on:["Appointments you make here now go to Outlook too. Existing ones you add per appointment.",
+         "Afspraken die je hier maakt, gaan nu ook naar Outlook. Bestaande zet je er per afspraak in."],
+  ol_off:["New appointments stay in this app. What is already in Outlook keeps being updated.",
+          "Nieuwe afspraken blijven in de app. Wat al in Outlook staat, wordt nog wel bijgewerkt."],
+  ol_add:["Also put in Outlook","Ook in Outlook zetten"],
+  ol_lbl:["Outlook:","Outlook:"],
   m_what:["What needs doing","Wat moet er gebeuren"],
   rel_busy:["In progress","Bezig"],
   rel_in_min:["in {0} min","over {0} min"],
@@ -2150,10 +2158,10 @@ const STR = {
   wb_err_failed:["Writing to your agenda folder failed.","Wegschrijven naar je agendamap lukte niet."],
   wb_ignored:["Put aside: {0}","Weggezet: {0}"],
   wb_u:["Webinar","Webinar"],
-  wb_wait_d:["The file in the folder Naar Outlook has not been picked up yet. Is the flow Webinar naar Outlook switched on?",
-             "Het bestand in de map Naar Outlook is nog niet opgepakt. Staat de stroom Webinar naar Outlook aan?"],
-  wb_local_d:["Only in this app so far. Send it again once your agenda folder is linked.",
-              "Staat alleen in de app. Stuur hem opnieuw als je agendamap gekoppeld is."],
+  wb_wait_d:["The file in the folder Naar Outlook has not been picked up yet. Is the flow Afspraken naar Outlook switched on?",
+             "Het bestand in de map Naar Outlook is nog niet opgepakt. Staat de stroom Afspraken naar Outlook aan?"],
+  wb_local_d:["Not in Outlook yet. Press Send to Outlook and let the browser write in your agenda folder.",
+              "Nog niet in Outlook. Klik op Naar Outlook sturen en laat de browser in je agendamap schrijven."],
   wb_dlg:["Add webinar to your calendar","Webinar in je agenda zetten"],
   wb_dlg_d:["Check the date and time. Times are in your own time zone.","Controleer datum en tijd. De tijden zijn in jouw eigen tijdzone."],
   wb_date:["Date","Datum"],
@@ -4111,7 +4119,15 @@ function undoLast() {
   let restored;
   try { restored = JSON.parse(snap.json); }
   catch (e) { toast(tr("undo_gone")); return; }
+  /* Wat er al naar Outlook is gegaan, gaat niet terug met Ongedaan maken. De
+     administratie daarvan blijft dus zoals hij nu is; dan ziet de app wat er
+     verschilt en stuurt hij het terugdraaien zelf naar Outlook. */
+  const ol = DB.olSync;
   DB = restored;
+  if (ol) {
+    DB.olSync = ol;
+    DB.meetings.forEach((m) => { const s = ol[m.id]; if (m.ol && s && s.uid) m.outlookUid = s.uid; });
+  }
   save(); render();
   toast(tr("undo_done", snap.label));
 }
@@ -4123,8 +4139,13 @@ function save() {
   if (UNDO && !undoPending) UNDO = null;
   /* Reports success, because a receipt photo can push the workspace past what
      the browser will store and the caller then has to put it back. */
-  try { localStorage.setItem(KEY, JSON.stringify(DB)); return true; }
+  try { localStorage.setItem(KEY, JSON.stringify(DB)); }
   catch (e) { toast(tr("save_failed")); return false; }
+  /* Elke wijziging kan een eigen afspraak raken die ook in Outlook staat. Wat
+     er echt veranderd is, zoekt olReconcile zelf uit, even later. Bij het
+     opstarten bestaat die nog niet; dan valt er ook niets te sturen. */
+  try { olSoon(false); } catch (e) { /* nog niet geladen */ }
+  return true;
 }
 
 /* ---- view state -------------------------------------------------------- */
@@ -6128,6 +6149,7 @@ function cwDragEnd(e) {
   m.allDay = false;
   save(); render();
   toast(tr("m_drag_moved", truncate(m.title, 40)), true);
+  if (m.ol) olSoon(true);
 }
 
 document.addEventListener("pointerdown", cwDragStart);
@@ -6438,8 +6460,7 @@ function viewMeetingDetail(id) {
     `<button class="btn sm outline" data-act="add-action" data-id="${m.id}" style="margin-top:10px">${ico("plus", "", 13)} ${esc(tr("m_addact"))}</button>`,
     "Promote one to a task and it lands on your board with the same due date.")}
   </div>
-  <p class="xs mut" style="margin-top:14px">
-    ${m.outlookUid ? `${ico("meetings", "", 11)} ${esc(tr("m_imported_tag"))}` : esc(tr("m_outlook"))}</p>`;
+  <p class="xs mut" style="margin-top:14px">${olFooter(m)}</p>`;
 }
 
 /* ---- iCalendar import ---------------------------------------------------
@@ -10342,7 +10363,6 @@ async function nwsRead(dir) {
    in Outlook van en gooit het bestand weg. Bij de volgende agendaronde komt
    die afspraak terug en valt hij samen met wat hier al stond.
 ------------------------------------------------------------------------- */
-const WBN_MAP = "Naar Outlook";
 const WBN_SECTIES = [
   ["soort",   ["Type","Soort"],         ["soort", "type", "kind"]],
   ["datum",   ["Date","Datum"],         ["datum", "date", "wanneer", "when"]],
@@ -10558,13 +10578,9 @@ function wbnStatus(w) {
   if (w.status === "ignored") return "ignored";
   if (w.status !== "approved") return "open";
   const m = wbnMeetingOf(w);
-  if (!m) return "gone";
-  if (m.outlookUid) return "outlook";
-  if (w.pickedAt) return "picked";
-  if (w.sentAt) return Date.now() - Date.parse(w.sentAt) > 30 * 60000 ? "wait" : "sent";
-  return "local";
+  return m ? olStatus(m) : "gone";
 }
-const WBN_ST = [
+const OL_ST = [
   ["outlook", ["In Outlook","Staat in Outlook"], "success"],
   ["picked",  ["Picked up by your flow","Opgepakt door je stroom"], "info"],
   ["sent",    ["Sent to Outlook","Naar Outlook gestuurd"], "info"],
@@ -10594,68 +10610,6 @@ function wbnBotsing(w) {
     Date.parse(m.startsAt) < b && (Date.parse(m.endsAt) || Date.parse(m.startsAt) + 30 * 60000) > a) || null;
 }
 
-/* Hoe Outlook hem krijgt. De stroom rekent niets uit: begin en einde staan
-   er al in UTC, en de stroom zet de tijdzone van de afspraak op UTC. */
-function wbnPayload(w) {
-  const utc = (s) => new Date(s).toISOString().slice(0, 19);
-  const regels = [
-    w.what ? esc(w.what) : "",
-    w.url ? `<a href="${esc(w.url)}">${esc(w.url)}</a>` : "",
-    w.source ? `${esc(tr("wb_src"))}: ${esc(w.source)}` : "",
-  ].filter(Boolean);
-  return {
-    version: 1, id: w.id, subject: w.title,
-    start: utc(w.startsAt), end: utc(w.endsAt || w.startsAt), timeZone: "UTC",
-    // Online staat de link op de plek van de locatie: dan zit hij in elke herinnering.
-    location: w.location || w.url || "Online",
-    url: w.url || "",
-    body: regels.map((r) => `<p>${r}</p>`).join(""),
-  };
-}
-
-/* Schrijven mag de app alleen in de map die je zelf hebt gekoppeld, en alleen
-   na een klik: de browser vraagt er één keer om. */
-async function wbnSend(w) {
-  if (!FS_OK || !AGENDA_DIR) return "nomap";
-  try {
-    let p = await AGENDA_DIR.queryPermission({ mode: "readwrite" });
-    if (p !== "granted") p = await AGENDA_DIR.requestPermission({ mode: "readwrite" });
-    if (p !== "granted") return "denied";
-    const map = await AGENDA_DIR.getDirectoryHandle(WBN_MAP, { create: true });
-    const naam = `webinar-${w.startsAt.slice(0, 10)}-${w.id}.json`;
-    const fh = await map.getFileHandle(naam, { create: true });
-    const uit = await fh.createWritable();
-    await uit.write(JSON.stringify(wbnPayload(w), null, 2));
-    await uit.close();
-    w.sentAt = new Date().toISOString(); w.sentFile = naam;
-    delete w.pickedAt;
-    save();
-    return "ok";
-  } catch (e) {
-    return e && (e.name === "NotAllowedError" || e.name === "SecurityError") ? "denied" : "failed";
-  }
-}
-
-/* Is het bestand weg, dan heeft de stroom het opgepakt. Zo weet je binnen een
-   paar minuten of hij werkt, en niet pas bij de volgende agendaronde. */
-async function wbnCheck(dir) {
-  const wacht = (DB.webinars || []).filter((w) => w.sentFile && !w.pickedAt);
-  if (!wacht.length) return;
-  let map = null;
-  try { map = await dir.getDirectoryHandle(WBN_MAP); }
-  catch (e) { if (!e || e.name !== "NotFoundError") return; }
-  let veranderd = false;
-  for (const w of wacht) {
-    let er = false;
-    if (map) {
-      try { await map.getFileHandle(w.sentFile); er = true; }
-      catch (e) { if (!e || e.name !== "NotFoundError") continue; }
-    }
-    if (!er) { w.pickedAt = new Date().toISOString(); veranderd = true; }
-  }
-  if (veranderd) save();
-}
-
 function wbnMeeting(w) {
   return {
     id: uid(), projectId: null, title: w.title, kind: "training",
@@ -10663,25 +10617,300 @@ function wbnMeeting(w) {
     location: w.location || "Online", attendees: [], categories: [],
     agenda: "", decisions: "",
     notes: [w.what, w.source ? `${tr("wb_src")}: ${w.source}` : ""].filter(Boolean).join("\n\n"),
-    onlineUrl: w.url || "", webinarId: w.id,
+    onlineUrl: w.url || "", webinarId: w.id, ol: true,
   };
 }
 
-/* Bij de agendaronde: komt de afspraak die de stroom maakte terug uit
-   Outlook, dan wordt de afspraak die hier al stond die afspraak, in plaats
-   van dat hij er twee keer staat. */
-function wbnAdopt(e) {
+/* ---- eigen afspraken naar Outlook ----------------------------------------
+   Wat uit Outlook komt, leest de app al elke ronde in. Dit is de andere kant
+   op: een afspraak die je hier maakt - of een webinar dat je goedkeurt - gaat
+   als klein bestand naar de map Naar Outlook. De stroom Afspraken naar
+   Outlook maakt, wijzigt of verwijdert daarmee de afspraak in Outlook, en
+   schrijft bij een nieuwe afspraak een bevestiging terug met de sleutel die
+   Outlook eraan gaf. Daarmee vindt de app hem later terug.
+
+   Alleen afspraken met het vlaggetje ol gaan mee: wat je hier maakte terwijl
+   Naar Outlook aanstond, webinars, en wat je er per afspraak bij zette.
+   Uitnodigingen van anderen blijven van Outlook.
+
+   De administratie staat in DB.olSync, per afspraak: de sleutels in Outlook,
+   het bestand dat nog onderweg is, en een vingerafdruk van wat er als laatste
+   heen ging. Na elke opslag vergelijkt olReconcile die vingerafdruk met hoe
+   de afspraak er nu uitziet. Zo maakt het niet uit wáár je iets veranderde -
+   in het venster, door te slepen in de week, of met Ongedaan maken.
+------------------------------------------------------------------------- */
+const OL_MAP = "Naar Outlook";
+const olSync = () => (DB.olSync = DB.olSync && typeof DB.olSync === "object" ? DB.olSync : {});
+const olAan = () => Boolean(agendaSync().toOutlook);
+
+/* Wat Outlook van een afspraak krijgt, al in de vorm die Microsoft Graph
+   verwacht. Deelnemers gaan bewust niet mee: dan stuurt Outlook ze een
+   uitnodiging, en dat is niet wat je hier vraagt. */
+function olEvent(m) {
+  const utc = (ms) => new Date(ms).toISOString().slice(0, 19);
+  const a = Date.parse(m.startsAt);
+  const w = m.webinarId && (DB.webinars || []).find((x) => x.id === m.webinarId);
+  const link = m.onlineUrl ? `<a href="${esc(m.onlineUrl)}">${esc(m.onlineUrl)}</a>` : "";
+  const regels = (w
+    ? [w.what && esc(w.what), link, w.source && `${esc(tr("wb_src"))}: ${esc(w.source)}`]
+    : [link, m.agenda && esc(m.agenda).replace(/\n/g, "<br>")]).filter(Boolean);
+  const plek = m.location && !/^online$/i.test(m.location) ? m.location : (m.onlineUrl || m.location || "");
+  return {
+    subject: m.title,
+    body: { contentType: "HTML", content: regels.map((r) => `<p>${r}</p>`).join("") },
+    start: { dateTime: utc(a), timeZone: "UTC" },
+    end: { dateTime: utc(a + meetingMinutes(m) * 60000), timeZone: "UTC" },
+    // Online staat de link op de plek van de locatie: dan zit hij in elke herinnering.
+    location: { displayName: plek },
+    categories: (m.categories || []).slice(0, 8),
+  };
+}
+const olHash = (m) => JSON.stringify(olEvent(m));
+const olDoet = (m) => m.ol && !m.cancelled && !isAllDay(m);
+
+function olStatus(m) {
+  const s = olSync()[m.id];
+  if (s && s.file) return s.pickedAt ? "picked" : Date.now() - Date.parse(s.sentAt) > 30 * 60000 ? "wait" : "sent";
+  if (s && s.next) return "picked";
+  if (s && s.eventId && s.hash !== olHash(m)) return "local";       // wijziging nog niet verstuurd
+  if ((s && s.eventId) || m.outlookUid) return "outlook";
+  return "local";
+}
+
+/* Opslaan zonder de rest: dit gebeurt op de achtergrond, en een gewone
+   save() zou de knop Ongedaan maken laten verlopen van wat je net deed. */
+function olBewaar() {
+  try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { /* de volgende save neemt het mee */ }
+}
+
+/* Schrijven mag alleen in de map die je zelf koppelde. Toestemming vragen
+   kan alleen vanuit een klik; op de achtergrond kijkt hij alleen of hij het
+   al mag. */
+async function olMap(vraag) {
+  if (!FS_OK || !AGENDA_DIR) return "nomap";
+  try {
+    let p = await AGENDA_DIR.queryPermission({ mode: "readwrite" });
+    if (p !== "granted" && vraag) p = await AGENDA_DIR.requestPermission({ mode: "readwrite" });
+    if (p !== "granted") return "denied";
+    return await AGENDA_DIR.getDirectoryHandle(OL_MAP, { create: true });
+  } catch (e) {
+    return e && (e.name === "NotAllowedError" || e.name === "SecurityError") ? "denied" : "failed";
+  }
+}
+async function olBestaat(map, naam) {
+  try { await map.getFileHandle(naam); return true; }
+  catch (e) { if (e && e.name === "NotFoundError") return false; throw e; }
+}
+
+/* Eén verzoek voor de stroom. Met `zelfde` wordt een bestand dat nog niet is
+   opgepakt bijgewerkt in plaats van dat er een tweede naast komt. */
+async function olWrite(map, id, action, m, zelfde) {
+  const s = (olSync()[id] = olSync()[id] || {});
+  const stempel = Date.now().toString(36);
+  const naam = zelfde || `${action}-${id}-${stempel}.json`;
+  const receipt = (zelfde && s.receipt) || `bevestiging-${id}-${stempel}.json`;
+  const verzoek = { version: 2, action, appId: id, eventId: s.eventId || "", receipt,
+    event: action === "delete" ? null : olEvent(m) };
+  const fh = await map.getFileHandle(naam, { create: true });
+  const uit = await fh.createWritable();
+  await uit.write(JSON.stringify(verzoek, null, 2));
+  await uit.close();
+  Object.assign(s, { file: naam, action, receipt, sentAt: new Date().toISOString(), pickedAt: "", next: "" });
+  if (m) s.hash = olHash(m);
+}
+
+let OL_BUSY = false, OL_AGAIN = false, OL_TIMER = 0, OL_CHECKS = [];
+function olSoon(vraag) {
+  if (!FS_OK || !AGENDA_DIR) return;
+  clearTimeout(OL_TIMER);
+  OL_TIMER = setTimeout(() => { void olReconcile(vraag); }, vraag ? 0 : 1200);
+}
+
+/* Vergelijk wat er nu is met wat er als laatste naar Outlook ging, en stuur
+   het verschil. Geeft "ok" of de reden waarom het niet kon. */
+async function olReconcile(vraag) {
+  if (OL_BUSY) { OL_AGAIN = true; return "ok"; }
+  const st = olSync();
+  const eigen = DB.meetings.filter(olDoet);
+  if (!eigen.length && !Object.keys(st).length) return "ok";
+  OL_BUSY = true;
+  let geschreven = false, veranderd = false;
+  try {
+    const map = await olMap(vraag);
+    if (typeof map === "string") return map;
+    const nu = Date.now();
+
+    for (const m of eigen) {
+      let s = st[m.id];
+      // Terug na Ongedaan maken van een verwijdering.
+      if (s && s.weg) {
+        if (s.file && s.action === "delete" && !s.pickedAt && await olBestaat(map, s.file)) {
+          await map.removeEntry(s.file);                       // Outlook wist nog van niets
+          Object.assign(s, { weg: false, goneAt: "", file: "", action: "" });
+        } else if (s.goneAt) {
+          delete st[m.id]; s = null; m.outlookUid = null;      // al weg in Outlook: opnieuw maken
+        } else { s.weg = false; if (s.next === "delete") s.next = ""; }
+        veranderd = true;
+      }
+      const hash = olHash(m);
+      if (s && s.hash === hash) continue;
+      // Het verleden hoeft niet meer naar Outlook, een wijziging erin wel.
+      if (!s && Date.parse(m.startsAt) + meetingMinutes(m) * 60000 < nu) continue;
+      s = st[m.id] = st[m.id] || {};
+      const wacht = s.file && !s.pickedAt && s.action !== "delete" && await olBestaat(map, s.file);
+      if (wacht) await olWrite(map, m.id, s.action, m, s.file);
+      else if (s.eventId) await olWrite(map, m.id, "update", m);
+      else if (s.file && s.action === "create") {
+        // Onderweg naar Outlook maar nog geen bevestiging: daarna pas wijzigen.
+        if (s.next === "update") continue;
+        s.next = "update"; veranderd = true; continue;
+      } else await olWrite(map, m.id, "create", m);
+      geschreven = true;
+    }
+
+    for (const id of Object.keys(st)) {
+      const s = st[id];
+      if (DB.meetings.some((m) => m.id === id)) continue;
+      if (s.goneAt || s.vergeten) continue;
+      /* Verdwenen zonder dat jij hem weggooide - opgeruimd, of al uit Outlook
+         verwijderd: dan alleen vergeten, en niets naar Outlook sturen. */
+      if (!s.weg) { s.vergeten = new Date().toISOString(); veranderd = true; continue; }
+      if (s.next === "delete" && !s.eventId) continue;
+      // Is een andere afspraak hier dezelfde Outlook-afspraak, dan blijft hij staan.
+      if (s.uid && DB.meetings.some((m) => m.outlookUid === s.uid)) {
+        s.goneAt = new Date().toISOString(); veranderd = true; continue;
+      }
+      if (s.file && !s.pickedAt && await olBestaat(map, s.file)) {
+        await map.removeEntry(s.file);
+        if (s.action === "create") { delete st[id]; veranderd = true; continue; }   // nooit in Outlook geweest
+        s.file = ""; s.action = "";
+      }
+      if (s.eventId) { await olWrite(map, id, "delete", null); s.goneAt = new Date().toISOString(); geschreven = true; }
+      else if (s.file && s.action === "create") { s.next = "delete"; veranderd = true; }
+      else { delete st[id]; veranderd = true; }
+    }
+    return "ok";
+  } catch (e) {
+    return "failed";
+  } finally {
+    if (geschreven || veranderd) olBewaar();
+    if (geschreven) olLater();
+    OL_BUSY = false;
+    if (OL_AGAIN) { OL_AGAIN = false; olSoon(false); }
+  }
+}
+
+/* De stroom draait in de cloud, en de app hoort pas iets bij het volgende
+   inlezen. Na het versturen kijkt hij daarom zelf nog twee keer. */
+function olLater() {
+  OL_CHECKS.forEach(clearTimeout);
+  OL_CHECKS = [3, 10].map((min) => setTimeout(async () => {
+    if (!AGENDA_DIR || AGENDA_PERM !== "granted") return;
+    try { if (await olCheck(AGENDA_DIR)) render(); } catch (e) { /* volgende keer */ }
+  }, min * 60000));
+}
+
+/* Wat de stroom heeft gedaan. Een bevestiging zegt onder welke sleutels de
+   nieuwe afspraak in Outlook staat; een verzoek dat weg is, is verwerkt.
+   Geeft terug of er iets veranderde. */
+async function olCheck(dir) {
+  const st = olSync();
+  if (!Object.keys(st).length) return false;
+  let veranderd = false, opvolgen = false, schrijven = false;
+  try { schrijven = (await dir.queryPermission({ mode: "readwrite" })) === "granted"; } catch (e) { /* lezen kan nog */ }
+
+  for (const f of await agendaFiles(dir, /^bevestiging-.*\.json$/i, 500)) {
+    let b = null;
+    try { b = JSON.parse(String(await f.text()).replace(/^﻿/, "")); } catch (e) { continue; }
+    const s = b && st[b.appId];
+    if (s && b.eventId && s.eventId !== b.eventId) {
+      Object.assign(s, { eventId: b.eventId, uid: b.iCalUId || s.uid || "", doneAt: new Date().toISOString(),
+        file: "", action: "", pickedAt: "" });
+      const m = DB.meetings.find((x) => x.id === b.appId);
+      if (m && s.uid) m.outlookUid = s.uid;
+      if (s.next) opvolgen = true;
+      veranderd = true;
+    }
+    // Gelezen is genoeg; mag hij schrijven, dan ruimt hij hem op.
+    if (schrijven) { try { await dir.removeEntry(f.name); } catch (e) { /* volgende keer */ } }
+  }
+
+  let map = null, kanKijken = true;
+  try { map = await dir.getDirectoryHandle(OL_MAP); }
+  catch (e) { kanKijken = Boolean(e && e.name === "NotFoundError"); }
+  if (kanKijken) {
+    for (const s of Object.values(st)) {
+      if (!s.file || s.pickedAt) continue;
+      let er = false;
+      if (map) { try { er = await olBestaat(map, s.file); } catch (e) { continue; } }
+      if (er) continue;
+      if (s.action === "create") s.pickedAt = new Date().toISOString();   // nu nog de bevestiging
+      else Object.assign(s, { file: "", action: "", doneAt: new Date().toISOString() });
+      veranderd = true;
+    }
+  }
+
+  // Wat al twee weken weg is, houdt niets meer tegen.
+  const grens = Date.now() - 14 * 864e5;
+  Object.keys(st).forEach((id) => {
+    const weg = Date.parse(st[id].goneAt || st[id].vergeten || "");
+    if (weg && weg < grens) { delete st[id]; veranderd = true; }
+  });
+  if (veranderd) olBewaar();
+  if (opvolgen) olSoon(false);
+  return veranderd;
+}
+
+/* Bij de agendaronde, voor een eigen afspraak die al in Outlook staat. Is het
+   agendabestand nieuwer dan wat de app als laatste stuurde, dan is wat
+   Outlook zegt het nieuwst: dan heb je hem daar verschoven of hernoemd. */
+function olVanOutlook(m, e, fileAt) {
+  const s = olSync()[m.id];
+  if (!fileAt || !s || s.file || s.next || fileAt <= Date.parse(s.doneAt || 0)) return false;
+  const eind = e.end ? e.end.iso : "";
+  if (m.startsAt === e.start.iso && m.title === e.title && (!eind || m.endsAt === eind)) return false;
+  m.startsAt = e.start.iso;
+  if (eind) m.endsAt = eind;
+  m.title = e.title || m.title;
+  s.hash = olHash(m);                 // dit kwam uit Outlook, dus niet terugsturen
+  return true;
+}
+
+/* Een eigen afspraak die je hier weggooide: komt hij nog in een ouder
+   agendabestand voor, dan hoort hij niet terug te komen. */
+const olWegUid = (uid) => Object.values(olSync()).some((s) => s.uid === uid && s.goneAt);
+
+/* Kwam de bevestiging nooit, dan herkent de agendaronde hem alsnog: zelfde
+   begintijd, vrijwel dezelfde naam, en hij was al verstuurd. */
+function olAdopt(e) {
   if (!e.uid || e.start.allDay) return null;
   const tijd = e.start.iso.slice(0, 16);
-  const m = DB.meetings.find((x) => x.webinarId && !x.outlookUid && String(x.startsAt).slice(0, 16) === tijd &&
+  const m = DB.meetings.find((x) => x.ol && !x.outlookUid && olSync()[x.id] &&
+    String(x.startsAt).slice(0, 16) === tijd &&
     (briefNorm(x.title) === briefNorm(e.title) || sugLijkt(x.title, e.title)));
   if (!m) return null;
   m.outlookUid = e.uid;
   m.importedAt = new Date().toISOString();
   m.outlookCats = (e.categories || []).slice(0, 8);
-  if (e.end) m.endsAt = e.end.iso;
   if (!m.onlineUrl) m.onlineUrl = findMeetingUrl(e) || "";
+  olSync()[m.id].uid = e.uid;
   return m;
+}
+
+/* Onderaan de pagina van een afspraak: staat hij in Outlook, en zo niet, kan
+   hij erheen. */
+function olFooter(m) {
+  if (m.ol) {
+    const st = olStatus(m);
+    return `<span class="row wrap" style="gap:6px;align-items:center">${esc(tr("ol_lbl"))}
+      <span title="${esc(st === "wait" ? tr("wb_wait_d") : st === "local" ? tr("wb_local_d") : "")}">${badge(OL_ST, st)}</span>
+      ${st === "local" ? `<button class="btn sm outline" data-act="ol-send" data-id="${m.id}">${ico("send", "", 11)} ${esc(tr("wb_send"))}</button>` : ""}</span>`;
+  }
+  if (m.outlookUid) return `${ico("meetings", "", 11)} ${esc(tr("m_imported_tag"))}`;
+  const kan = FS_OK && AGENDA_DIR && !m.cancelled && !isAllDay(m) &&
+    Date.parse(m.startsAt) + meetingMinutes(m) * 60000 > Date.now();
+  return `<span class="row wrap" style="gap:8px;align-items:center">${esc(tr("m_outlook"))}
+    ${kan ? `<button class="btn sm outline" data-act="ol-add" data-id="${m.id}">${ico("send", "", 11)} ${esc(tr("ol_add"))}</button>` : ""}</span>`;
 }
 
 async function wbnApprove(w) {
@@ -10699,12 +10928,20 @@ async function wbnApprove(w) {
   }
   let m = wbnMeetingOf(w);
   if (!m) { m = wbnMeeting(w); DB.meetings.push(m); }
-  else Object.assign(m, { title: w.title, startsAt: w.startsAt, endsAt: w.endsAt || "", onlineUrl: w.url || m.onlineUrl });
+  else Object.assign(m, { title: w.title, startsAt: w.startsAt, endsAt: w.endsAt || "", onlineUrl: w.url || m.onlineUrl, ol: true });
   Object.assign(w, { status: "approved", meetingId: m.id, approvedAt: new Date().toISOString() });
   save(); render();
-  const uit = await wbnSend(w);
+  // Direct, en vanuit de klik: dan mag de browser nog om toestemming vragen.
+  const uit = await olReconcile(true);
   render();
   toast(uit === "ok" ? tr("wb_added", wbnKort(w)) : tr("wb_added_local", wbnKort(w), tr(`wb_err_${uit}`)));
+}
+
+/* Vanuit een klik: sturen wat er nog niet in Outlook staat, en zeggen hoe het ging. */
+async function olNuSturen() {
+  const uit = await olReconcile(true);
+  render();
+  toast(uit === "ok" ? tr("wb_sent") : tr(`wb_err_${uit}`));
 }
 
 function wbnDialog(w) {
@@ -10757,9 +10994,9 @@ function webinarCard() {
            title="${esc(tr("wb_edit"))}">${ico("pencil", "", 11)} ${esc(tr("wb_edit"))}</button>
          <button class="btn sm ghost" data-act="wbn-no" data-id="${w.id}">${esc(tr("wb_no"))}</button>`
       : st === "ignored" || st === "gone"
-      ? `${badge(WBN_ST, st)}
+      ? `${badge(OL_ST, st)}
          <button class="btn sm ghost" data-act="wbn-open" data-id="${w.id}">${ico("back", "", 11)} ${esc(tr("sg_back"))}</button>`
-      : `<span title="${esc(st === "wait" ? tr("wb_wait_d") : st === "local" ? tr("wb_local_d") : "")}">${badge(WBN_ST, st)}</span>
+      : `<span title="${esc(st === "wait" ? tr("wb_wait_d") : st === "local" ? tr("wb_local_d") : "")}">${badge(OL_ST, st)}</span>
          ${st === "local" ? `<button class="btn sm outline" data-act="wbn-send" data-id="${w.id}">${ico("send", "", 11)} ${esc(tr("wb_send"))}</button>` : ""}
          ${m ? `<button class="btn sm ghost" data-act="peek-meeting" data-id="${m.id}">${esc(tr("wb_view"))}</button>` : ""}`;
     return `<li class="row sug-row" style="gap:10px;padding:10px 2px;align-items:flex-start">
@@ -11817,7 +12054,7 @@ function meetingRepeat(m, rep, tot) {
       location: m.location || "", attendees: JSON.parse(JSON.stringify(m.attendees || [])),
       agenda: m.agenda || "", notes: "", decisions: "", projectId: m.projectId || null,
       onlineUrl: m.onlineUrl || "", categories: [...(m.categories || [])],
-      seriesId: m.seriesId, repeat: rep });
+      seriesId: m.seriesId, repeat: rep, ...(m.ol ? { ol: true } : {}) });
     n++;
   }
   return n;
@@ -11833,7 +12070,8 @@ function meetingDialog(meeting, defaults) {
     ...(defaults || {}) };
   /* Herhalen kan alleen bij een eigen afspraak. Hoort hij al bij een eigen
      reeks met keren erna, dan kies je of een wijziging die ook raakt. */
-  const eigen = !m.outlookUid;
+  // Ook een eigen afspraak die al in Outlook staat, blijft hier van jou.
+  const eigen = !m.outlookUid || Boolean(m.ol);
   const later = meeting ? seriesLater(meeting) : [];
   let ookLater = false;
   const herhaalVeld = !eigen ? "" : later.length
@@ -11856,12 +12094,17 @@ function meetingDialog(meeting, defaults) {
       checkpoint(tr("u_meeting"));
       // Met het vinkje aan gaan de keren erna mee; de keren ervoor blijven.
       const weg = new Set([meeting, ...(ookLater ? later : [])].map((x) => x.id));
+      /* Jij gooit hem weg, dus Outlook ook. Alleen dit pad zet dat vlaggetje:
+         wat op een andere manier verdwijnt, blijft in Outlook staan. */
+      const naarOutlook = [...weg].filter((x) => olSync()[x]);
+      naarOutlook.forEach((x) => { olSync()[x].weg = true; });
       DB.meetings = DB.meetings.filter((x) => !weg.has(x.id));
       DB.actions = DB.actions.filter((a) => !weg.has(a.meetingId));
       // Wat nog besproken moest worden, gaat terug naar waar het vandaan kwam.
       DB.agendaPoints.filter((p) => weg.has(p.meetingId)).forEach(pointLos);
       UI.detail = null;
       save(); go("meetings");
+      if (naarOutlook.length) olSoon(true);
       toast(weg.size > 2 ? tr("m_series_del", weg.size - 1) : weg.size === 2 ? tr("m_series_del1")
         : tr("dl_meet_deleted"), true);
     } : null,
@@ -11912,7 +12155,8 @@ function meetingDialog(meeting, defaults) {
         }
       } else {
         const id = uid();
-        doel = { id, endsAt: "", ...patch };
+        // Staat Naar Outlook aan, dan gaat wat je hier maakt ook naar Outlook.
+        doel = { id, endsAt: "", ...patch, ...(olAan() ? { ol: true } : {}) };
         DB.meetings.unshift(doel);
         UI.detail = { type: "meeting", id };
       }
@@ -11923,6 +12167,8 @@ function meetingDialog(meeting, defaults) {
       // Een nieuwe keer in een reeks krijgt de vaste punten van die reeks mee.
       standingSync();
       save(); toast(melding); render();
+      // Vanuit de klik, zodat de browser zo nodig om toestemming kan vragen.
+      if (doel.ol) olSoon(true);
     },
   });
   /* Het vinkje wordt hier al gelezen: verwijderen vraagt eerst om bevestiging,
@@ -12755,15 +13001,28 @@ function paintIcs(message, from, to) {
    keren stilzwijgend verdwijnen, dus het begintijdstip hoort bij de sleutel. */
 const meetingKey = (uid, startsAt) => `${uid}|${String(startsAt).slice(0, 16)}`;
 
-function importEvents(events, from, to) {
+/* `fileAt` is wanneer de stroom het bestand schreef. Alleen daarmee is te
+   zeggen of Outlook nieuwer is dan wat de app er zelf heen stuurde. */
+function importEvents(events, from, to, fileAt) {
   const byUid = new Map();
   DB.meetings.forEach((m) => {
     if (m.outlookUid) byUid.set(meetingKey(m.outlookUid, m.startsAt), m);
   });
-  let added = 0, skipped = 0, filled = 0, attFilled = 0, withAtt = 0, catChanged = 0, adopted = 0;
+  // Eigen afspraken die in Outlook staan, op sleutel alleen: hun tijd kan hier net anders zijn.
+  const eigenUid = new Map(DB.meetings.filter((m) => m.ol && m.outlookUid).map((m) => [m.outlookUid, m]));
+  let added = 0, skipped = 0, filled = 0, attFilled = 0, withAtt = 0, catChanged = 0, adopted = 0, ownMoved = 0;
 
   events.forEach((e) => {
     if (e.start.day < from || e.start.day > to) return;
+    // Hier weggegooid en onderweg naar de prullenbak in Outlook: niet terughalen.
+    if (e.uid && olWegUid(e.uid)) return;
+    /* Een eigen afspraak: wat de app stuurde is leidend, tot het agendabestand
+       nieuwer is dan dat. Dan kan hij in Outlook zijn verschoven. */
+    const eigenM = e.uid && eigenUid.get(e.uid);
+    if (eigenM) {
+      if (olVanOutlook(eigenM, e, fileAt)) ownMoved++; else skipped++;
+      return;
+    }
 
     /* Eerst de hele-dag-afspraak rechtzetten, dán pas opzoeken of we hem al
        kennen. Andersom wijkt 02:00 af van de 00:00 die er al staat en komt
@@ -12796,11 +13055,11 @@ function importEvents(events, from, to) {
       return;
     }
 
-    /* Een goedgekeurd webinar dat via de stroom in Outlook kwam, stond hier
-       al. Dan wordt het die afspraak, en komt er geen tweede bij. */
-    const webinar = wbnAdopt(e);
-    if (webinar) {
-      byUid.set(meetingKey(e.uid, e.start.iso), webinar);
+    /* Een eigen afspraak die via de stroom in Outlook kwam en waarvan de
+       bevestiging nooit binnenkwam: hij stond hier al, dus geen tweede. */
+    const eigen = olAdopt(e);
+    if (eigen) {
+      byUid.set(meetingKey(e.uid, e.start.iso), eigen);
       adopted++;
       return;
     }
@@ -12814,13 +13073,13 @@ function importEvents(events, from, to) {
   /* Een categorie die uit Outlook komt en hier nog niet bestond, wordt er een
      - dan kun je hem meteen ook zelf aan een afspraak hangen. */
   const nieuweCats = catEnsure(events.flatMap((e) => e.categories || []));
-  const { removed, cancelled, moved } = removeDeleted(events, from, to);
+  const { removed, cancelled, moved } = removeDeleted(events, from, to, fileAt);
   // Een nieuwe keer van een overleg krijgt zijn vaste punten mee.
   const vast = standingSync();
-  if (added || filled || attFilled || catChanged || nieuweCats || removed || cancelled || moved || vast || adopted) save();
+  if (added || filled || attFilled || catChanged || nieuweCats || removed || cancelled || moved || vast || adopted || ownMoved) save();
   // withAtt vertelt of het bestand überhaupt deelnemers bevatte; dat scheelt
   // zoeken in de app als het eigenlijk aan de flow ligt.
-  return { added, filled, attFilled, catChanged, skipped, withAtt, removed, cancelled, moved };
+  return { added, filled, attFilled, catChanged, skipped, withAtt, removed, cancelled, moved, ownMoved };
 }
 
 /* Wat je in Outlook weggooit, hoort hier ook weg. Zien kun je dat alleen zo:
@@ -12832,7 +13091,7 @@ function importEvents(events, from, to) {
    alleen de komende maand zegt niets over vorige week. Alleen bij een bestand
    met genoeg afspraken erin, zodat een half weggeschreven bestand je agenda
    niet leegt. En alleen bij afspraken die je niet zelf hebt aangemaakt. */
-function removeDeleted(events, from, to) {
+function removeDeleted(events, from, to, fileAt) {
   let removed = 0, cancelled = 0, moved = 0;
   const binnen = events.filter((e) => e.uid && e.start.day >= from && e.start.day <= to);
   if (binnen.length < 3) return { removed, cancelled, moved };
@@ -12852,11 +13111,19 @@ function removeDeleted(events, from, to) {
   const vanaf = vroegste < TODAY() ? TODAY() : vroegste;
   const tot = dagen.reduce((a, d) => (d > a ? d : a));
   const inBestand = new Set(binnen.map((e) => meetingKey(e.uid, e.start.iso)));
+  const uidsInBestand = new Set(binnen.map((e) => e.uid));
 
   DB.meetings = DB.meetings.filter((m) => {
     const dag = String(m.startsAt).slice(0, 10);
     if (!m.outlookUid || dag < vanaf || dag > tot) return true;
-    if (inBestand.has(meetingKey(m.outlookUid, m.startsAt))) return true;
+    /* Een eigen afspraak is pas in Outlook verwijderd als hij ontbreekt in
+       een bestand dat nieuwer is dan wat de app er als laatste heen stuurde.
+       Een ouder bestand weet nog niets van die afspraak. */
+    if (m.ol) {
+      const s = olSync()[m.id];
+      if (!fileAt || !s || s.file || s.next || fileAt <= Date.parse(s.doneAt || 0)) return true;
+      if (uidsInBestand.has(m.outlookUid)) return true;
+    } else if (inBestand.has(meetingKey(m.outlookUid, m.startsAt))) return true;
 
     /* Een bespreekpunt hoort bij het gesprek, niet bij het tijdstip. Verzet
        iemand de afspraak, dan komt hij onder dezelfde Outlook-sleutel op een
@@ -13308,7 +13575,8 @@ async function agendaRead(loud) {
     const trR = await trRead(AGENDA_DIR);
     const sgR = await sugRead(AGENDA_DIR);
     const nwR = await nwsRead(AGENDA_DIR);
-    await wbnCheck(AGENDA_DIR);
+    // Vóór de agenda: een bevestiging geeft de sleutel waarop die afspraak straks binnenkomt.
+    await olCheck(AGENDA_DIR);
 
     /* Uit dezelfde map komt meer dan je agenda. Wat erbij kwam hoort in
        dezelfde melding te staan, anders lijkt een ronde zonder nieuwe
@@ -13340,7 +13608,7 @@ async function agendaRead(loud) {
 
     const parsed = parseIcs(text);
     // A window wide enough for last week's notes and next quarter's planning.
-    const r = importEvents(parsed.events, addDays(-14), addDays(120));
+    const r = importEvents(parsed.events, addDays(-14), addDays(120), file.lastModified);
 
     const wasStale = agendaStale();
     const s = agendaSync();
@@ -13437,6 +13705,11 @@ function agendaCard() {
           <input type="checkbox" data-act="agenda-auto" ${s.auto ? "checked" : ""}
             style="width:14px;height:14px">
           <span class="xs mut">${esc(tr("ag_auto_short"))}</span>
+        </label>
+        <label class="row" style="gap:6px;margin-right:6px;cursor:pointer" title="${esc(tr("ol_toggle_d"))}">
+          <input type="checkbox" data-act="ol-toggle" ${s.toOutlook ? "checked" : ""}
+            style="width:14px;height:14px">
+          <span class="xs mut">${esc(tr("ol_toggle"))}</span>
         </label>
         <button class="btn sm${needsClick ? "" : " ghost"}" data-act="agenda-read">
           ${ico("download", "", 12)} ${esc(tr("ag_readnow"))}</button>
@@ -14428,10 +14701,30 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "wbn-send": {
+      // Een webinar uit de eerste versie had het vlaggetje nog niet.
       const w = (DB.webinars || []).find((x) => x.id === id);
-      if (!w) break;
-      void wbnSend(w).then((uit) => {
-        render(); toast(uit === "ok" ? tr("wb_sent") : tr(`wb_err_${uit}`));
+      const m = w && wbnMeetingOf(w);
+      if (m) { m.ol = true; olBewaar(); }
+      void olNuSturen();
+      break;
+    }
+    case "ol-send": void olNuSturen(); break;
+    /* Een bestaande afspraak uit de app er alsnog bij zetten. Per afspraak,
+       zodat er nooit ongevraagd een hele agenda naar Outlook gaat. */
+    case "ol-add": {
+      const m = DB.meetings.find((x) => x.id === id);
+      if (!m) break;
+      m.ol = true;
+      olBewaar();
+      void olNuSturen();
+      break;
+    }
+    case "ol-toggle": {
+      const s = agendaSync();
+      if (s.toOutlook) { s.toOutlook = false; save(); render(); toast(tr("ol_off")); break; }
+      void olMap(true).then((map) => {
+        if (typeof map === "string") { render(); toast(tr(`wb_err_${map}`)); return; }
+        s.toOutlook = true; save(); render(); toast(tr("ol_on"));
       });
       break;
     }

@@ -104,8 +104,8 @@ de app zijn eigen back-up neerzet. Twee aparte mappen, want de app leest de
 eerste en schrijft in de tweede.
 
 Op één plek schrijft de app wél in de eerste map: in de submap
-`Naar Outlook`, en alleen als je een webinar goedkeurt (zie Deel 3). Maak die
-submap meteen aan:
+`Naar Outlook`, voor afspraken die hij naar Outlook stuurt (zie Deel 3,
+*Afspraken naar Outlook*). Maak die submap meteen aan:
 
 ```
 /AI operating system/Agenda/Naar Outlook
@@ -129,7 +129,8 @@ beveiligde omgeving van Visser & Visser.
 | `transcript-*.json` | Copilot-samenvatting van vergaderverslagen |
 | `taken-*.json` | Copilot-analyse van mogelijk vergeten taken |
 | `nieuws-*.json` | Copilot-nieuwsronde uit je nieuwsbrieven, met de aangekondigde webinars |
-| `Naar Outlook/webinar-*.json` | De app zelf, als je een webinar goedkeurt. De stroom *Webinar naar Outlook* haalt het weer weg |
+| `Naar Outlook/*.json` | De app zelf: een afspraak die naar Outlook moet. De stroom *Afspraken naar Outlook* haalt het weer weg |
+| `bevestiging-*.json` | *Afspraken naar Outlook*: onder welke sleutel een nieuwe afspraak in Outlook staat. De app ruimt het zelf op |
 
 De app herkent ze aan die namen. Houd je er dus aan.
 
@@ -226,64 +227,146 @@ Wat de app met de lijst doet:
 - Outlook heeft 25 kleuren en de app 14. Elke kleur komt op de dichtstbijzijnde
   terecht.
 
-## Webinars naar Outlook
+## Afspraken naar Outlook
 
-De nieuwsronde vist ook de webinars en events uit je nieuwsbrieven (zie de
-nieuwsprompt in Deel 4). Ze staan als voorstel bovenaan **Agenda**. Klik je
-op **In agenda**, dan staat het webinar meteen in de app. De app schrijft dan
-ook een klein bestand in `/AI operating system/Agenda/Naar Outlook`. Deze
-stroom maakt daar een afspraak in Outlook van, met de link erin, en ruimt het
-bestand daarna op.
+De agendastroom brengt Outlook naar de app. Deze stroom doet het omgekeerde:
+wat je in de app maakt, wijzigt of weggooit, gaat naar Outlook. Dat geldt voor:
+
+- webinars die je op **Agenda** goedkeurt;
+- afspraken die je in de app maakt terwijl **Naar Outlook** aanstaat (het
+  vinkje in de mapregel op **Agenda**);
+- een bestaande afspraak waarbij je onderaan op **Ook in Outlook zetten**
+  klikt.
+
+Uitnodigingen van anderen en afspraken die je in Outlook maakte, blijven van
+Outlook. Deelnemers gaan bewust niet mee: anders stuurt Outlook hun een
+uitnodiging.
+
+**Hoe het werkt.** Bij elke wijziging zet de app een klein bestand in
+`/AI operating system/Agenda/Naar Outlook`. De stroom maakt, wijzigt of
+verwijdert daarmee de afspraak in Outlook, en gooit het bestand daarna weg.
+Maakt hij een nieuwe afspraak, dan schrijft hij een bevestiging terug in
+`/AI operating system/Agenda`, met de sleutels die Outlook eraan gaf. Daarmee
+vindt de app hem later terug om hem te wijzigen of te verwijderen. De app
+ruimt die bevestiging zelf op.
 
 De eerste keer vraagt de browser of de app in je agendamap mag schrijven.
-Geef die toestemming: zonder schrijfrecht komt het webinar alleen in de app.
+Geef die toestemming: zonder schrijfrecht blijft alles in de app.
 
-Maak een **Geautomatiseerde cloudstroom** met de naam `Webinar naar Outlook`:
+### Het bestand dat de app neerzet
+
+```json
+{
+  "version": 2,
+  "action": "create",
+  "appId": "k3x9q2m1ab7z",
+  "eventId": "",
+  "receipt": "bevestiging-k3x9q2m1ab7z-mwxhegsw.json",
+  "event": {
+    "subject": "Sparren met Henri",
+    "body": { "contentType": "HTML", "content": "<p>…</p>" },
+    "start": { "dateTime": "2026-12-01T13:00:00", "timeZone": "UTC" },
+    "end": { "dateTime": "2026-12-01T14:00:00", "timeZone": "UTC" },
+    "location": { "displayName": "Kamer 3" },
+    "categories": ["Intern"]
+  }
+}
+```
+
+- `action` is `create`, `update` of `delete`.
+- `eventId` is leeg bij `create`, en gevuld bij `update` en `delete`.
+- `event` staat al in de vorm die Microsoft Graph verwacht, met de tijden in
+  UTC. Bij `delete` is het `null`.
+- `receipt` is de naam die de bevestiging moet krijgen.
+
+### De stroom bouwen
+
+Maak een **Geautomatiseerde cloudstroom** met de naam `Afspraken naar
+Outlook`. Geef elke actie precies de naam hieronder: de formules verwijzen
+ernaar.
 
 1. **Trigger:** OneDrive voor Bedrijven → **Wanneer een bestand wordt gemaakt
-   (alleen eigenschappen)**.
+   (alleen eigenschappen)** (*When a file is created (properties only)*).
    - **Map:** `/AI operating system/Agenda/Naar Outlook`
-2. **OneDrive voor Bedrijven → Bestandsinhoud ophalen**, hernoemd naar
-   `Inhoud`.
-   - **Bestand:** kies uit de dynamische inhoud van de trigger **Id**. Of via
+   - Bij **Instellingen** van de trigger: zet **Gelijktijdigheidsbeheer** aan,
+     met **Mate van parallelle uitvoering** op `1`. Dan komt een wijziging
+     nooit vóór de afspraak zelf aan.
+2. **OneDrive voor Bedrijven → Bestandsinhoud ophalen** (*Get file content*),
+   naam `Inhoud`.
+   - **Bestand:** de **Id** uit de dynamische inhoud van de trigger. Of via
      `fx`: `triggerOutputs()?['body/Id']`
-3. **Samenstellen**, hernoemd naar `Webinar`. Invoer, via `fx`:
+3. **Samenstellen** (*Compose*), naam `Verzoek`. Invoer, via `fx`:
    ```
    json(if(contains(string(body('Inhoud')), '$content'), base64ToString(coalesce(json(string(body('Inhoud')))?['$content'], '')), string(body('Inhoud'))))
    ```
    Power Automate levert de inhoud van een bestand soms als tekst en soms
    ingepakt. Deze formule werkt in beide gevallen.
-4. **Office 365 Outlook → Gebeurtenis maken (V4)**, hernoemd naar `Afspraak`.
+4. **Schakelen** (*Switch*), naam `Soort`. **Aan**, via `fx`:
+   `outputs('Verzoek')?['action']`. Drie gevallen:
 
-   | Veld | Waarde |
-   |---|---|
-   | Agenda-id | `Agenda`, uit de lijst |
-   | Onderwerp | via `fx`: `outputs('Webinar')?['subject']` |
-   | Begintijd | via `fx`: `outputs('Webinar')?['start']` |
-   | Eindtijd | via `fx`: `outputs('Webinar')?['end']` |
-   | Tijdzone | **(UTC) Coordinated Universal Time**, uit de lijst |
-   | Hoofdtekst | via `fx`: `outputs('Webinar')?['body']` |
-   | Locatie | via `fx`: `outputs('Webinar')?['location']` |
+   **Geval `create`:**
+   1. **Office 365 Outlook → Een HTTP-aanvraag verzenden** (*Send an HTTP
+      request*; zoek binnen de connector op "HTTP"), naam `Maken`.
+      - **URI:** `https://graph.microsoft.com/v1.0/me/events`
+      - **Methode:** `POST`
+      - **Hoofdtekst**, via `fx`: `string(outputs('Verzoek')?['event'])`
+      - **Content-Type:** `application/json`
+   2. **OneDrive voor Bedrijven → Bestand maken** (*Create file*), naam
+      `Bevestiging`.
+      - **Mappad:** `/AI operating system/Agenda`
+      - **Bestandsnaam**, via `fx`: `outputs('Verzoek')?['receipt']`
+      - **Bestandsinhoud**, via `fx`:
+        ```
+        string(setProperty(setProperty(setProperty(json('{}'), 'appId', outputs('Verzoek')?['appId']), 'eventId', body('Maken')?['id']), 'iCalUId', body('Maken')?['iCalUId']))
+        ```
 
-   > **Let op bij de tijdzone.** Kies echt *Coordinated Universal Time*, niet
-   > Dublin of Londen: die hebben zomertijd. De app rekent de tijden al om
-   > naar UTC, zodat Outlook ze daarna in jouw tijd laat zien.
-5. **OneDrive voor Bedrijven → Bestand verwijderen**, hernoemd naar
-   `Opruimen`.
+   **Geval `update`:** **Een HTTP-aanvraag verzenden**, naam `Wijzigen`.
+   - **URI**, via `fx`:
+     `concat('https://graph.microsoft.com/v1.0/me/events/', encodeUriComponent(outputs('Verzoek')?['eventId']))`
+   - **Methode:** `PATCH`
+   - **Hoofdtekst**, via `fx`: `string(outputs('Verzoek')?['event'])`
+   - **Content-Type:** `application/json`
+
+   **Geval `delete`:** **Een HTTP-aanvraag verzenden**, naam `Verwijderen`.
+   - **URI:** dezelfde formule als bij `Wijzigen`
+   - **Methode:** `DELETE`
+   - Geen hoofdtekst
+
+   **Standaard:** leeg laten.
+5. **Na** de Schakelen, dus niet erin: **OneDrive voor Bedrijven → Bestand
+   verwijderen** (*Delete file*), naam `Opruimen`.
    - **Bestand:** weer de **Id** van de trigger.
 
-Stap 5 is meer dan opruimen. Zodra het bestand weg is, weet de app dat de
-stroom het heeft opgepakt. Bij het webinar zie je de stand:
+Laat bij elke actie **Uitvoeren na** op de standaard staan (*is geslaagd*).
+Mislukt er iets, dan blijft het bestand staan. De run in Power Automate wordt
+dan rood, en de app meldt na een half uur *Wacht op je stroom*.
+
+De stroom bouwt de adressen zelf op en gebruikt uit het bestand alleen de
+gegevens van de afspraak. Een bestand in die map kan dus nooit iets anders
+doen dan een afspraak in je eigen agenda maken, wijzigen of verwijderen.
+
+### Wat je in de app ziet
+
+Bij een webinar, en onderaan de pagina van een afspraak:
 
 - *Naar Outlook gestuurd*: het bestand staat klaar.
-- *Opgepakt door je stroom*: de stroom heeft er een afspraak van gemaakt.
-- *Staat in Outlook*: de afspraak kwam via de agendastroom terug en is
-  samengevoegd met die in de app. Er komt geen tweede bij.
+- *Opgepakt door je stroom*: de stroom is ermee bezig. De app wacht nog op de
+  bevestiging.
+- *Staat in Outlook*: de bevestiging is binnen.
 - *Wacht op je stroom*: na een half uur is het bestand nog niet opgepakt.
-  Kijk dan of de stroom aan staat.
+  Kijk dan of de stroom aan staat en of de laatste run rood is.
+- *Alleen in de app*: er ging nog niets heen. Klik op **Naar Outlook sturen**.
 
-Test de stroom door in de app een webinar goed te keuren. Binnen een paar
-minuten staat het in Outlook.
+De app kijkt drie en tien minuten na het versturen zelf of de stroom klaar
+is, en verder bij elke keer inlezen.
+
+**Verschuif of verwijder je zo'n afspraak in Outlook**, dan neemt de app dat
+over bij de volgende agendaronde. Wat je in de app wijzigt, gaat binnen een
+paar minuten naar Outlook. Je kunt dus beide kanten gebruiken.
+
+**Test:** zet **Naar Outlook** aan, maak in de app een afspraak voor morgen,
+en kijk of hij binnen een paar minuten in Outlook staat. Verschuif hem dan in
+de app en kijk of Outlook meeschuift. Verwijder hem tot slot in de app.
 
 ---
 
@@ -422,8 +505,8 @@ Vanaf nu leest de app die map bij het openen, en kun je hem tussendoor
 bijwerken met **Vernieuwen** op het dashboard of op de agendapagina.
 
 > De app leest die map. Schrijven doet hij er alleen in de submap
-> `Naar Outlook`, en alleen als je een webinar goedkeurt. Naar buiten stuurt
-> hij niets.
+> `Naar Outlook`, voor afspraken die naar Outlook gaan, en hij ruimt de
+> bevestigingen van die stroom op. Naar buiten stuurt hij niets.
 
 ---
 
@@ -457,7 +540,8 @@ weggeschreven.
 - [ ] Elke stroom is één keer met de hand uitgevoerd en werd groen
 - [ ] De automatische back-up staat aan en heeft één keer een bestand
       weggeschreven naar `/AI operating system/Back-ups`
-- [ ] Een goedgekeurd webinar stond binnen een paar minuten in Outlook
+- [ ] Een afspraak die je in de app maakte, stond binnen een paar minuten in
+      Outlook, en schoof mee toen je hem in de app verschoof
 
 ---
 
@@ -474,8 +558,9 @@ weggeschreven.
 | Van een overleg van iemand anders komt nooit een verslag | Copilot kan niet bij de transcriptie als je geen organisator bent. Laat het transcript toesturen, laat Copilot het samenvatten en plak dat via **Transcripties → Verslag toevoegen**. De knop *Copilot-prompt kopiëren* in dat venster geeft de juiste prompt |
 | Alle acties staan op jou | Je naam staat niet in **Instellingen → Profiel** |
 | Webinars uit je nieuwsbrieven verschijnen niet op de Agenda | De nieuwsprompt slaat ze nog over. Haal "webinar-uitnodigingen" uit het lijstje *Sla over* en zet het stuk over events erin (Deel 4) |
-| Een goedgekeurd webinar blijft op *Wacht op je stroom* staan | De stroom *Webinar naar Outlook* staat uit, kijkt naar een andere map dan `/AI operating system/Agenda/Naar Outlook`, of OneDrive draait niet op je laptop |
-| Een goedgekeurd webinar staat op *Alleen in de app* | De browser mocht niet in je agendamap schrijven. Klik op **Naar Outlook sturen** en geef toestemming |
+| Een afspraak of webinar blijft op *Wacht op je stroom* staan | De stroom *Afspraken naar Outlook* staat uit, kijkt naar een andere map dan `/AI operating system/Agenda/Naar Outlook`, of OneDrive draait niet op je laptop. Is de laatste run rood, kijk dan welke stap faalde |
+| Een afspraak blijft op *Opgepakt door je stroom* staan | De stap `Bevestiging` schrijft niet naar `/AI operating system/Agenda`, of de bestandsnaam komt niet uit `receipt` |
+| Een afspraak of webinar staat op *Alleen in de app* | De browser mocht niet in je agendamap schrijven. Klik op **Naar Outlook sturen** en geef toestemming |
 | Een webinar staat op de verkeerde tijd | Copilot heeft de tijdzone niet overgenomen. Kijk achter de tijd wat er in de mail stond en pas het aan met **Aanpassen** |
 | Een nieuwe categorie uit Outlook verschijnt niet | De categoriestappen ontbreken in de agendastroom (zie Deel 3), of de stroom liep daarna niet meer |
 
