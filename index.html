@@ -979,6 +979,14 @@ a.btn{text-decoration:none}
   display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .tw-tm{font-size:10.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tw-t.done .tw-tt{text-decoration:line-through;color:var(--ink-3);font-weight:400}
+/* Een werkdag: hetzelfde blokje, maar lichter en met een stippellijn - het is
+   de dag dat je eraan werkt, niet de dag dat het af moet. */
+.tw-t.work{background:transparent;box-shadow:inset 3px 0 0 color-mix(in srgb,var(--bar) 55%,transparent),
+  0 0 0 1px var(--border);outline:1px dashed color-mix(in srgb,var(--bar) 45%,transparent);outline-offset:-1px}
+.tw-t.work .tw-tt{font-weight:500}
+/* In het taakvenster: de deadline en vandaag bij de werkdagknoppen. */
+.daypick.wd-due span{border-color:var(--signal);box-shadow:inset 0 -2px 0 var(--signal)}
+.daypick.wd-today span{border-color:var(--ink-2)}
 /* Een taak op die dag toevoegen: pas zichtbaar als je erboven hangt. */
 .tw-add{margin-top:auto;align-self:center;width:26px;height:26px;border-radius:50%;border:1px dashed var(--axis);
   background:none;color:var(--ink-3);display:grid;place-items:center;cursor:pointer;opacity:0;
@@ -2412,6 +2420,12 @@ const STR = {
   tb_late:["Overdue · deadline was {0}","Te laat · deadline was {0}"],
   tb_today:["Due today","Deadline vandaag"], tb_later:["Later · deadline {0}","Later · deadline {0}"],
   tb_nodate:["Later · no deadline","Later · geen deadline"],
+  tb_work:["Working on it today · deadline {0}","Vandaag mee bezig · deadline {0}"],
+  tb_work_nd:["Working on it today","Vandaag mee bezig"],
+  wd_title:["Work days","Werkdagen"], wd_other:["Other","Overig"],
+  wd_hint:["The days you plan to work on it. On a work day the task sits under Today; the deadline stays as it is.",
+           "De dagen waarop je eraan werkt. Op een werkdag staat de taak onder Vandaag; de deadline blijft gewoon staan."],
+  wd_short:["Work days {0}","Werkdagen {0}"], wd_block:["Work day","Werkdag"],
   tw_earlier:["Earlier, still open","Eerder, nog open"], tw_nodate:["No deadline","Zonder deadline"],
   tw_n:["{0} tasks","{0} taken"], tw_n1:["1 task","1 taak"], tw_add:["Add task on this day","Taak op deze dag"],
   ag_show_meet:["Meetings","Afspraken"], ag_show_tasks:["Tasks","Taken"], ag_show_both:["Both","Beide"],
@@ -5146,7 +5160,7 @@ function taskList(list) {
   const groups = { today: [], week: [], wait: [], later: [], done: [] };
   list.forEach((t) => {
     if (t.status === "done") groups.done.push(t);
-    else if (overdue(t.dueDate) || t.dueDate === TODAY() || t.status === "in_progress") groups.today.push(t);
+    else if (overdue(t.dueDate) || t.dueDate === TODAY() || t.status === "in_progress" || worksToday(t)) groups.today.push(t);
     else if (t.status === "waiting") groups.wait.push(t);
     else if (t.dueDate && t.dueDate <= end) groups.week.push(t);
     else groups.later.push(t);
@@ -5187,9 +5201,11 @@ function taskList(list) {
    betekent. */
 function taskBar(t) {
   if (t.status === "done") return null;
-  if (overdue(t.dueDate)) return ["var(--vv-rood)", tr("tb_late", fmtDate(t.dueDate))];
+  if (overdue(t.dueDate)) return ["var(--vv-rood)", tr("tb_late", fmtDate(t.dueDate).toLowerCase())];
   if (t.dueDate === TODAY()) return ["var(--c3)", tr("tb_today")];
-  return ["var(--vv-turquoise)", t.dueDate ? tr("tb_later", fmtDate(t.dueDate)) : tr("tb_nodate")];
+  // Een werkdag vandaag telt ook als vandaag, met de deadline erbij.
+  if (worksToday(t)) return ["var(--c3)", t.dueDate ? tr("tb_work", fmtDate(t.dueDate).toLowerCase()) : tr("tb_work_nd")];
+  return ["var(--vv-turquoise)", t.dueDate ? tr("tb_later", fmtDate(t.dueDate).toLowerCase()) : tr("tb_nodate")];
 }
 const taskBarEl = (t) => {
   const b = taskBar(t);
@@ -5210,6 +5226,16 @@ function taskRow(t, opts = {}) {
     g && !opts.hideGoal ? `<span><i class="tl-gd" style="background:${slotColor(g.slot)}"></i>${esc(g.code)}</span>` : "",
     t.status === "waiting" && t.waitingOn ? esc(`${tr("waiting_on")} ${t.waitingOn}`) : "",
     t.status === "in_progress" ? esc(lbl(STATUSES.find((s) => s[0] === "in_progress")[1])) : "",
+    (() => {
+      /* De werkdagen die nog komen, vandaag vetgedrukt. */
+      const komend = done ? [] : workDaysOf(t).filter((d) => d >= TODAY());
+      if (!komend.length) return "";
+      const dag = (d) => { const dt = parseD(d);
+        const s = `${WEEKDAYS[(dt.getDay() + 6) % 7]} ${dt.getDate()}`;
+        return d === TODAY() ? `<b>${esc(s)}</b>` : esc(s); };
+      return `<span>${esc(tr("wd_title"))} ${komend.slice(0, 4).map(dag).join(", ")}${
+        komend.length > 4 ? ` +${komend.length - 4}` : ""}</span>`;
+    })(),
     t.energy === "deep" ? esc(tr("deep")) : "",
     apm ? `<span title="${esc(tr("ap_task_on", mtgKort(apm)))}">${ico("meetings", "", 11)} ${esc(fmtDate(String(apm.startsAt).slice(0, 10)))}</span>` : "",
     repeatTag(t, true),
@@ -5330,18 +5356,29 @@ function taskWeekHtml(monday, list) {
   const week = Array.from({ length: 7 }, (_, i) => addDays(i, parseD(monday)));
   const by = {};
   week.forEach((d) => { by[d] = []; });
-  list.forEach((t) => { if (t.dueDate && by[t.dueDate]) by[t.dueDate].push(t); });
+  /* Een taak staat op zijn deadline, en daarnaast op elke werkdag - daar als
+     lichter blokje, zodat je ziet wat je die dag oppakt en wat er af moet. */
+  list.forEach((t) => {
+    if (t.dueDate && by[t.dueDate]) by[t.dueDate].push({ t, work: false });
+    if (t.status !== "done") workDaysOf(t).forEach((d) => {
+      if (by[d] && d !== t.dueDate) by[d].push({ t, work: true });
+    });
+  });
   const shown = week.filter((d, i) => i < 5 || by[d].length);
   const cols = `grid-template-columns:repeat(${shown.length},minmax(0,1fr))`;
   const today = TODAY();
-  const item = (t) => {
+  const item = ({ t, work }) => {
     const b = taskBar(t);
     const p = t.projectId && DB.projects.find((x) => x.id === t.projectId);
-    return `<button class="tw-t${t.status === "done" ? " done" : ""}" data-act="edit-task" data-id="${t.id}"
-      style="--bar:${b ? b[0] : "var(--success)"}" title="${esc(b ? `${t.title} — ${b[1]}` : t.title)}">
+    const sub = work ? `${tr("wd_block")}${t.dueDate ? ` · ${tr("dl_due").toLowerCase()} ${fmtDate(t.dueDate).toLowerCase()}` : ""}`
+      : p ? p.name : "";
+    return `<button class="tw-t${t.status === "done" ? " done" : ""}${work ? " work" : ""}" data-act="edit-task" data-id="${t.id}"
+      style="--bar:${b ? b[0] : "var(--success)"}" title="${esc(b ? `${t.title} — ${work ? `${tr("wd_block")} · ` : ""}${b[1]}` : t.title)}">
       <span class="tw-tt">${esc(t.title)}</span>
-      ${p ? `<span class="tw-tm">${esc(p.name)}</span>` : ""}</button>`;
+      ${sub ? `<span class="tw-tm">${esc(sub)}</span>` : ""}</button>`;
   };
+  const volgorde = (a, b) => (a.work - b.work) || (a.t.status === "done") - (b.t.status === "done")
+    || scoreTask(b.t) - scoreTask(a.t);
   return `<div class="tw" style="min-width:${shown.length * 120}px">
     <div class="tw-head" style="${cols}">${shown.map((d) => {
       const dt = parseD(d), wknd = dt.getDay() === 0 || dt.getDay() === 6;
@@ -5350,7 +5387,7 @@ function taskWeekHtml(monday, list) {
         <span class="cw-dd">${dt.getDate()}</span></div>`;
     }).join("")}</div>
     <div class="tw-body" style="${cols}">${shown.map((d) => `<div class="tw-col${d === today ? " today" : ""}">
-      ${by[d].sort((a, b) => (a.status === "done") - (b.status === "done") || scoreTask(b) - scoreTask(a)).map(item).join("")}
+      ${by[d].sort(volgorde).map(item).join("")}
       <button class="tw-add" data-act="new-task" data-due="${d}" title="${esc(tr("tw_add"))}"
         aria-label="${esc(tr("tw_add"))}">${ico("plus", "", 12)}</button>
     </div>`).join("")}</div>
@@ -5375,7 +5412,8 @@ function taskCalendar(list) {
   const wk = UI.taskWeek || 0;
   const monday = addDays(wk * 7, parseD(mondayOf()));
   const zo = addDays(6, parseD(monday));
-  const inWeek = list.filter((t) => t.dueDate && t.dueDate >= monday && t.dueDate <= zo);
+  const inWeek = list.filter((t) => (t.dueDate && t.dueDate >= monday && t.dueDate <= zo)
+    || workDaysOf(t).some((d) => d >= monday && d <= zo));
   /* In deze week hoort wat al te laat is er ook bij: dat moet nog steeds. */
   const eerder = wk === 0 ? list.filter((t) => t.status !== "done" && t.dueDate && t.dueDate < monday)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate)) : [];
@@ -5902,7 +5940,10 @@ function weekGrid(monday, taken = []) {
   const byDay = {};
   week.forEach((d) => { byDay[d] = { all: [], timed: [], tasks: [] }; });
   // Taken met een deadline in deze week, voor de strook bovenaan.
-  taken.forEach((t) => { if (byDay[t.dueDate]) byDay[t.dueDate].tasks.push(t); });
+  taken.forEach((t) => {
+    if (byDay[t.dueDate]) byDay[t.dueDate].tasks.push(t);
+    workDaysOf(t).forEach((d) => { if (byDay[d] && d !== t.dueDate) byDay[d].tasks.push(t); });
+  });
 
   let total = 0;
   DB.meetings.forEach((m) => {
@@ -6236,7 +6277,7 @@ function viewMeetings() {
     const toon = viewOn("tasks") ? (UI.agShow || "meet") : "meet";
     const zo = addDays(6, parseD(monday));
     const taken = toon === "meet" ? [] : DB.tasks.filter((t) => t.status !== "done" && t.dueDate
-      && t.dueDate >= monday && t.dueDate <= zo);
+      && t.dueDate >= monday && t.dueDate <= zo || t.status !== "done" && workDaysOf(t).some((d) => d >= monday && d <= zo));
     const grid = toon === "tasks" ? null : weekGrid(monday, taken);
     const nTaken = taken.length === 1 ? tr("tw_n1") : tr("tw_n", taken.length);
     const nAfspr = grid ? (grid.total === 1 ? tr("m_n_meeting") : tr("m_wk_of", grid.total)) : "";
@@ -11571,6 +11612,55 @@ function confirmDialog({ title, desc = "", submit, onYes, note = "" }) {
   });
 }
 
+/* ---- werkdagen -----------------------------------------------------------
+   Een deadline zegt wanneer iets af moet; werkdagen zeggen wanneer je eraan
+   werkt. Een taak met deadline vrijdag kan zo op maandag, woensdag en
+   vrijdag staan. Op een werkdag hoort de taak bij "Vandaag", en in de
+   weekkalender staat hij op elke werkdag.
+------------------------------------------------------------------------- */
+const workDaysOf = (t) => (Array.isArray(t.workDays) ? t.workDays : []);
+const worksToday = (t) => t.status !== "done" && workDaysOf(t).includes(TODAY());
+
+/* Werkdagen kiezen: drie weken vanaf deze maandag, ma t/m vr, verlengd tot
+   de week van de deadline (hooguit zes weken). Dagen die al gekozen waren en
+   buiten dat bereik vallen, staan er ook bij - anders zou opslaan ze stilletjes
+   wissen. */
+function workDayPicker(t) {
+  const gekozen = new Set(workDaysOf(t));
+  const start = mondayOf();
+  let weken = 3;
+  if (t.dueDate && t.dueDate >= start) {
+    const tot = Math.floor((parseD(mondayOf(parseD(t.dueDate))) - parseD(start)) / (7 * 864e5)) + 1;
+    weken = Math.min(6, Math.max(3, tot));
+  }
+  const rijen = [];
+  for (let w = 0; w < weken; w++) {
+    const ma = addDays(w * 7, parseD(start));
+    const dagen = Array.from({ length: 5 }, (_, i) => addDays(i, parseD(ma)));
+    rijen.push({ ma, dagen });
+  }
+  const binnen = new Set(rijen.flatMap((r) => r.dagen));
+  const buiten = [...gekozen].filter((d) => !binnen.has(d)).sort();
+  const knop = (d) => {
+    const dt = parseD(d);
+    const vlag = d === t.dueDate ? " wd-due" : d === TODAY() ? " wd-today" : "";
+    return `<label class="daypick${vlag}" title="${esc(fmtDate(d))}${d === t.dueDate ? ` · ${esc(tr("dl_due"))}` : ""}">
+      <input type="checkbox" name="wd_${d}" ${gekozen.has(d) ? "checked" : ""}>
+      <span>${esc(WEEKDAYS[(dt.getDay() + 6) % 7])} ${dt.getDate()}</span></label>`;
+  };
+  return `<div class="field" style="margin-bottom:12px">
+    <span class="lbl">${esc(tr("wd_title"))}</span>
+    <div class="grid" style="gap:6px">
+      ${rijen.map((r) => `<div class="row wrap" style="gap:5px;align-items:center">
+        <span class="xs mut tab" style="width:58px;white-space:nowrap">${esc(tr("h_wk"))} ${isoWeekNo(r.ma)}</span>
+        ${r.dagen.map(knop).join("")}</div>`).join("")}
+      ${buiten.length ? `<div class="row wrap" style="gap:5px;align-items:center">
+        <span class="xs mut" style="width:58px">${esc(tr("wd_other"))}</span>${buiten.map(knop).join("")}</div>` : ""}
+    </div>
+    <p class="xs mut" style="margin-top:6px;line-height:1.5">${esc(tr("wd_hint"))}</p>
+  </div>`;
+}
+
 function taskDialog(task, defaults = {}) {
   const t = task || {
     // Een voorgestelde taak komt met zijn tekst al ingevuld binnen.
@@ -11608,6 +11698,7 @@ function taskDialog(task, defaults = {}) {
         ${field(tr("rp_field"), `<select class="inp" name="repeat">${opts(REPEATS, t.repeat || "")}</select>`)}
       </div>
       <p class="xs mut" style="margin-top:-4px">${esc(tr("rp_hint"))}</p>` +
+      workDayPicker(t) +
       field(tr("dl_notes"), `<textarea class="inp" name="notes" rows="3" placeholder="Context, links, next step…">${esc(t.notes)}</textarea>`),
     onSubmit: (f) => {
       if (!f.title.trim()) return false;
@@ -11616,6 +11707,8 @@ function taskDialog(task, defaults = {}) {
         dueDate: f.dueDate || null, estimate: f.estimate === "" ? null : Number(f.estimate),
         projectId: f.projectId || null, goalId: f.goalId || null, waitingOn: f.waitingOn || "",
         subId: f.subId || null, repeat: f.repeat || "",
+        // Elke aangevinkte dag komt binnen als wd_JJJJ-MM-DD.
+        workDays: Object.keys(f).filter((k) => /^wd_\d{4}-\d{2}-\d{2}$/.test(k)).map((k) => k.slice(3)).sort(),
       };
       /* De dag van de maand onthouden we apart, anders schuift een taak op
          de 31e na februari blijvend naar de 28e. Alleen opnieuw vastleggen
