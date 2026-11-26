@@ -700,6 +700,69 @@ details > summary::-webkit-details-marker{display:none}
 .kcard:active{cursor:grabbing}
 .kcard.drag{opacity:.35;transform:rotate(1.2deg)}
 
+/* ---- takenlijst -----------------------------------------------------------
+   Drie kaarten bovenaan zeggen waar je moet beginnen; daaronder één lijst,
+   gegroepeerd op wanneer. Kleur alleen waar iets dringt: de rode streep en
+   het rode label zijn voor wat te laat is, de rest blijft rustig. Elke groep
+   draagt een korte pilaar in zijn merkkleur.
+------------------------------------------------------------------------- */
+.tsum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.tsum-c{display:flex;flex-direction:column;gap:5px;padding:14px 16px;text-align:left;cursor:pointer;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-block);color:inherit;
+  font:inherit;transition:border-color var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+.tsum-c:hover{border-color:var(--ink-3);transform:translateY(-1px)}
+.tsum-c[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.tsum-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tsum-t{font-size:15px;font-weight:700;letter-spacing:-.012em}
+.tsum-d{font-size:12px;color:var(--ink-2);line-height:1.45;overflow:hidden;text-overflow:ellipsis;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tchip{display:inline-flex;align-items:center;flex:0 0 auto;padding:2px 9px;border-radius:999px;
+  font-size:11px;font-weight:700;white-space:nowrap;background:var(--surface-2);color:var(--ink-2)}
+.tchip.sig{background:var(--signal-soft);color:var(--signal-text)}
+.tchip.warn{background:var(--warning-soft);color:var(--warning)}
+.tchip.info{background:var(--info-soft);color:var(--info)}
+.tchip.ok{background:var(--success-soft);color:var(--success)}
+.tlist{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-block);overflow:hidden}
+.tl-g + .tl-g{border-top:1px solid var(--border)}
+.tl-gh{display:flex;align-items:center;gap:9px;padding:14px 18px 8px;font-size:12.5px;font-weight:700}
+.tl-pil{width:20px;height:5px;border-radius:9px;flex:0 0 auto;background:var(--pil,var(--axis))}
+.tl-n{font-weight:400;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.tl-more{margin-left:auto;border:0;background:none;font:inherit;font-size:12px;font-weight:600;
+  color:var(--accent-text);cursor:pointer;padding:2px 4px;border-radius:6px}
+.tl-more:hover{text-decoration:underline}
+.tl-r{position:relative;display:flex;align-items:center;gap:13px;padding:11px 18px;cursor:pointer;
+  border-top:1px solid var(--grid);transition:background var(--t-fast) var(--ease)}
+.tl-r:hover{background:var(--surface-2)}
+.tl-r.late::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--vv-rood)}
+.tl-ck{width:18px;height:18px;flex:0 0 auto;border-radius:50%;border:1.5px solid var(--axis);
+  background:var(--surface);color:transparent;display:grid;place-items:center;padding:0;cursor:pointer;
+  transition:border-color var(--t-fast) var(--ease),background var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.tl-ck:hover{border-color:var(--success);color:var(--success)}
+.tl-ck[aria-checked="true"]{background:var(--success);border-color:var(--success);color:#fff}
+.tl-b{flex:1;min-width:0}
+.tl-t{display:block;font-size:13.5px;font-weight:600;line-height:1.35;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.tl-r.done .tl-t{color:var(--ink-3);text-decoration:line-through;font-weight:400}
+.tl-m{display:block;font-size:11.5px;color:var(--ink-2);line-height:1.4;margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-m .sep{margin:0 5px;opacity:.5}
+.tl-gd{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px}
+.tl-e{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.tl-go{font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;opacity:0;
+  transition:opacity var(--t-fast) var(--ease)}
+.tl-r:hover .tl-go{opacity:1}
+.tl-empty{padding:4px 18px 14px;font-size:12px;color:var(--ink-3)}
+@media (max-width:760px){
+  .tsum{grid-template-columns:1fr;gap:8px}
+  .tsum-d{-webkit-line-clamp:1}
+  .tl-go{display:none}
+  .tl-r{padding:11px 14px;gap:11px}
+  .tl-gh{padding-inline:14px}
+}
+/* Op een telefoon blijft alleen de datum staan, en wat te laat is: "Vandaag"
+   en de prioriteit zeggen de groep en de rode streep al. */
+@media (max-width:520px){.tl-e .tchip:not(.sig):not(.due){display:none}}
+
 /* ---- lopende timer: een band over de volle breedte ----------------------
    Zolang de klok loopt, ligt er onder de bovenbalk een donkerblauwe band in
    de kleur van de zijbalk: de app krijgt er een lijst omheen, en dat zie je
@@ -1398,7 +1461,7 @@ const STR = {
   t_shown:["{0} of {1} shown","{0} van {1} getoond"],
   t_search:["Search tasks","Taken zoeken"], t_allp:["All projects","Alle projecten"],
   t_allg:["All goals","Alle doelen"], t_open:["Open","Open"], t_done:["Done","Klaar"], t_all:["All","Alles"],
-  v_board:["Board","Bord"], v_table:["Table","Tabel"], v_calendar:["Calendar","Kalender"],
+  v_list:["List","Lijst"], v_board:["Board","Bord"], v_table:["Table","Tabel"], v_calendar:["Calendar","Kalender"],
   th_task:["Task","Taak"], th_status:["Status","Status"], th_prio:["Priority","Prioriteit"],
   th_due:["Due","Deadline"], th_project:["Project","Project"], th_goal:["Goal","Doel"], th_score:["Score","Score"],
   no_match:["No tasks match these filters","Geen taken voldoen aan deze filters"],
@@ -2124,6 +2187,20 @@ const STR = {
   h_allclients:["All clients","Alle klanten"],
   h_entries:["entries","boekingen"], h_entry:["entry","boeking"],
   h_open_tab:["Open working hours","Open urenregistratie"],
+  /* takenlijst */
+  tl_today:["Today","Vandaag"], tl_week:["This week","Deze week"], tl_wait:["Waiting on","Wachten op"],
+  tl_later:["Later","Later"], tl_done:["Done","Afgerond"],
+  tl_all:["Show all {0}","Toon alle {0}"], tl_less:["Show fewer","Toon minder"],
+  tl_late_n:["{0} overdue","{0} te laat"], tl_week_n:["{0} within 7 days","{0} binnen 7 dagen"],
+  tl_wait_n:["{0} waiting","{0} wachten op"],
+  tl_prio:["Priority","Prioriteit"], tl_ok:["On track","Op orde"], tl_act:["Action","Actie nodig"],
+  tl_follow:["Follow up","Volgen"], tl_calm:["Quiet","Rustig"],
+  tl_late_none:["Nothing past its deadline.","Niets over de deadline."],
+  tl_week_none:["No deadlines in the next 7 days.","Geen deadlines in de komende 7 dagen."],
+  tl_wait_none:["You are not waiting on anyone.","Je wacht op niemand."],
+  tl_next:["Next: {0}","Eerstvolgende: {0}"], tl_oldest:["Longest: {0}","Langst: {0}"],
+  tl_late_on:["Overdue · {0}","Te laat · {0}"], tl_mark:["Mark as done","Afvinken"],
+  tl_reopen:["Reopen","Heropenen"], tl_empty:["Nothing here.","Niets in deze groep."],
   h_timer:["Timer","Timer"], h_since:["since {0}","sinds {0}"],
   h_today_total:["Today {0}","Vandaag {0}"], h_longrun:["8h+","8u+"],
   h_clientlist:["All clients","Alle klanten"],
@@ -3816,7 +3893,7 @@ function save() {
 const UI = {
   view: "dashboard",
   detail: null,          // { type, id }
-  taskView: "board",
+  taskView: "list",
   taskFilter: { q: "", project: "all", goal: "all", show: "open", focus: "all" },
   devFilter: "all",
   ideaFilter: "all",
@@ -3848,7 +3925,9 @@ const UI = {
 try {
   const s = JSON.parse(localStorage.getItem(KEY + ":ui") || "{}");
   if (s.view) UI.view = s.view;
-  if (s.taskView) UI.taskView = s.taskView;
+  /* Onder een nieuwe naam bewaard: de lijst is de nieuwe standaard, en wie
+     het bord ooit had gekozen, ziet die lijst zo één keer. */
+  if (s.taskView2) UI.taskView = s.taskView2;
   if (s.meetView) UI.meetView = s.meetView;
   if (s.pastOpen === false) UI.pastOpen = false;
   if (s.trDicht && typeof s.trDicht === "object") UI.trDicht = s.trDicht;
@@ -3858,7 +3937,7 @@ try {
 const saveUI = () => {
   try {
     localStorage.setItem(KEY + ":ui", JSON.stringify({
-      view: UI.view, taskView: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
+      view: UI.view, taskView2: UI.taskView, meetView: UI.meetView, pastOpen: UI.pastOpen,
       trDicht: UI.trDicht, trMineDicht: UI.trMineDicht, nwsDicht: UI.nwsDicht }));
   }
   catch (e) { /* ignore */ }
@@ -4752,15 +4831,17 @@ function viewTasks() {
   const seg = (v, l) => `<button data-act="task-view" data-v="${v}" aria-pressed="${UI.taskView === v}">${l}</button>`;
 
   const body = UI.taskView === "board" ? taskBoard(all)
-    : UI.taskView === "table" ? taskTable(all) : taskCalendar(all);
+    : UI.taskView === "table" ? taskTable(all)
+    : UI.taskView === "calendar" ? taskCalendar(all) : taskList(all);
 
   return pageHead(tr("nav_tasks"), tr("t_shown", all.length, DB.tasks.length),
     /* Offered here as well as in settings, because this is the page you are
        looking at when you decide the examples have served their purpose. */
     `${cleanupOptions().some((o) => !o.mine) ? `<button class="btn sm ghost" data-act="cleanup">${ico("trash")} ${esc(tr("w_open"))}</button>` : ""}
      <button class="btn sm" data-act="new-task">${ico("plus")} ${esc(tr("new_task"))}</button>`) +
+  taskSummary() +
   `<div class="row wrap" style="gap:8px;margin-bottom:14px">
-    <div class="seg">${seg("board", esc(tr("v_board")))}${seg("table", esc(tr("v_table")))}${seg("calendar", esc(tr("v_calendar")))}</div>
+    <div class="seg">${seg("list", esc(tr("v_list")))}${seg("board", esc(tr("v_board")))}${seg("table", esc(tr("v_table")))}${seg("calendar", esc(tr("v_calendar")))}</div>
     <input class="inp" id="f-q" placeholder="${esc(tr("t_search"))}" value="${esc(f.q)}"
       style="height:29px;font-size:12px;max-width:190px;flex:1;min-width:130px">
     <select class="inp" id="f-project" style="height:29px;font-size:12px;width:auto;min-width:130px">
@@ -4802,6 +4883,106 @@ function chipRow() {
         ${ico("close", "", 11)}</button></span>`).join("")}
     ${chips.length > 1 ? `<button class="btn sm ghost" data-act="clear-all-tf">${esc(tr("clear_all"))}</button>` : ""}
   </div>`;
+}
+
+/* Drie kaarten die zeggen waar je moet beginnen. Ze tellen over al je taken,
+   niet over wat er gefilterd is, en een klik zet precies dat filter aan. */
+function taskSummary() {
+  const open = DB.tasks.filter((t) => t.status !== "done");
+  const byDue = (a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999"));
+  const late = open.filter(FOCUS.overdue.test).sort(byDue);
+  const week = open.filter(FOCUS.week.test).sort(byDue);
+  const wait = open.filter(FOCUS.waiting.test)
+    .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
+  const on = UI.taskFilter.focus;
+  const card = (v, title, chip, desc) => `<button class="tsum-c" data-act="focus-tasks" data-v="${v}"
+      aria-pressed="${on === v}">
+    <span class="tsum-h"><span class="tsum-t">${esc(title)}</span>${chip}</span>
+    <span class="tsum-d">${esc(desc)}</span></button>`;
+  const chip = (cls, k) => `<span class="tchip ${cls}">${esc(tr(k))}</span>`;
+  return `<div class="tsum">
+    ${card("overdue", tr("tl_late_n", late.length),
+      late.length ? chip("sig", "tl_prio") : chip("ok", "tl_ok"),
+      late.length ? late.slice(0, 2).map((t) => t.title).join(", ") : tr("tl_late_none"))}
+    ${card("week", tr("tl_week_n", week.length),
+      week.length ? chip("warn", "tl_act") : chip("ok", "tl_calm"),
+      week.length ? tr("tl_next", `${week[0].title} · ${fmtDate(week[0].dueDate)}`) : tr("tl_week_none"))}
+    ${card("waiting", tr("tl_wait_n", wait.length), chip("info", "tl_follow"),
+      wait.length ? tr("tl_oldest", wait[0].title) : tr("tl_wait_none"))}
+  </div>`;
+}
+
+/* De lijst: wat vandaag moet (te laat, vandaag, onderhanden), wat binnen de
+   week valt, waar je op wacht, en de rest. Afgeronde taken alleen als het
+   filter erom vraagt. Lange groepen klappen in tot acht regels. */
+const TL_KORT = 8;
+function taskList(list) {
+  if (!list.length) return empty(tr("no_match"));
+  const end = addDays(6, parseD(mondayOf()));
+  const groups = { today: [], week: [], wait: [], later: [], done: [] };
+  list.forEach((t) => {
+    if (t.status === "done") groups.done.push(t);
+    else if (overdue(t.dueDate) || t.dueDate === TODAY() || t.status === "in_progress") groups.today.push(t);
+    else if (t.status === "waiting") groups.wait.push(t);
+    else if (t.dueDate && t.dueDate <= end) groups.week.push(t);
+    else groups.later.push(t);
+  });
+  const byDate = (a, b) => String(a.dueDate || "9999").localeCompare(String(b.dueDate || "9999"))
+    || scoreTask(b) - scoreTask(a);
+  groups.done.sort((a, b) => String(b.completedAt || "").localeCompare(String(a.completedAt || "")));
+  ["today", "week", "wait", "later"].forEach((k) => groups[k].sort(byDate));
+
+  const meta = [
+    ["today", "tl_today", "var(--vv-rood)"], ["week", "tl_week", "var(--vv-turquoise)"],
+    ["wait", "tl_wait", "var(--axis)"], ["later", "tl_later", "var(--vv-petrolblauw)"],
+    ["done", "tl_done", "var(--success)"],
+  ];
+  UI.tlAll = UI.tlAll || {};
+  return `<div class="tlist">${meta.filter(([k]) => groups[k].length).map(([k, key, pil]) => {
+    const items = groups[k], all = UI.tlAll[k] || items.length <= TL_KORT;
+    return `<section class="tl-g">
+      <header class="tl-gh"><span class="tl-pil" style="--pil:${pil}"></span>${esc(tr(key))}
+        <span class="tl-n">${items.length}</span>
+        ${items.length > TL_KORT ? `<button class="tl-more" data-act="tl-more" data-v="${k}">
+          ${esc(UI.tlAll[k] ? tr("tl_less") : tr("tl_all", items.length))}</button>` : ""}</header>
+      ${(all ? items : items.slice(0, TL_KORT)).map(taskRow).join("")}
+    </section>`;
+  }).join("")}</div>`;
+}
+function taskRow(t) {
+  const done = t.status === "done", od = !done && overdue(t.dueDate);
+  const p = t.projectId && DB.projects.find((x) => x.id === t.projectId);
+  const g = t.goalId && DB.goals.find((x) => x.id === t.goalId);
+  const ap = pointForTask(t.id);
+  const apm = ap && DB.meetings.find((x) => x.id === ap.meetingId);
+  const sep = `<span class="sep">·</span>`;
+  const bits = [
+    p ? esc(p.name) : "",
+    g ? `<span><i class="tl-gd" style="background:${slotColor(g.slot)}"></i>${esc(g.code)}</span>` : "",
+    t.status === "in_progress" ? esc(lbl(STATUSES.find((s) => s[0] === "in_progress")[1])) : "",
+    t.energy === "deep" ? esc(tr("deep")) : "",
+    apm ? `<span title="${esc(tr("ap_task_on", mtgKort(apm)))}">${ico("meetings", "", 11)} ${esc(fmtDate(String(apm.startsAt).slice(0, 10)))}</span>` : "",
+    repeatTag(t, true),
+  ].filter(Boolean);
+  const pr = PRIOS.find((x) => x[0] === t.priority);
+  const due = !t.dueDate ? ""
+    : od ? `<span class="tchip sig due">${esc(tr("tl_late_on", fmtDate(t.dueDate)))}</span>`
+    : t.dueDate === TODAY() ? `<span class="tchip">${esc(tr("tl_today"))}</span>`
+    : `<span class="tchip due">${esc(fmtDate(t.dueDate))}</span>`;
+  return `<article class="tl-r${od ? " late" : ""}${done ? " done" : ""}" data-act="edit-task" data-id="${t.id}">
+    <button class="tl-ck" role="checkbox" aria-checked="${done}" data-act="toggle-task" data-id="${t.id}"
+      title="${esc(tr(done ? "tl_reopen" : "tl_mark"))}" aria-label="${esc(tr(done ? "tl_reopen" : "tl_mark"))}">${ico("check", "", 11)}</button>
+    <span class="tl-b">
+      <span class="tl-t">${esc(t.title)}</span>
+      ${bits.length ? `<span class="tl-m">${bits.join(sep)}</span>` : ""}
+    </span>
+    <span class="tl-e">
+      ${!done && (t.priority === "critical" || t.priority === "high") && pr
+        ? `<span class="tchip warn">${esc(lbl(pr[1]))}</span>` : ""}
+      ${done ? "" : due}
+      <span class="tl-go">${esc(tr("t_open"))} →</span>
+    </span>
+  </article>`;
 }
 
 const COL_ACCENT = { inbox: "var(--axis)", planned: "var(--info)", next: "var(--primary)",
@@ -12720,6 +12901,11 @@ document.addEventListener("click", (e) => {
       break;
     }
     case "task-view": UI.taskView = el.dataset.v; saveUI(); render(); break;
+    case "tl-more": {
+      UI.tlAll = UI.tlAll || {};
+      UI.tlAll[el.dataset.v] = !UI.tlAll[el.dataset.v];
+      render(); break;
+    }
 
     /* Tile and chip filters. Every one of these is a toggle: firing the same
        value twice returns to the unfiltered list. */
