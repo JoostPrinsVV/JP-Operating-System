@@ -518,6 +518,10 @@ dialog::backdrop{background:rgba(16,29,79,.42);backdrop-filter:blur(5px) saturat
   justify-content:flex-end;flex-wrap:wrap}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:520px){.f2{grid-template-columns:1fr}}
+/* Datum, begintijd en eindtijd op één regel, zoals in Outlook. Smal staat de
+   datum erboven en blijven begin en einde naast elkaar. */
+.f-tijd{display:grid;grid-template-columns:1.25fr 1fr 1.35fr;gap:10px}
+@media (max-width:520px){.f-tijd{grid-template-columns:1fr 1fr}.f-tijd>:first-child{grid-column:1/-1}}
 
 .chk{width:16px;height:16px;flex:0 0 auto;border-radius:4px;border:1px solid var(--border);
   background:var(--surface);cursor:pointer;display:grid;place-items:center;padding:0;color:transparent}
@@ -2336,6 +2340,8 @@ const STR = {
   dl_meet_d:["Capture notes and decisions here; action items become tasks from the meeting page.",
              "Leg hier notities en besluiten vast; actiepunten worden taken vanaf de overlegpagina."],
   dl_starts:["Starts","Begint"], dl_type:["Type","Soort"], dl_location:["Location","Locatie"],
+  dl_day:["Date","Datum"], dl_from:["Start time","Begintijd"], dl_to:["End time","Eindtijd"],
+  dur_min:["{0} min","{0} min"], dur_h:["{0} h","{0} uur"], dur_hm:["{0} h {1} min","{0} uur {1} min"],
   dl_loc_ph:["Teams, room, city","Teams, zaal, plaats"],
   dl_attendees:["Attendees","Deelnemers"], dl_comma:["Comma separated","Komma-gescheiden"],
   dl_dec_ph:["What was actually decided, and by whom","Wat er echt is besloten, en door wie"],
@@ -12064,10 +12070,53 @@ const seriesLater = (m) => m.seriesId
   ? DB.meetings.filter((x) => x !== m && x.seriesId === m.seriesId && String(x.startsAt) > String(m.startsAt))
   : [];
 
+/* Tijden kiezen zoals in Outlook: een lijst per kwartier, en bij het einde
+   meteen hoe lang het duurt. Tijden rekenen in minuten na middernacht; het
+   einde mag precies middernacht zijn, en heet dan 24:00 in het formulier. */
+const klokMin = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + (m || 0); };
+const minKlok = (min) => `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`;
+function duurTekst(d) {
+  const h = Math.floor(d / 60), m = d % 60;
+  return h ? (m ? tr("dur_hm", h, m) : tr("dur_h", h)) : tr("dur_min", m);
+}
+function beginOpties(begin) {
+  const lijst = new Set([begin]);
+  for (let t = 0; t < 1440; t += 15) lijst.add(t);
+  return [...lijst].sort((a, b) => a - b).map((t) =>
+    `<option value="${minKlok(t)}" ${t === begin ? "selected" : ""}>${minKlok(t)}</option>`).join("");
+}
+function eindOpties(begin, eind) {
+  // Elk kwartier na het begin, plus precies een half uur erna en wat er al stond.
+  const lijst = new Set([begin + 30, eind].filter((t) => t > begin && t <= 1440));
+  for (let t = Math.floor(begin / 15) * 15 + 15; t <= 1440; t += 15) lijst.add(t);
+  return [...lijst].sort((a, b) => a - b).map((t) =>
+    `<option value="${minKlok(t)}" ${t === eind ? "selected" : ""}>${minKlok(t % 1440)} (${esc(duurTekst(t - begin))})</option>`).join("");
+}
+/* Een nieuwe afspraak begint op het eerstvolgende hele of halve uur en duurt
+   een half uur, net als in Outlook. */
+function volgendHalfUur() {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(d.getMinutes() + (30 - (d.getMinutes() % 30)) % 30);
+  return d;
+}
+
 function meetingDialog(meeting, defaults) {
-  const m = meeting || { title: "", kind: "other", startsAt: new Date().toISOString().slice(0, 16),
-    endsAt: "", location: "", attendees: [], agenda: "", notes: "", decisions: "", projectId: "",
+  const startNu = volgendHalfUur();
+  const m = meeting || { title: "", kind: "other", startsAt: localIso(startNu),
+    endsAt: localIso(new Date(startNu.getTime() + 30 * 60000)),
+    location: "", attendees: [], agenda: "", notes: "", decisions: "", projectId: "",
     ...(defaults || {}) };
+  /* Begin en einde voor het formulier. Zonder eindtijd, of met een einde op
+     een andere dag, stelt hij een half uur voor; eindigt hij om middernacht,
+     dan is dat 24:00 op dezelfde dag. */
+  const dag = String(m.startsAt).slice(0, 10);
+  const begin = klokMin(String(m.startsAt).slice(11, 16));
+  const eindDag = String(m.endsAt || "").slice(0, 10);
+  const eind = !m.endsAt ? Math.min(begin + 30, 1440)
+    : eindDag === dag && klokMin(m.endsAt.slice(11, 16)) > begin ? klokMin(m.endsAt.slice(11, 16))
+    : eindDag === addDays(1, parseD(dag)) && m.endsAt.slice(11, 16) === "00:00" ? 1440
+    : Math.min(begin + 30, 1440);
   /* Herhalen kan alleen bij een eigen afspraak. Hoort hij al bij een eigen
      reeks met keren erna, dan kies je of een wijziging die ook raakt. */
   // Ook een eigen afspraak die al in Outlook staat, blijft hier van jou.
@@ -12110,16 +12159,20 @@ function meetingDialog(meeting, defaults) {
     } : null,
     body: field(tr("dl_title"), `<input class="inp" name="title" required value="${esc(m.title)}"
         placeholder="e.g. Audit AI steering — monthly">`) +
-      `<div class="f2">
-        ${field(tr("dl_starts"), `<input class="inp" type="datetime-local" name="startsAt" required value="${esc(m.startsAt.slice(0, 16))}">`)}
-        ${field(tr("dl_type"), `<select class="inp" name="kind">${opts(MKINDS, m.kind)}</select>`)}
+      `<div class="f-tijd">
+        ${field(tr("dl_day"), `<input class="inp" type="date" name="day" required value="${esc(dag)}">`)}
+        ${field(tr("dl_from"), `<select class="inp" name="startTime">${beginOpties(begin)}</select>`)}
+        ${field(tr("dl_to"), `<select class="inp" name="endTime">${eindOpties(begin, eind)}</select>`)}
+      </div>
+      <div class="f2">
         ${field(tr("dl_location"), `<input class="inp" name="location" value="${esc(m.location)}" placeholder="Teams, room, city">`)}
+        ${field(tr("m_link"), `<input class="inp" name="onlineUrl" type="url" value="${esc(m.onlineUrl || "")}"
+          placeholder="${esc(tr("m_link_ph"))}">`)}
+        ${field(tr("dl_type"), `<select class="inp" name="kind">${opts(MKINDS, m.kind)}</select>`)}
         ${field(tr("th_project"), `<select class="inp" name="projectId">${projOptions(m.projectId)}</select>`)}
       </div>` + herhaalVeld +
       field(tr("m_cats"), categoryPicker(m.categories || [])) +
       field(tr("dl_attendees"), `<input class="inp" name="attendees" value="${esc((m.attendees || []).map(attText).join(", "))}" placeholder="${esc(tr("dl_att_ph"))}">`) +
-      field(tr("m_link"), `<input class="inp" name="onlineUrl" type="url" value="${esc(m.onlineUrl || "")}"
-        placeholder="${esc(tr("m_link_ph"))}">`) +
       field(tr("m_agenda"), `<textarea class="inp" name="agenda" rows="2">${esc(m.agenda)}</textarea>`) +
       field(tr("dl_notes"), `<textarea class="inp" name="notes" rows="5">${esc(m.notes)}</textarea>`) +
       field(tr("m_decisions"), `<textarea class="inp" name="decisions" rows="3" placeholder="${esc(tr("dl_dec_ph"))}">${esc(m.decisions)}</textarea>`),
@@ -12127,7 +12180,13 @@ function meetingDialog(meeting, defaults) {
       if (!f.title.trim()) return false;
       const cats = pickedCategories(f);
       catEnsure(cats);
-      const patch = { title: f.title.trim(), kind: f.kind, startsAt: f.startsAt, location: f.location,
+      if (!f.day || !f.startTime) return false;
+      const van = klokMin(f.startTime);
+      let tot = klokMin(f.endTime || minKlok(van + 30));
+      if (tot <= van) tot = Math.min(van + 30, 1440);
+      const startsAt = `${f.day}T${f.startTime}`;
+      const endsAt = tot >= 1440 ? `${addDays(1, parseD(f.day))}T00:00` : `${f.day}T${minKlok(tot)}`;
+      const patch = { title: f.title.trim(), kind: f.kind, startsAt, endsAt, location: f.location,
         projectId: f.projectId || null, agenda: f.agenda, notes: f.notes, decisions: f.decisions,
         onlineUrl: (f.onlineUrl || "").trim(), categories: cats.slice(0, 8),
         attendees: f.attendees.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean).map(attParse) };
@@ -12149,14 +12208,15 @@ function meetingDialog(meeting, defaults) {
               projectId: patch.projectId, onlineUrl: patch.onlineUrl, categories: [...patch.categories],
               attendees: JSON.parse(JSON.stringify(patch.attendees)) });
             x.startsAt = schuif(x.startsAt);
-            if (x.endsAt) x.endsAt = schuif(x.endsAt);
+            // Ook de duur gaat mee: wordt dit overleg een uur, dan de keren erna ook.
+            x.endsAt = localIso(new Date(Date.parse(x.startsAt) + (tot - van) * 60000));
           });
           melding = later.length === 1 ? tr("m_series_upd1") : tr("m_series_upd", later.length);
         }
       } else {
         const id = uid();
         // Staat Naar Outlook aan, dan gaat wat je hier maakt ook naar Outlook.
-        doel = { id, endsAt: "", ...patch, ...(olAan() ? { ol: true } : {}) };
+        doel = { id, ...patch, ...(olAan() ? { ol: true } : {}) };
         DB.meetings.unshift(doel);
         UI.detail = { type: "meeting", id };
       }
@@ -12175,6 +12235,16 @@ function meetingDialog(meeting, defaults) {
      en dat venster vervangt dit formulier. */
   const vink = dlg.querySelector('[name="seriesAll"]');
   if (vink) vink.onchange = () => { ookLater = vink.checked; };
+  /* Schuif je het begin, dan schuift het einde mee en blijft de duur gelijk -
+     zoals in Outlook. Past het niet meer voor middernacht, dan tot 24:00. */
+  const vanVeld = dlg.querySelector('[name="startTime"]'), totVeld = dlg.querySelector('[name="endTime"]');
+  let vorige = begin;
+  if (vanVeld && totVeld) vanVeld.onchange = () => {
+    const nieuw = klokMin(vanVeld.value);
+    const duur = Math.max(15, klokMin(totVeld.value) - vorige);
+    totVeld.innerHTML = eindOpties(nieuw, Math.min(nieuw + duur, 1440));
+    vorige = nieuw;
+  };
 }
 
 /* Een afspraak aanklikken in de agenda hoort je niet uit de agenda weg te
