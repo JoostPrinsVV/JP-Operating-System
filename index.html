@@ -2256,7 +2256,15 @@ const STR = {
   tl_wait_none:["You are not waiting on anyone.","Je wacht op niemand."],
   tl_next:["Next: {0}","Eerstvolgende: {0}"], tl_oldest:["Longest: {0}","Langst: {0}"],
   tl_late_on:["Overdue · {0}","Te laat · {0}"], tl_mark:["Mark as done","Afvinken"],
-  tl_reopen:["Reopen","Heropenen"], tl_empty:["Nothing here.","Niets in deze groep."],
+  tl_reopen:["Reopen","Heropenen"],
+  /* agenda-kaarten */
+  as_today_n:["{0} today","{0} vandaag"], as_week_n:["{0} this week","{0} deze week"],
+  as_book_n:["{0} to book","{0} nog te boeken"], as_act_n:["{0} open actions","{0} open actiepunten"],
+  as_now:["Now","Nu bezig"], as_now_d:["{0}, until {1}","{0}, tot {1}"],
+  as_today_none:["Nothing left today.","Vandaag niets meer."],
+  as_week_d:["{0} in meetings","{0} in afspraken"], as_full:["Full","Vol"], as_room:["Room","Ruimte"],
+  as_book_none:["Every meeting this week is booked.","Elke afspraak van deze week is geboekt."],
+  as_act_none:["No open actions.","Geen open actiepunten."], tl_empty:["Nothing here.","Niets in deze groep."],
   h_timer:["Timer","Timer"], h_since:["since {0}","sinds {0}"],
   h_today_total:["Today {0}","Vandaag {0}"], h_longrun:["8h+","8u+"],
   h_clientlist:["All clients","Alle klanten"],
@@ -5904,6 +5912,48 @@ function dayTimeline(ms) {
   return `<ul class="grid" style="gap:2px">${rijen}${gezet ? "" : marker}</ul>`;
 }
 
+/* Dezelfde drie kaarten als boven Taken: vandaag, deze week, en wat er nog
+   geboekt moet worden. Een klik brengt je naar precies dat overzicht. */
+function agendaSummary() {
+  const now = Date.now(), vandaag = TODAY();
+  const telt = DB.meetings.filter((m) => !m.cancelled);
+  const dag = telt.filter((m) => String(m.startsAt).slice(0, 10) === vandaag)
+    .sort((a, b) => String(a.startsAt).localeCompare(String(b.startsAt)));
+  const nu = dag.find((m) => Date.parse(m.startsAt) <= now && Date.parse(m.endsAt || m.startsAt) > now);
+  const volgende = dag.find((m) => Date.parse(m.startsAt) > now);
+  const ma = mondayOf(), zo = addDays(6, parseD(ma));
+  const week = telt.filter((m) => { const d = String(m.startsAt).slice(0, 10); return d >= ma && d <= zo; });
+  const weekMin = week.reduce((s, m) => s + meetingMinutes(m), 0);
+  const chip = (cls, k) => `<span class="tchip ${cls}">${esc(tr(k))}</span>`;
+  const kaart = (attrs, title, c, desc) => `<button class="tsum-c" ${attrs}>
+    <span class="tsum-h"><span class="tsum-t">${esc(title)}</span>${c}</span>
+    <span class="tsum-d">${esc(desc)}</span></button>`;
+
+  let derde;
+  if (viewOn("hours")) {
+    const open = unbookedMeetings(ma);
+    derde = kaart(`data-nav="hours"`, tr("as_book_n", open.length),
+      open.length ? chip("warn", "tl_act") : chip("ok", "tl_ok"),
+      open.length ? tr("tl_oldest", `${open[0].title} · ${fmtDate(String(open[0].startsAt).slice(0, 10))}`)
+        : tr("as_book_none"));
+  } else {
+    const acts = DB.actions.filter((a) => a.status === "open" || a.status === "in_progress");
+    derde = kaart(`data-act="meet-view" data-v="list"`, tr("as_act_n", acts.length),
+      acts.length ? chip("info", "tl_follow") : chip("ok", "tl_ok"),
+      acts.length ? acts[0].text || "" : tr("as_act_none"));
+  }
+  return `<div class="tsum">
+    ${kaart(`data-act="meet-today"`, tr("as_today_n", dag.length),
+      nu ? chip("sig", "as_now") : chip("info", "tl_today"),
+      nu ? tr("as_now_d", nu.title, fmtTime(nu.endsAt || nu.startsAt))
+        : volgende ? tr("tl_next", `${volgende.title} · ${fmtTime(volgende.startsAt)}`) : tr("as_today_none"))}
+    ${kaart(`data-act="meet-view" data-v="week"`, tr("as_week_n", week.length),
+      weekMin / 60 > 20 ? chip("warn", "as_full") : chip("ok", "as_room"),
+      tr("as_week_d", fmtH(weekMin)))}
+    ${derde}
+  </div>`;
+}
+
 function viewMeetings() {
   const now = Date.now();
   const sorted = [...DB.meetings].sort((a, b) => b.startsAt.localeCompare(a.startsAt));
@@ -5948,6 +5998,7 @@ function viewMeetings() {
      ${canRescan ? `<button class="btn sm ghost" data-act="rescan-links">${ico("video")} ${esc(tr("m_rescan"))}</button>` : ""}
      <button class="btn sm outline" data-act="ics-open">${ico("meetings")} ${esc(tr("m_import"))}</button>
      <button class="btn sm" data-act="new-meeting">${ico("plus")} ${esc(tr("m_new"))}</button>`) +
+  agendaSummary() +
   // The folder sits above the lists: it is where the appointments come from.
   `<div style="margin-bottom:14px">${agendaCard()}</div>`;
 
