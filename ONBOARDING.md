@@ -333,6 +333,7 @@ weggeschreven.
 | `The 'from' property value is of type 'Object'` | Je mist `?['value']` achter `body('…')` |
 | De app ziet de map niet meer | De browser is de toestemming vergeten; kies de map opnieuw |
 | Een vergaderverslag komt leeg binnen | Copilot heeft andere kopjes gebruikt dan de prompt vraagt |
+| Van een overleg van iemand anders komt nooit een verslag | Copilot kan niet bij de transcriptie als je geen organisator bent. Laat het transcript toesturen, laat Copilot het samenvatten en plak dat via **Transcripties → Verslag toevoegen**. De knop *Copilot-prompt kopiëren* in dat venster geeft de juiste prompt |
 | Alle acties staan op jou | Je naam staat niet in **Instellingen → Profiel** |
 | Een nieuwe categorie uit Outlook verschijnt niet | De categoriestappen ontbreken in de agendastroom (zie Deel 3), of de stroom liep daarna niet meer |
 

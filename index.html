@@ -1344,6 +1344,29 @@ const STR = {
   tr_link_pick:["Meeting that day","Afspraak op die dag"],
   tr_link_cancelled:["cancelled","geannuleerd"],
   tr_linked:["Linked to the meeting","Gekoppeld aan de afspraak"],
+  tr_add:["Add a report","Verslag toevoegen"],
+  tr_add_d:["Got a transcript sent to you separately? Have Copilot summarise it with the headings Summary, Decisions and Actions, and paste the result here. Actions without a name are yours.",
+            "Kreeg je een transcript los toegestuurd? Laat Copilot het samenvatten met de kopjes Samenvatting, Besluiten en Acties, en plak het resultaat hier. Acties zonder naam zijn voor jou."],
+  tr_add_meeting:["Meeting","Afspraak"],
+  tr_add_text:["Summary from Copilot","Samenvatting van Copilot"],
+  tr_add_ph:["Summary: …\nDecisions: …\nActions:\n- Henri: send the outline\n- check the quote",
+             "Samenvatting: …\nBesluiten: …\nActies:\n- Henri: opzet aanleveren\n- offerte nalopen"],
+  tr_add_prompt:["Copy the Copilot prompt","Copilot-prompt kopiëren"],
+  tr_add_prompt_ok:["Prompt copied — paste it into Copilot together with the transcript",
+                    "Prompt gekopieerd — plak hem in Copilot, samen met het transcript"],
+  tr_add_prompt_text:["Summarise this transcript in exactly this format, without an introduction or closing:\n\nSummary: <the gist in a few sentences>\nDecisions: <what was decided, or: None>\nActions:\n- <Name>: <what that person will do>\n- <what I will do myself, without a name in front>",
+                      "Vat dit transcript samen in exact dit formaat, zonder inleiding of afsluiting:\n\nSamenvatting: <de kern in een paar zinnen>\nBesluiten: <wat er is besloten, of: Geen>\nActies:\n- <Naam>: <wat die persoon gaat doen>\n- <wat ik zelf moet doen, zonder naam ervoor>"],
+  tr_add_empty:["Paste the summary first","Plak eerst de samenvatting"],
+  tr_add_nomeet:["There is no meeting in the last month to attach a report to",
+                 "Er is geen afspraak in de afgelopen maand om een verslag aan te hangen"],
+  tr_add_hint:["No report came in for this meeting. Got the transcript sent separately? Add the summary yourself.",
+               "Voor dit overleg is geen verslag binnengekomen. Kreeg je het transcript los toegestuurd? Voeg de samenvatting dan zelf toe."],
+  tr_added:["Report added, {0} actions","Verslag toegevoegd, {0} acties"],
+  tr_added_1:["Report added, 1 action","Verslag toegevoegd, 1 actie"],
+  tr_added_0:["Report added, but no actions recognised — are they under a heading Actions?",
+              "Verslag toegevoegd, maar geen acties herkend — staan ze onder een kopje Acties?"],
+  tr_added_bij:["Added to the report that was already there","Aangevuld bij het verslag dat er al was"],
+  tr_added_niets:["Nothing new — that was already in the report","Niets nieuws — dat stond al in het verslag"],
   tr_open_transcript:["Transcriptie","Transcriptie"],
   tr_open_chat:["In Teams","In Teams"],
   tr_card:["Transcriptie","Transcriptie"],
@@ -6129,7 +6152,7 @@ function viewMeetingDetail(id) {
   `<div class="grid split">
     <div class="grid">
       ${briefingCard(m)}
-      ${transcriptCard(m)}
+      ${transcriptCard(m) || trAddCard(m)}
       ${mailCard(m)}
       ${attendeeCard(m)}
       ${m.agenda ? card(tr("m_agenda"), `<p style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : ""}
@@ -6695,6 +6718,8 @@ const TR_SECTIES = [
   ["besluiten",    ["Decisions","Besluiten"],   ["besluiten", "besluit", "conclusies", "conclusie",
     "decisions", "decision", "outcomes"]],
 ];
+// Een kopje met een van deze woorden erin is de actielijst.
+const TR_ACTIE_WOORDEN = ["actie", "vervolg", "taken", "action", "task", "to do", "todo", "afsprak"];
 /* Regels die door de omzetter zijn afgebroken weer tot alinea's maken. Een
    lege regel blijft een alinea-grens; een regel met een streepje blijft een
    eigen regel. */
@@ -6739,8 +6764,7 @@ function trParse(tekst) {
       const u = /(https?:\/\/\S+)/.exec(kop[2] || "");
       if (u) { link = u[1].replace(/[.,;)]+$/, ""); huidig = null; return; }
     }
-    const isActies = kop && ["actie", "vervolg", "taken", "action", "task", "to do", "todo", "afsprak"]
-      .some((w) => naam.includes(w));
+    const isActies = kop && TR_ACTIE_WOORDEN.some((w) => naam.includes(w));
     const sleutel = !isActies && kop && kopSleutel(naam, TR_SECTIES);
     if (sleutel) { huidig = sleutel; secties[huidig] = (kop[2] || "").trim(); return; }
     if (isActies) { huidig = "acties"; if (kop[2].trim()) acties.push(kop[2].trim()); return; }
@@ -6914,7 +6938,9 @@ function viewTranscripts() {
   return pageHead(tr("nav_transcripts"), tr("tr_sub"),
     `<div class="seg">${[["all", tr("tr_f_all")], ["open", tr("tr_f_open")]]
       .map(([v, l]) => `<button data-act="tr-filter" data-v="${v}"
-        aria-pressed="${f === v}">${esc(l)}</button>`).join("")}</div>`) +
+        aria-pressed="${f === v}">${esc(l)}</button>`).join("")}</div>
+     <button class="btn sm outline" data-act="tr-add" title="${esc(tr("tr_add_d"))}">
+       ${ico("plus", "", 12)} ${esc(tr("tr_add"))}</button>`) +
   (all.length ? `<p class="row wrap xs mut" style="gap:14px;margin-bottom:14px">
       <span>${esc(all.length === 1 ? tr("tr_n_1") : tr("tr_n", all.length))}</span>
       <span>${esc(tr("tr_n_act", totaalActies, totaalOpen))}</span>
@@ -7317,6 +7343,121 @@ function trWhoDialog(t, a) {
       toast(wie ? tr("tr_who_set", wie) : tr("tr_who_me"));
     },
   });
+}
+
+/* ---- een verslag zelf toevoegen -------------------------------------------
+   Ben je niet de organisator, dan kan Copilot 's avonds vaak niet bij de
+   transcriptie en slaat de avondstroom het overleg over. Stuurt de
+   organisator het transcript los door, dan laat je Copilot het samenvatten
+   en plak je dat hier. Het gaat door dezelfde lezer als wat de stroom
+   aanlevert, dus de acties komen op dezelfde plek, met dezelfde knoppen. Het
+   samenvatten zelf blijft bij Copilot: de app doet geen verzoeken naar
+   buiten.
+------------------------------------------------------------------------- */
+
+/* Wat je uit Copilot kopieert is zelden precies het afgesproken formaat. Een
+   kopje komt mee als "## Acties", "**Besluiten**" of als kale regel
+   "Samenvatting", zonder dubbele punt; een lijst als "1." of helemaal zonder
+   opsommingsteken, omdat kopiëren uit een opgemaakt antwoord dat weglaat.
+   Hier wordt het gelijkgetrokken voor de lezer van de stroom. Onder Acties
+   is daarom elke regel een eigen actie - geplakte regels zijn echte regels,
+   niet afgebroken door een omzetter zoals in de mail - behalve een regel die
+   inspringt: die hoort bij de actie erboven. Een kopregel met datum en tijd
+   die Copilot er zelf boven zette gaat eraf; die komt van de afspraak. */
+function trPlakNormaal(tekst) {
+  const isActieKop = (s) => TR_ACTIE_WOORDEN.some((w) => briefNorm(s).includes(w));
+  const isKop = (s, maxWoorden) => {
+    const n = briefNorm(s);
+    return n.length <= 40 && n.split(" ").length <= maxWoorden &&
+      (Boolean(kopSleutel(n, TR_SECTIES)) || isActieKop(n));
+  };
+  let inActies = false;
+  return String(tekst || "").replace(/\r/g, "")
+    .replace(/^\s*\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}[^\n]*\n/, "")
+    .split("\n").map((regel) => {
+      // Een kopje op een eigen regel: met opmaak eromheen mag hij wat langer zijn.
+      const opgemaakt = /^\s*(#{1,6}\s|\*\*|__)/.test(regel);
+      const kaal = regel.replace(/^\s*#{1,6}\s*/, "").replace(/\*\*|__/g, "").trim().replace(/\s*:$/, "");
+      if (kaal && !/[:.!?;,]/.test(kaal) && isKop(kaal, opgemaakt ? 5 : 3)) {
+        inActies = isActieKop(kaal);
+        return `${kaal}:`;
+      }
+      const kop = KOP_RE.exec(regel);
+      if (kop && isKop(kop[1], 5)) { inActies = isActieKop(kop[1]); return regel; }
+      if (!inActies || !regel.trim()) return regel;
+      const opsomming = /^\s*(?:[-*•]|\d{1,2}[.)])\s+/.test(regel);
+      if (!opsomming && /^\s{2,}\S/.test(regel)) return regel.trim();     // vervolg van de actie erboven
+      return `- ${regel.replace(/^\s*(?:[-*•]|\d{1,2}[.)])\s*/, "").trim()}`;
+    }).join("\n").trim();
+}
+
+/* Een geplakt verslag bij een afspraak. Staat er al een verslag bij - een
+   half verslag uit de stroom, of eerder geplakt - dan wordt dat aangevuld
+   in plaats van dat er een tweede naast komt. */
+function trAddPaste(m, tekst) {
+  const al = trForMeeting(m);
+  const day = al ? al.day : String(m.startsAt).slice(0, 10);
+  const time = al ? al.time : String(m.startsAt).slice(11, 16);
+  const title = (al && al.title) || m.title || tr("tr_untitled");
+  const r = trImport({ items: [{ text: `${day} ${time} ${title}\n\n${tekst}` }] });
+  const t = (DB.transcripts || []).find((x) => x.key === `${day}|${time}|${briefNorm(title)}`) || null;
+  // Aangewezen is aangewezen: zoeken hoeft dan niet meer, en kan niet meer misgaan.
+  if (t && t.meetingId !== m.id) { t.meetingId = m.id; save(); }
+  return { t, ...r };
+}
+
+/* Alleen afspraken die al begonnen zijn: er is pas een transcript als er
+   gesproken is. Een maand terug is ruim genoeg voor een transcript dat later
+   wordt doorgestuurd. */
+const trAddKandidaat = (m) => !isAllDay(m) && !m.cancelled &&
+  String(m.startsAt).slice(0, 10) >= addDays(-30) && new Date(m.startsAt) <= new Date();
+
+function trAddDialog(meeting = null) {
+  const keuze = meeting ? [meeting] : DB.meetings.filter(trAddKandidaat)
+    .sort((a, b) => String(b.startsAt).localeCompare(String(a.startsAt)));
+  if (!keuze.length) { toast(tr("tr_add_nomeet")); return; }
+  const label = (m) => `${fmtDate(String(m.startsAt).slice(0, 10))} · ${fmtTime(m.startsAt)}  ${m.title || tr("tr_untitled")}`;
+
+  openDialog({
+    title: tr("tr_add"), desc: tr("tr_add_d"), submit: tr("save"),
+    body: (meeting
+        ? `<input type="hidden" name="meetingId" value="${esc(meeting.id)}">
+           <p class="sm2" style="line-height:1.6;padding:9px 11px;border-radius:9px;margin-bottom:12px;
+             background:var(--surface-2)">${esc(label(meeting))}</p>`
+        : field(tr("tr_add_meeting"), `<select class="inp" name="meetingId">
+            ${keuze.map((m) => `<option value="${m.id}">${esc(label(m))}</option>`).join("")}</select>`)) +
+      field(tr("tr_add_text"), `<textarea class="inp" name="text" rows="11" required
+          placeholder="${esc(tr("tr_add_ph"))}"></textarea>`) +
+      `<button type="button" class="btn sm ghost" data-act="tr-add-prompt">
+         ${ico("copy", "", 12)} <span>${esc(tr("tr_add_prompt"))}</span></button>
+       <pre id="tr-add-prompt" class="xs" hidden style="white-space:pre-wrap;margin-top:8px;padding:9px 11px;
+         border-radius:9px;background:var(--surface-2)">${esc(tr("tr_add_prompt_text"))}</pre>`,
+    onSubmit: (f) => {
+      const m = DB.meetings.find((x) => x.id === f.meetingId);
+      const tekst = trPlakNormaal(f.text);
+      if (!m) return false;
+      if (!tekst) { toast(tr("tr_add_empty")); return false; }
+      const { t, nieuw, bij } = trAddPaste(m, tekst);
+      if (t) { UI.trSel = t.id; UI.trOpen = { [t.id]: true }; }
+      render();
+      const n = t ? t.acties.length : 0;
+      toast(nieuw ? (n === 0 ? tr("tr_added_0") : n === 1 ? tr("tr_added_1") : tr("tr_added", n))
+        : bij ? tr("tr_added_bij") : tr("tr_added_niets"));
+    },
+  });
+}
+
+/* Op de pagina van een overleg waar geen verslag bij kwam: de weg om er zelf
+   een toe te voegen. Alleen bij een overleg met anderen - een blok voor
+   jezelf heeft geen transcript - en niet in het snelle venster van een
+   afspraak, waar hij bij elk overleg zonder transcriptie zou staan. */
+function trAddCard(m) {
+  if (!trAddKandidaat(m) || trForMeeting(m)) return "";
+  if (!(m.attendees || []).length && !m.onlineUrl) return "";
+  return card(tr("tr_card"),
+    `<p class="xs mut" style="line-height:1.6">${esc(tr("tr_add_hint"))}</p>
+     <button class="btn sm outline" data-act="tr-add" data-id="${m.id}" style="margin-top:10px">
+       ${ico("plus", "", 12)} ${esc(tr("tr_add"))}</button>`);
 }
 
 /* Ben ik dit zelf? Copilot gebruikt de naam zoals die in de transcriptie staat,
@@ -13249,6 +13390,25 @@ document.addEventListener("click", (e) => {
     case "tr-link": {
       const t = (DB.transcripts || []).find((x) => x.id === id);
       if (t) trLinkDialog(t);
+      break;
+    }
+    case "tr-add": trAddDialog(id ? DB.meetings.find((x) => x.id === id) || null : null); break;
+    /* Een melding valt achter het open venster, dus de knop zegt het zelf.
+       Mag de browser niet bij het klembord, dan staat de prompt eronder,
+       geselecteerd, om met de hand te kopiëren. */
+    case "tr-add-prompt": {
+      const pre = $("#tr-add-prompt");
+      const handmatig = () => { if (pre) { pre.hidden = false; selectNode(pre); } };
+      const gelukt = () => {
+        const s = el.querySelector("span");
+        if (s) s.textContent = tr("tr_add_prompt_ok");
+        setTimeout(() => { if (s && s.isConnected) s.textContent = tr("tr_add_prompt"); }, 4000);
+      };
+      try {
+        const p = navigator.clipboard && navigator.clipboard.writeText(tr("tr_add_prompt_text"));
+        if (p && typeof p.then === "function") p.then(gelukt).catch(handmatig);
+        else handmatig();
+      } catch (err) { handmatig(); }
       break;
     }
     case "tr-who": {
