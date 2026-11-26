@@ -349,6 +349,12 @@ html.rail-wide .rail-toggle{justify-content:flex-start;padding:8px 11px}
 .btn.ghost:hover{background:var(--surface-2);filter:none;transform:none}
 .btn.outline{background:var(--surface);color:var(--ink);border-color:var(--border);font-weight:400}
 .btn.outline:hover{background:var(--surface-2);filter:none;border-color:var(--ink);transform:translateY(-1px)}
+/* Een omlijnde knop die aan staat - "Deze week" terwijl je in deze week zit,
+   "Vandaag" terwijl je de dag bekijkt - wordt een vol vlak, zodat je ziet
+   waar je bent. */
+.btn.outline[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);
+  color:var(--primary-ink);font-weight:700}
+.btn.outline[aria-pressed="true"]:hover{background:var(--primary);border-color:var(--primary);filter:brightness(1.12)}
 /* Turquoise variant: het merkaccent, met donkerblauwe tekst erop. */
 .btn.accent{background:var(--accent);color:var(--on-accent)}
 .btn.navy{background:var(--navy);color:var(--navy-ink)}
@@ -1090,13 +1096,27 @@ a.btn{text-decoration:none}
 /* De kop van een dag: een knop die de dag dichtklapt. In de smalle lijst
    links klein en in kapitalen, boven de kaarten op een smal scherm iets
    groter. */
-.trd-day{display:flex;align-items:center;gap:7px;width:100%;padding:8px 10px 5px;border:0;
-  border-radius:8px;background:none;color:var(--ink-2);font:inherit;text-align:left;cursor:pointer;
-  transition:background var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
-.trd-day:hover{background:var(--surface-2);color:var(--ink)}
-.trd-day-t{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
-.trd-day.smal{padding:6px 4px;margin-bottom:6px}
-.trd-day.smal .trd-day-t{font-size:12px;letter-spacing:-.005em;text-transform:none;color:var(--ink)}
+.trd-day{display:flex;align-items:center;gap:10px;width:100%;padding:8px 8px;border:0;
+  border-radius:10px;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;
+  transition:background var(--t-fast) var(--ease)}
+.trd-day:hover{background:var(--surface-2)}
+/* Het kalenderblaadje: dagnummer groot, de korte dagnaam eronder. */
+.trd-cal{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:0 0 auto;
+  width:36px;height:38px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);
+  line-height:1}
+.trd-cal b{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.trd-cal span{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--ink-2);margin-top:2px}
+.trd-day.nu .trd-cal{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.trd-day.nu .trd-cal span{color:var(--primary-ink);opacity:.8}
+.trd-day-tx{display:flex;flex-direction:column;min-width:0;flex:1}
+.trd-day-t{font-size:13px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.trd-day-s{font-size:11px;color:var(--ink-2);line-height:1.3}
+/* Elke dag is een eigen blok, met een lijn ertussen. */
+.trl-g + .trl-g{border-top:1px solid var(--border);margin-top:6px;padding-top:6px}
+.trl-g .trl-i{margin-left:0}
+.trs-g + .trs-g{border-top:1px solid var(--border);padding-top:10px}
+.trd-day.smal{padding:6px 4px;margin-bottom:8px}
 .trl-i{display:flex;flex-direction:column;gap:2px;width:100%;padding:10px 11px;border-radius:11px;
   border:1px solid transparent;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;
   transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease)}
@@ -6069,7 +6089,8 @@ function viewMeetings() {
   const canRescan = DB.meetings.some((m) => !m.onlineUrl);
 
   const head = pageHead(tr("nav_meetings"), tr("m_sub"),
-    `<button class="btn sm outline" data-act="meet-today">${ico("meetings", "", 13)} ${esc(tr("today"))}</button>
+    `<button class="btn sm outline" data-act="meet-today"
+       aria-pressed="${UI.meetView === "list" && mf.days === "today"}">${ico("meetings", "", 13)} ${esc(tr("today"))}</button>
      <div class="seg">${[["list", tr("m_v_list")], ["week", tr("m_v_week")]]
        .map(([v, l]) => `<button data-act="meet-view" data-v="${v}"
          aria-pressed="${UI.meetView === v}">${esc(l)}</button>`).join("")}</div>
@@ -6985,11 +7006,18 @@ const trWeekVan = (day) => Math.round((parseD(mondayOf(parseD(day))) - parseD(mo
 function trDagKop(day, items, cls = "") {
   const dicht = Boolean(UI.trDagDicht && UI.trDagDicht[day]);
   const mijn = items.reduce((s, t) => s + trOpenActies(t).filter((a) => isMij(a.person)).length, 0);
-  return `<button class="trd-day ${cls}" data-act="tr-day" data-v="${day}" aria-expanded="${!dicht}">
-    <span class="tl-chev">${ico(dicht ? "chevdown" : "chevup", "", 12)}</span>
-    <span class="trd-day-t">${esc(dayHeading(day))}</span>
-    <span class="tl-n">${items.length}</span>
-    ${dicht && mijn ? `<span class="tchip sig" style="margin-left:auto">${mijn}</span>` : ""}
+  /* Een kalenderblaadje met de datum, en daarnaast de dag in woorden: zo
+     springt elke nieuwe dag eruit in plaats van dat maandag ongemerkt
+     overgaat in dinsdag. Vandaag is het blaadje vol gekleurd. */
+  const dt = parseD(day), rel = daysUntil(day);
+  const naam = rel === 0 ? tr("today") : rel === -1 ? tr("yesterday") : dayName((dt.getDay() + 6) % 7, true);
+  const sub = `${dt.getDate()} ${MONTHS[dt.getMonth()].toLowerCase()} · ${
+    items.length === 1 ? tr("tr_n_1") : tr("tr_n", items.length)}`;
+  return `<button class="trd-day ${cls}${rel === 0 ? " nu" : ""}" data-act="tr-day" data-v="${day}" aria-expanded="${!dicht}">
+    <span class="trd-cal"><b>${dt.getDate()}</b><span>${esc(WEEKDAYS[(dt.getDay() + 6) % 7])}</span></span>
+    <span class="trd-day-tx"><span class="trd-day-t">${esc(naam)}</span><span class="trd-day-s">${esc(sub)}</span></span>
+    ${dicht && mijn ? `<span class="tchip sig">${mijn}</span>` : ""}
+    <span class="tl-chev" style="margin-left:${dicht && mijn ? "0" : "auto"}">${ico(dicht ? "chevdown" : "chevup", "", 13)}</span>
   </button>`;
 }
 const trDagDicht = (day) => Boolean(UI.trDagDicht && UI.trDagDicht[day]);
@@ -7046,8 +7074,8 @@ function viewTranscripts() {
   trMijnBlok(alles) +
   weekNav +
   (lijst.length && trBreed() ? trTweeluik(lijst) :
-   lijst.length ? byDay.map((g) => `${trDagKop(g.day, g.items, "smal")}
-    ${trDagDicht(g.day) ? "" : `<div class="grid tr-list" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`}`).join("")
+   lijst.length ? byDay.map((g) => `<div class="trs-g">${trDagKop(g.day, g.items, "smal")}
+    ${trDagDicht(g.day) ? "" : `<div class="grid tr-list" style="gap:12px;margin-bottom:16px">${g.items.map(trCard).join("")}</div>`}</div>`).join("")
     : leeg) +
   `<p class="xs mut" style="margin-top:6px">${esc(tr("tr_privacy"))}</p>`;
 }
@@ -7377,9 +7405,9 @@ function trTweeluik(lijst) {
     else byDay.push({ day: t.day, items: [t] });
   });
   return `<div class="trl-grid">
-    <nav class="trl" aria-label="${esc(tr("nav_transcripts"))}">${byDay.map((g) => `
+    <nav class="trl" aria-label="${esc(tr("nav_transcripts"))}">${byDay.map((g) => `<div class="trl-g">
       ${trDagKop(g.day, g.items)}
-      ${trDagDicht(g.day) ? "" : g.items.map((t) => trLijstItem(t, gekozen && t.id === gekozen.id)).join("")}`).join("")}
+      ${trDagDicht(g.day) ? "" : g.items.map((t) => trLijstItem(t, gekozen && t.id === gekozen.id)).join("")}</div>`).join("")}
     </nav>
     ${gekozen ? trDetail(gekozen) : ""}
   </div>`;
