@@ -2127,6 +2127,11 @@ const STR = {
               "Het nieuwste bestand in je agendamap is van {0}, terwijl je stroom normaal vaker schrijft. Loopt de stroom gewoon, dan draait OneDrive waarschijnlijk niet op deze laptop — dat gebeurt soms na een update. Open OneDrive via het startmenu en lees de map daarna opnieuw in."],
   ag_stale_short:["No new calendar file since {0} — is OneDrive running on this laptop?",
                   "Geen nieuw agendabestand sinds {0} — draait OneDrive op deze laptop?"],
+  nw_stale:["The AI news of {0} has not come in","Het AI-nieuws van {0} is niet binnengekomen"],
+  nw_stale_d:["On your reading days the news flow reads the draft “Joost OS AI nieuws” that Copilot prepares in the morning. If that draft is not there yet, the flow writes nothing and still shows green. Check in Power Automate whether the flow ran, and in Copilot whether the scheduled prompt ran. The newest news file is from {0}.",
+              "Op je leesdagen leest de nieuwsstroom de conceptmail “Joost OS AI nieuws” die Copilot ’s ochtends klaarzet. Staat die er nog niet, dan schrijft de stroom niets weg en blijft hij toch groen. Kijk in Power Automate of de stroom liep, en in Copilot of de geplande prompt is gedraaid. Het nieuwste nieuwsbestand is van {0}."],
+  nw_stale_short:["No AI news from {0} — did the Copilot prompt run?",
+                  "Geen AI-nieuws van {0} — is de Copilot-prompt gedraaid?"],
   ag_n_added:["{0} afspraken toegevoegd","{0} afspraken toegevoegd"],
   ag_n_added_1:["1 afspraak toegevoegd","1 afspraak toegevoegd"],
   sy_refresh:["Vernieuwen","Vernieuwen"],
@@ -10436,10 +10441,55 @@ function nwsImport(raw) {
   return { nieuw, bekend, webinars };
 }
 
+/* ---- uitblijvend nieuws ---------------------------------------------------
+   De nieuwsstroom schrijft alleen iets weg als Copilot de conceptmail al heeft
+   klaargezet. Is Copilot laat, dan vindt de stroom niets, blijft hij groen en
+   komt er die dag gewoon geen bestand. In de app zag je dan alleen minder
+   nieuws, en dat valt niet op. Zo bleef vrijdag 27 november leeg.
+
+   Het nieuws hoort op je leesdagen te komen (dezelfde dagen als je
+   nieuwsronde, standaard ma, wo, vr). De datum staat in de bestandsnaam, dus
+   de app hoeft niet te raden: is de laatste leesdag geweest en is er geen
+   bestand van die dag of later, dan ontbreekt er een ronde. Een leesdag telt
+   pas vanaf tien uur mee; de stroom draait vroeg in de ochtend.
+
+   Net als bij de agenda gemeten op het moment van inlezen: de app kan alleen
+   iets zeggen over bestanden die hij heeft gezien. */
+const NEWS_DUE_H = 10;
+
+function newsMissing() {                         // de leesdag zonder nieuws, of ""
+  const s = DB.newsSync;
+  if (!AGENDA_DIR || !s || !s.lastDate || !s.lastAt) return "";
+  const dagen = newsPlan().days || [];
+  const gelezen = new Date(s.lastAt);
+  if (!dagen.length || isNaN(gelezen.getTime())) return "";
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(gelezen); d.setDate(d.getDate() - i);
+    if (!dagen.includes(weekdayIndex(d))) continue;
+    if (i === 0 && gelezen.getHours() < NEWS_DUE_H) continue;
+    return s.lastDate < iso(d) ? iso(d) : "";
+  }
+  return "";
+}
+
+const nwsDag = (dag) => {
+  if (!dag) return "";
+  if (dag === TODAY()) return tr("today").toLowerCase();
+  return new Intl.DateTimeFormat(LOCALE, { weekday: "long", day: "numeric", month: "long" }).format(parseD(dag));
+};
+
 async function nwsRead(dir) {
   try {
     let nieuw = 0, bekend = 0, webinars = 0;
     const bestanden = await agendaFiles(dir, /^nieuws-.*\.json$/i, 7);
+    /* De datum uit de naam, niet de tijd van het bestand: een ronde die later
+       op de dag alsnog wordt weggeschreven, hoort nog steeds bij zijn dag. */
+    const datums = bestanden.map((f) => (/(\d{4}-\d{2}-\d{2})/.exec(f.name) || [])[1]
+      || iso(new Date(f.lastModified))).sort();
+    if (datums.length) {
+      DB.newsSync = { lastDate: datums[datums.length - 1], lastAt: new Date().toISOString() };
+      save();
+    }
     for (const file of bestanden.reverse()) {
       try {
         const r = nwsImport(JSON.parse(await file.text()));
@@ -11149,6 +11199,7 @@ function newsAnalysisCard() {
   const view = UI.nwsView || "open";
   const toon = view === "read" ? genegeerd : view === "past" ? eerder : open;
   const leeg = view === "read" ? tr("nws_none_read") : view === "past" ? tr("nws_none_past") : tr("nws_none");
+  const nwsMis = agendaStale() ? "" : newsMissing();
 
   const rij = (n) => `<li style="padding:11px 2px">
     <div class="row wrap spread" style="gap:10px;align-items:flex-start">
@@ -11195,6 +11246,8 @@ function newsAnalysisCard() {
   return `<section class="card sug-card">
     ${kop}
     <div class="card-b"><p class="sug-d">${esc(tr("nws_d"))}</p>
+      ${nwsMis ? `<p class="xs" style="color:var(--warning);margin:-4px 0 10px">
+        ${esc(tr("nw_stale", nwsDag(nwsMis)))}. ${esc(tr("nw_stale_d", nwsDag(DB.newsSync.lastDate)))}</p>` : ""}
       ${toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
         : `<p class="xs mut">${esc(leeg)}</p>`}
       <div class="row wrap" style="gap:4px 14px;margin-top:9px">
@@ -13640,8 +13693,17 @@ function agendaFileWhen() {
 /* Op het dashboard staat hij boven alles, en hij is niet weg te klikken: hij
    verschijnt alleen als er iets kapot is, en verdwijnt vanzelf zodra er weer
    een nieuw bestand binnenkomt. */
+/* Ligt de agenda stil, dan ontbreekt het nieuws ook, en is OneDrive de
+   oorzaak. Dan alleen die melding: twee balken met twee verklaringen voor
+   hetzelfde zetten je op het verkeerde spoor. */
 function agendaStaleBanner() {
-  if (!agendaStale()) return "";
+  if (agendaStale()) return staleBanner(tr("ag_stale"), tr("ag_stale_d", agendaFileWhen()));
+  const dag = newsMissing();
+  if (dag) return staleBanner(tr("nw_stale", nwsDag(dag)), tr("nw_stale_d", nwsDag(DB.newsSync.lastDate)));
+  return "";
+}
+
+function staleBanner(titel, uitleg) {
   return `<div class="card" style="margin-bottom:14px;
       border-color:color-mix(in srgb,var(--warning) 35%,transparent);
       background:color-mix(in srgb,var(--warning) 7%,transparent)">
@@ -13650,8 +13712,8 @@ function agendaStaleBanner() {
           <div style="min-width:0">
             <p class="sm2 row" style="gap:7px;font-weight:600">
               <span style="color:var(--warning)">${ico("alert", "", 14)}</span>
-              ${esc(tr("ag_stale"))}</p>
-            <p class="xs mut" style="margin-top:3px">${esc(tr("ag_stale_d", agendaFileWhen()))}</p>
+              ${esc(titel)}</p>
+            <p class="xs mut" style="margin-top:3px">${esc(uitleg)}</p>
           </div>
           <button class="btn sm" data-act="agenda-read">${ico("refresh")} ${esc(tr("sy_refresh"))}</button>
         </div>
@@ -13769,6 +13831,7 @@ async function agendaRead(loud) {
     await briefRead(AGENDA_DIR);
     const trR = await trRead(AGENDA_DIR);
     const sgR = await sugRead(AGENDA_DIR);
+    const nwWas = newsMissing();
     const nwR = await nwsRead(AGENDA_DIR);
     // Vóór de agenda: een bevestiging geeft de sleutel waarop die afspraak straks binnenkomt.
     await olCheck(AGENDA_DIR);
@@ -13814,7 +13877,10 @@ async function agendaRead(loud) {
     s.staleAfterH = agendaStaleAfterH(icsFiles);
     save();
     const stale = agendaStale();
-    const staleMsg = stale ? tr("ag_stale_short", agendaFileWhen()) : "";
+    // Ligt de agenda stil, dan is dat ook de reden dat het nieuws ontbreekt.
+    const nwMis = stale ? "" : newsMissing();
+    const staleMsg = stale ? tr("ag_stale_short", agendaFileWhen())
+      : nwMis ? tr("nw_stale_short", nwsDag(nwMis)) : "";
 
     const delen = [
       r.added ? tr(r.added === 1 ? "ag_n_added_1" : "ag_n_added", r.added) : "",
@@ -13830,12 +13896,12 @@ async function agendaRead(loud) {
        verkeerde antwoord, dus dan zegt de melding dat. */
     if (delen.length) {
       render();
-      toast(stale ? `${delen.join(", ")}. ${staleMsg}` : delen.join(", "));
+      toast(staleMsg ? `${delen.join(", ")}. ${staleMsg}` : delen.join(", "));
     } else if (loud) {
       render();
       // Geen deelnemers in het hele bestand is bijna altijd de flow, niet de app.
-      toast(stale ? staleMsg : !r.withAtt && parsed.events.length ? tr("ag_noatt") : tr("ag_uptodate"));
-    } else if (stale || wasStale) {
+      toast(staleMsg || (!r.withAtt && parsed.events.length ? tr("ag_noatt") : tr("ag_uptodate")));
+    } else if (stale || wasStale || nwMis || nwWas) {
       /* Stil inlezen, maar de waarschuwing moet wel op of af. Ook als hij
          blijft staan: bij het opstarten is de pagina al getekend voordat de
          map bekend was, en toen kon hij er nog niet staan. */
