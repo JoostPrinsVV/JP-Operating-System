@@ -232,7 +232,7 @@ Wat de app met de lijst doet:
 De agendastroom brengt Outlook naar de app. Deze stroom doet het omgekeerde:
 wat je in de app maakt, wijzigt of weggooit, gaat naar Outlook. Dat geldt voor:
 
-- webinars die je op **Agenda** goedkeurt;
+- webinars die je op **Kennis** goedkeurt (onder de nieuwsanalyse);
 - afspraken die je in de app maakt terwijl **Naar Outlook** aanstaat (het
   vinkje in de mapregel op **Agenda**);
 - een bestaande afspraak waarbij je onderaan op **Ook in Outlook zetten**

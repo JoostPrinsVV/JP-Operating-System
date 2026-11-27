@@ -2151,8 +2151,10 @@ const STR = {
   sy_wbn_1:["1 webinar to review","1 webinar om te beoordelen"],
   wb_head:["Webinars","Webinars"],
   wb_sub:["From your newsletters","Uit je nieuwsbrieven"],
-  wb_d:["Copilot picks the webinars and events out of your newsletters. Add one and it is in your calendar here straight away; your flow puts it in Outlook within a few minutes.",
-        "Copilot haalt de webinars en events uit je nieuwsbrieven. Zet je er een in je agenda, dan staat hij hier meteen en zet je stroom hem binnen een paar minuten in Outlook."],
+  wb_open_n:["{0} to decide on","{0} om over te beslissen"],
+  wb_open_0:["Nothing to decide on","Niets om over te beslissen"],
+  wb_d:["Copilot picks the webinars and events out of your newsletters. Add one and it is in your calendar in the app straight away; your flow puts it in Outlook within a few minutes.",
+        "Copilot haalt de webinars en events uit je nieuwsbrieven. Zet je er een in je agenda, dan staat hij meteen in je agenda in de app en zet je stroom hem binnen een paar minuten in Outlook."],
   wb_yes:["Add to calendar","In agenda"],
   wb_no:["Not for me","Niet voor mij"],
   wb_edit:["Adjust","Aanpassen"],
@@ -6387,8 +6389,6 @@ function viewMeetings() {
      <button class="btn sm outline" data-act="ics-open">${ico("meetings")} ${esc(tr("m_import"))}</button>
      <button class="btn sm" data-act="new-meeting">${ico("plus")} ${esc(tr("m_new"))}</button>`) +
   agendaSummary() +
-  // Webinars om over te beslissen staan bovenaan: daar kijk je als eerste.
-  webinarCard() +
   // The folder sits above the lists: it is where the appointments come from.
   `<div style="margin-bottom:14px">${agendaCard()}</div>`;
 
@@ -11121,8 +11121,11 @@ function wbnDialog(w) {
   });
 }
 
-/* Bovenaan de agenda, alleen als er iets te beslissen valt of iets onderweg
-   is naar Outlook. Wat al in Outlook staat, zie je in je agenda zelf. */
+/* In Kennis, onder de nieuwsanalyse: de webinars komen uit dezelfde
+   nieuwsbrieven, en daar beslis je over wat je leest en wat je bijwoont.
+   Alleen als er iets te beslissen valt of iets onderweg is naar Outlook; wat
+   al in Outlook staat, zie je in je agenda zelf. De kop klapt hem in, en dicht
+   zie je nog wel hoeveel er op je wachten. */
 function webinarCard() {
   const alle = (DB.webinars || []).filter((w) => !wbnVoorbij(w));
   const open = alle.filter((w) => w.status === "open")
@@ -11167,12 +11170,20 @@ function webinarCard() {
   };
 
   const rest = UI.wbnAf ? open.length : af.length;
-  return `<section class="card sug-card" style="margin:0 0 14px">
-    <div class="sug-h">${ico("video", "ico", 15)}
-      <h2 class="sug-t">${esc(tr("wb_head"))}</h2>
+  const dicht = foldDicht("wbn");
+  const kop = `<button class="sug-h sug-fold" data-act="card-fold" data-v="wbn" aria-expanded="${!dicht}">
+      ${ico("video", "ico", 15)}
+      <span class="sug-t" role="heading" aria-level="2">${esc(tr("wb_head"))}</span>
       <span class="sug-bar"></span>
       <span class="sug-sub">${esc(tr("wb_sub"))}</span>
-    </div>
+      <span class="sug-end">
+        ${dicht ? `<span class="sug-n">${esc(open.length ? tr("wb_open_n", open.length) : tr("wb_open_0"))}</span>` : ""}
+        <span class="sug-chev">${ico(dicht ? "chevdown" : "chevup", "", 14)}</span>
+      </span>
+    </button>`;
+  if (dicht) return `<section class="card sug-card">${kop}</section>`;
+  return `<section class="card sug-card">
+    ${kop}
     <div class="card-b"><p class="sug-d">${esc(tr("wb_d"))}</p>
       ${toon.length ? `<ul class="divide">${toon.map(rij).join("")}</ul>`
         : `<p class="xs mut">${esc(tr("wb_none"))}</p>`}
@@ -11348,6 +11359,7 @@ function viewKnowledge() {
   if (f.view === "round") {
     body = `<div class="grid" style="gap:14px">
       ${newsAnalysisCard()}
+      ${webinarCard()}
       ${SRC_GROUPS.map(([key]) => srcGroupCard(key, done)).join("")}
       ${cardF("n-days", tr("n_days"), `<div class="row wrap" style="gap:5px">
           ${DAY_KEYS.map((_, i) => `<button class="btn sm ${newsPlan().days.includes(i) ? "" : "outline"}"
