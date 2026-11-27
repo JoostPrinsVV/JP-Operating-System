@@ -11836,6 +11836,7 @@ function render() {
   view.innerHTML = html;
   if (gewisseld) { void view.offsetWidth; view.classList.add("v-in"); }
   paintTimerBar();
+  peekVerversen();
   wireView();
 }
 
@@ -11885,6 +11886,28 @@ function open_(type, id) {
 const dlg = $("#dlg");
 let onSubmitFn = null, onDeleteFn = null;
 
+/* Een knop zonder type in een formulier verstuurt dat formulier. In een
+   venster is versturen de hoofdknop onderaan - bij het voorbeeld van een
+   afspraak "Open volledig". Een sectie dichtklappen of "Ga naar verslag"
+   deed daardoor ook dat. Alle knoppen in de inhoud zijn dus gewone knoppen. */
+const knoppenGeenVerzenden = (el) => {
+  if (el) el.querySelectorAll("button:not([type])").forEach((b) => { b.type = "button"; });
+};
+
+/* Het voorbeeld van een afspraak tekent zichzelf opnieuw als de pagina dat
+   doet: klap je er een sectie in dicht, dan blijft het venster open en staat
+   de lijst waar hij stond. */
+function peekVerversen() {
+  const id = dlg.open && dlg.dataset.peek;
+  const m = id && DB.meetings.find((x) => x.id === id);
+  const b = m && dlg.querySelector(".dlg-b");
+  if (!b) return;
+  const st = b.scrollTop, st2 = dlg.scrollTop;
+  b.innerHTML = peekBody(m);
+  knoppenGeenVerzenden(b);
+  b.scrollTop = st; dlg.scrollTop = st2;
+}
+
 function openDialog({ title, desc = "", body, submit = "Save", del = null, onSubmit,
                      danger = false, delLabel = "", wide = false, cancelLabel = "" }) {
   onSubmitFn = onSubmit; onDeleteFn = del;
@@ -11906,6 +11929,7 @@ function openDialog({ title, desc = "", body, submit = "Save", del = null, onSub
       <button type="button" class="btn outline" id="dlg-cancel">${esc(cancelLabel || tr("cancel"))}</button>
       <button type="submit" class="btn${danger ? " danger" : ""}">${esc(submit)}</button>
     </div></form>`;
+  knoppenGeenVerzenden(dlg.querySelector(".dlg-b"));
   dlg.showModal();
   $("#dlg-cancel").onclick = () => dlg.close();
   $("#dlg-x").onclick = () => dlg.close();
@@ -12348,10 +12372,7 @@ function meetingDialog(meeting, defaults) {
 function meetingPeek(id) {
   const m = DB.meetings.find((x) => x.id === id);
   if (!m) { toast(tr("not_found")); return; }
-  const acts = DB.actions.filter((a) => a.meetingId === id);
-  const open = acts.filter((a) => a.status !== "done" && a.status !== "cancelled").length;
   const heel = isAllDay(m);
-  const app = m.onlineUrl ? appJoinUrl(m.onlineUrl) : null;
 
   openDialog({
     title: m.title,
@@ -12360,8 +12381,19 @@ function meetingPeek(id) {
     submit: tr("m_open_full"),
     cancelLabel: tr("close"),
     wide: true,
-    body:
-      `<div class="row wrap" style="gap:8px">
+    body: peekBody(m),
+    onSubmit: () => { open_("meeting", m.id); },
+  });
+  dlg.dataset.peek = m.id;
+}
+
+/* De inhoud van het voorbeeld, los zodat hij opnieuw getekend kan worden
+   zonder het venster te sluiten. */
+function peekBody(m) {
+  const acts = DB.actions.filter((a) => a.meetingId === m.id);
+  const open = acts.filter((a) => a.status !== "done" && a.status !== "cancelled").length;
+  const app = m.onlineUrl ? appJoinUrl(m.onlineUrl) : null;
+  return `<div class="row wrap" style="gap:8px">
         <button class="btn sm outline" data-act="edit-meeting" data-id="${m.id}">${ico("pencil", "", 13)} ${esc(tr("edit"))}</button>
         ${meetingBooked(m.id)
           ? `<span class="badge success">${ico("check", "", 11)} ${esc(tr("h_book_done"))}</span>`
@@ -12377,18 +12409,17 @@ function meetingPeek(id) {
           <span class="cat-dot" style="background:${catColorOf(c)}"></span>${esc(c)}</span>`).join("")}
       </p>` : "") +
       briefingCard(m) + transcriptCard(m) + attendeeCard(m) + mailCard(m) +
-      (m.agenda ? card(tr("m_agenda"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : "") +
-      (m.notes ? card(tr("m_notes"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(truncate(m.notes, 900))}</p>`) : "") +
-      (m.decisions ? card(tr("m_decisions"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`) : "") +
+      /* Dezelfde vouwsleutels als op de pagina van de afspraak: wat je daar
+         dichtklapt, is hier ook dicht, en andersom. */
+      (m.agenda ? cardF("md-agenda", tr("m_agenda"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.agenda)}</p>`) : "") +
+      (m.notes ? cardF("md-notes", tr("m_notes"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(truncate(m.notes, 900))}</p>`) : "") +
+      (m.decisions ? cardF("md-dec", tr("m_decisions"), `<p class="sm2" style="white-space:pre-wrap;line-height:1.6">${esc(m.decisions)}</p>`) : "") +
       (acts.length
-        ? card(tr("m_actions"), `<ul class="divide">${acts.map((a) => `<li class="row" style="gap:9px;padding:7px 0;align-items:flex-start">
+        ? cardF("md-acts", tr("m_actions"), `<ul class="divide">${acts.map((a) => `<li class="row" style="gap:9px;padding:7px 0;align-items:flex-start">
             <span class="sm2" style="flex:1;${a.status === "done" ? "color:var(--ink-2);text-decoration:line-through" : ""}">${esc(a.text)}</span>
             ${badge(ASTAT, a.status)}</li>`).join("")}</ul>`,
           open === 1 ? tr("m_act_open_1") : tr("m_act_open", open))
-        : `<p class="xs mut">${esc(tr("m_noact"))}</p>`),
-    onSubmit: () => { open_("meeting", m.id); },
-  });
-  dlg.dataset.peek = m.id;
+        : `<p class="xs mut">${esc(tr("m_noact"))}</p>`);
 }
 
 function classifyDialog(idea) {
@@ -14682,6 +14713,9 @@ document.addEventListener("click", (e) => {
         if (UI.trDagDicht) delete UI.trDagDicht[doel.day];
       }
       UI.trOpen = { [id]: true }; UI.trSel = id; UI.trFilter = "all";
+      // Vanuit het voorbeeld van een afspraak: dat venster gaat eerst dicht.
+      if (dlg.open) dlg.close();
+      UI.detail = null;
       go("transcripts");
       setTimeout(() => {
         const el2 = document.getElementById(`tr-${id}`);
